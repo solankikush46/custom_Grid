@@ -1,4 +1,3 @@
-import gymnasium as gym
 from gym import Env
 from gym.spaces import Discrete, Box
 import numpy as np

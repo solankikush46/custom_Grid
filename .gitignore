@@ -1,0 +1,40 @@
+# Logs directory
+logs/
+
+# Saved models
+SavedModels/
+
+# Ignore Python bytecode and cache files
+**/__pycache__/
+*.py[cod]
+*$py.class
+app/utils/__pycache__/
+
+**/User.sql
+**.webp
+
+# Ignore virtual environment directories
+/venv
+venv/
+env/
+.venv/
+.venv*/
+
+# Ignore logs and database files
+*.log
+*.sqlite3
+*.db
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE and editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# Ignore compiled Cython files
+*.so
