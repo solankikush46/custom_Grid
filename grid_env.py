@@ -59,6 +59,14 @@ class GridWorldEnv(Env):
             if self.static_grid[x, y] == '.':  
                 self.static_grid[x, y] = 'S'
 
+        # Pygame setup (rendering window initialized once)
+        pygame.init()
+        self.fixed_window_size = 800
+        self.cell_size = self.fixed_window_size // self.grid_size
+        self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
+        pygame.display.set_caption("GridWorld Visualization")
+        self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
+
 
         self.reset()
 
@@ -192,11 +200,9 @@ class GridWorldEnv(Env):
         return min(np.linalg.norm(pos - np.array(goal)) for goal in self.goal_positions)
 
     def render_pygame(self):
-        pygame.init()
-        fixed_window_size = 800
-        cell_size = fixed_window_size // self.grid_size
-        screen = pygame.display.set_mode((fixed_window_size, fixed_window_size))
-        pygame.display.set_caption("GridWorld Visualization")
+        screen = self.screen
+        font = self.font
+        cell_size = self.cell_size
 
         colors = {
             '.': (255, 255, 255),  # Empty
@@ -207,9 +213,6 @@ class GridWorldEnv(Env):
             'F': (0, 255, 255),    # Finished at goal
             'S': (255, 0, 0)       # Sensor
         }
-
-        # Set up font for battery labels
-        font = pygame.font.SysFont("Arial", max(10, cell_size // 3))
 
         grid_copy = self.grid.copy()
         for pos in self.visited:
@@ -240,10 +243,10 @@ class GridWorldEnv(Env):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
+                self.close()
 
         pygame.time.wait(100)
-
+        
     def episode_summary(self):
         print(f"   Episode Summary:")
         print(f"   Total Steps     : {self.episode_steps}")
