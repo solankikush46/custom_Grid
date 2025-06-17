@@ -61,7 +61,7 @@ class GridWorldEnv(Env):
 
         # Pygame setup (rendering window initialized once)
         pygame.init()
-        self.fixed_window_size = 800
+        self.fixed_window_size = 750
         self.cell_size = self.fixed_window_size // self.grid_size
         self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
         pygame.display.set_caption("GridWorld Visualization")
@@ -218,7 +218,9 @@ class GridWorldEnv(Env):
         for pos in self.visited:
             x, y = pos
             if (x, y) != tuple(self.agent_pos) and (x, y) not in self.goal_positions:
-                grid_copy[x, y] = '*'
+                if self.static_grid[x, y] != 'S':  # don't overwrite sensor cells
+                    grid_copy[x, y] = '*'
+
 
         ax, ay = self.agent_pos
         if tuple(self.agent_pos) in self.goal_positions:
