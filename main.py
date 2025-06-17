@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 
 
-def run_sample_agent(episodes):
+def run_sample_agent(episodes, env):
 
     for ep in range(episodes):
         print(f"\n Episode-{ep+1}: ")
@@ -22,10 +22,10 @@ def run_sample_agent(episodes):
 
         while not terminated: 
             action =  env.action_space.sample()
-            obs, reward, terminated, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            env.render_pygame()
             time.sleep(0.1)
 
-        env.render()
         env.episode_summary()
 
     env.close()
@@ -201,7 +201,10 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
 
 
 if __name__ == "__main__":
+
+
     test_env =  GridWorldEnv()
+    run_sample_agent(3, test_env)
     """
     #Training and evaluating PPO model
 
@@ -209,12 +212,13 @@ if __name__ == "__main__":
     PPO_model = PPO.load("SavedModels/PPO_custom_grid.zip", env=test_env)
     evaluate_Model(PPO_model)
     """
-
+    '''
     #Training and evaluating DQN model
 
     #DQN_train_model(500000)
     DQN_model = DQN.load("SavedModels/DQN_custom_grid.zip", env=test_env)
     evaluate_Model(DQN_model)
+    '''
 
     """
     agent = QLearningAgent(grid_size=20, action_size=8)
