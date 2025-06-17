@@ -61,7 +61,11 @@ class GridWorldEnv(Env):
 
         # Pygame setup (rendering window initialized once)
         pygame.init()
+<<<<<<< HEAD
         self.fixed_window_size = 750
+=======
+        self.fixed_window_size = 700
+>>>>>>> 4dafcf5fc669ef00c4c37b694e826045642d30a8
         self.cell_size = self.fixed_window_size // self.grid_size
         self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
         pygame.display.set_caption("GridWorld Visualization")
