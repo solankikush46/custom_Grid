@@ -23,30 +23,51 @@ if not os.path.exists("sensor_coords.txt"):
         n_sensors=5
     )
 
+##==============================================================
+## Helpers
+##==============================================================
+def chebyshev_distance(x0, x1, y0, y1):
+    dx = abs(x0 - x1)
+    dy = abs(y0 - y1)
+    return max(dx, dy)
+
+def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
+        x0, y0 = pos
+        if normalize:
+            norm = max(grid_width - 1, grid_height - 1)
+            return np.array([
+                chebyshev_distance(x0, tx, y0, ty) / norm for tx, ty in targets
+            ], dtype=np.float32)
+        else:
+            return np.array([
+                chebyshev_distance(x0, tx, y0, ty) for tx, ty in targets
+            ], dtype=np.float32)
+
+##==============================================================
+## GridWorldEnv Class
+##==============================================================
 class GridWorldEnv(Env):
     def __init__(self):
         super(GridWorldEnv, self).__init__()
-        self.grid_size = 50
+        self.grid_width = 50
+        self.grid_height = 50
         self.max_steps = 500
         self.num_obstacles = 45
 
         self.action_space = Discrete(8)
         self.observation_space = Dict({
-            "agent_pos": Box(low=0, high=self.grid_size - 1, shape=(2,), dtype=np.int32),
-            "sensor_pos": Box(low=0, high=self.grid_size - 1, shape=(5, 2), dtype=np.int32),
+            "agent_pos": Box(low=0, high=max(self.grid_width, self.grid_height) - 1, shape=(2,), dtype=np.int32),
+            "sensor_pos": Box(low=0, high=max(self.grid_width, self.grid_height) - 1, shape=(5, 2), dtype=np.int32),
             "battery_levels": Box(low=0.0, high=100.0, shape=(5,), dtype=np.float32),
-            "exit_distances": Box(low=0.0, high=np.sqrt(2) * self.grid_size, shape=(3,), dtype=np.float32),
+            "exit_distances": Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32),
         })
 
-        # Fixed grid setup
-        self.static_grid = np.full((self.grid_size, self.grid_size), '.', dtype='<U1')
+        self.static_grid = np.full((self.grid_height, self.grid_width), '.', dtype='<U1')
 
-        # Define multiple goals
         self.goal_positions = [(49, 49), (0, 49), (49, 0)]
         for gx, gy in self.goal_positions:
             self.static_grid[gx, gy] = 'G'
 
-        # Fixed obstacle positions
         self.fixed_obstacles = self.load_obstacles_from_file()
         self.original_sensor_batteries = self.load_sensors_with_batteries()
         self.sensor_batteries = dict(self.original_sensor_batteries)
@@ -54,19 +75,17 @@ class GridWorldEnv(Env):
         for (x, y) in self.fixed_obstacles:
             if (x, y) not in self.goal_positions:
                 self.static_grid[x, y] = '#'
-                
+
         for (x, y) in self.sensor_batteries:
             if self.static_grid[x, y] == '.':  
                 self.static_grid[x, y] = 'S'
 
-        # Pygame setup (rendering window initialized once)
         pygame.init()
         self.fixed_window_size = 700
-        self.cell_size = self.fixed_window_size // self.grid_size
+        self.cell_size = self.fixed_window_size // max(self.grid_width, self.grid_height)
         self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
         pygame.display.set_caption("GridWorld Visualization")
         self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
-
 
         self.reset()
 
@@ -94,23 +113,24 @@ class GridWorldEnv(Env):
             print(f"[WARNING] Sensor file '{filename}' not found.")
         return sensors
     
+    def get_sensor_distances(self, pos, normalize=True):
+        return chebyshev_distances(pos, list(self.sensor_batteries.keys()), self.grid_width, self.grid_height, normalize)
+
+    def get_exit_distances(self, normalize=True):
+        return chebyshev_distances(self.agent_pos, self.goal_positions, self.grid_width, self.grid_height, normalize)
+    
     def get_observation(self):
         agent_pos = self.agent_pos.copy()
-        
-        # Sensor positions and batteries (sorted for consistency)
+
         sorted_sensors = sorted(self.sensor_batteries.items())
         sensor_positions = np.array([list(pos) for pos, _ in sorted_sensors], dtype=np.int32)
         battery_levels = np.array([level for _, level in sorted_sensors], dtype=np.float32)
 
-        # Pad in case < 5 sensors (safety for future-proofing)
         while len(sensor_positions) < 5:
             sensor_positions = np.vstack((sensor_positions, [[-1, -1]]))
             battery_levels = np.append(battery_levels, -1.0)
 
-        # Distance from agent to each goal
-        exit_distances = np.array([
-            np.linalg.norm(agent_pos - np.array(goal)) for goal in self.goal_positions
-        ], dtype=np.float32)
+        exit_distances = self.get_exit_distances(normalize=True)
 
         return {
             "agent_pos": agent_pos,
@@ -119,14 +139,11 @@ class GridWorldEnv(Env):
             "exit_distances": exit_distances
         }
 
- 
-
     def reset(self, seed=None, options=None):
         self.grid = np.copy(self.static_grid)
 
-        # Randomize agent starting position, avoiding obstacles and goals
         while True:
-            x, y = random.randint(0, self.grid_size - 1), random.randint(0, self.grid_size - 1)
+            x, y = random.randint(0, self.grid_height - 1), random.randint(0, self.grid_width - 1)
             if self.grid[x, y] == '.':
                 self.agent_pos = np.array([x, y])
                 break
@@ -140,46 +157,66 @@ class GridWorldEnv(Env):
         return self.get_observation(), {}
 
     def f_distance(self):
-        pass
+        '''
+        Reward based on distance from agent to closest exit
+        '''
+        exit_distances = get_exit_distances(normalize=False)
+        d_min = min(exit_distances)
+        norm = max(self.grid_height - 1, self.grid_width - 1)
+        return np.exp(-d_min / norm)
 
     def f_wall(self):
-        pass
+        '''
+        Reward that penalizes agent for colliding with walls
+        '''
+        n_collisions = 1
+        n_steps = 1
+        return np.exp(-n_collisions / n_steps)
 
     def f_battery(self):
-        pass
+        '''
+        Reward that is based off the battery level of the nearest sensor
+        (motivates agent to go along high-battery level paths)
+        '''
+        sensor_coords = list(self.sensor_batteries.keys())
+        distances = chebyshev_distances(self.agent_pos, sensor_coords, self.grid_width, self.grid_height, normalize=False)
+        nearest_index = int(np.argmin(distances))
+        nearest_sensor = sensor_coords[nearest_index]
+        battery_level = self.sensor_batteries.get(nearest_sensor, 0.0)
+        return battery_level / 100
 
     def f_exit(self):
+        '''
+        Hard positive reward for when the agent reaches an exit
+        (influenced by avg battery level along path travelled by agent
+        to reach the exit)
+        '''
         pass
 
     def step(self, action):
         self.episode_steps += 1
 
-        # Deplete sensor battery levels
         depletion_rate = 0.01
         for coord in self.sensor_batteries:
             self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - depletion_rate)
 
-        # Calculate old distance to nearest goal
         old_dist = min(np.linalg.norm(self.agent_pos - np.array(goal)) for goal in self.goal_positions)
-            
-        reward = -1  # base penalty per step
+        reward = -1
 
-        # Movement
         direction_map = {
-            0: (-1,  0),  # N
-            1: (-1, +1),  # NE
-            2: ( 0, +1),  # E
-            3: (+1, +1),  # SE
-            4: (+1,  0),  # S
-            5: (+1, -1),  # SW
-            6: ( 0, -1),  # W
-            7: (-1, -1),  # NW
+            0: (-1,  0),
+            1: (-1, +1),
+            2: ( 0, +1),
+            3: (+1, +1),
+            4: (+1,  0),
+            5: (+1, -1),
+            6: ( 0, -1),
+            7: (-1, -1),
         }
         move = direction_map[int(action)]
         new_pos = self.agent_pos + move
 
-        # Check for wall collisions
-        if 0 <= new_pos[0] < self.grid_size and 0 <= new_pos[1] < self.grid_size:
+        if 0 <= new_pos[0] < self.grid_height and 0 <= new_pos[1] < self.grid_width:
             char = self.grid[tuple(new_pos)]
             if char == '#':
                 reward = -5
@@ -188,9 +225,8 @@ class GridWorldEnv(Env):
                 self.agent_pos = new_pos
                 self.visited.add(tuple(self.agent_pos))
         else:
-            reward = -10  # out of bounds
+            reward = -10
 
-        # New distance to nearest goal
         new_dist = min(np.linalg.norm(self.agent_pos - np.array(goal)) for goal in self.goal_positions)
         shaping_bonus = (old_dist - new_dist) * 2.0
         reward += shaping_bonus
@@ -199,19 +235,15 @@ class GridWorldEnv(Env):
         truncated = self.episode_steps >= self.max_steps
 
         if terminated:
-            reward = 100  # big reward for reaching any goal
+            reward = 100
 
         self.total_reward += reward
 
         return self.get_observation(), reward, terminated, truncated, {
-        "collisions": self.obstacle_hits,
-        "steps": self.episode_steps,
-        "agent_pos": self.agent_pos.copy()
+            "collisions": self.obstacle_hits,
+            "steps": self.episode_steps,
+            "agent_pos": self.agent_pos.copy()
         }
-
-
-    def _min_dist_to_goal(self, pos):
-        return min(np.linalg.norm(pos - np.array(goal)) for goal in self.goal_positions)
 
     def render_pygame(self):
         screen = self.screen
@@ -219,13 +251,13 @@ class GridWorldEnv(Env):
         cell_size = self.cell_size
 
         colors = {
-            '.': (255, 255, 255),  # Empty
-            '#': (100, 100, 100),  # Obstacle
-            '*': (255, 255, 0),    # Visited
-            'A': (0, 0, 255),      # Agent
-            'G': (0, 255, 0),      # Goal
-            'F': (0, 255, 255),    # Finished at goal
-            'S': (255, 0, 0)       # Sensor
+            '.': (255, 255, 255),
+            '#': (100, 100, 100),
+            '*': (255, 255, 0),
+            'A': (0, 0, 255),
+            'G': (0, 255, 0),
+            'F': (0, 255, 255),
+            'S': (255, 0, 0)
         }
 
         grid_copy = self.grid.copy()
@@ -240,8 +272,8 @@ class GridWorldEnv(Env):
         else:
             grid_copy[ax, ay] = 'A'
 
-        for i in range(self.grid_size):
-            for j in range(self.grid_size):
+        for i in range(self.grid_height):
+            for j in range(self.grid_width):
                 val = grid_copy[i, j]
                 color = colors.get(val, (0, 0, 0))
                 pygame.draw.rect(screen, color, (j * cell_size, i * cell_size, cell_size, cell_size))
@@ -260,7 +292,7 @@ class GridWorldEnv(Env):
                 self.close()
 
         pygame.time.wait(100)
-        
+
     def episode_summary(self):
         print(f"   Episode Summary:")
         print(f"   Total Steps     : {self.episode_steps}")
