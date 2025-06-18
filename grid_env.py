@@ -47,8 +47,9 @@ def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
 ## GridWorldEnv Class
 ##==============================================================
 class GridWorldEnv(Env):
-    def __init__(self):
+    def __init__(self, render_mode=False):
         super(GridWorldEnv, self).__init__()
+        self.render_mode = render_mode
         self.grid_width = 50
         self.grid_height = 50
         self.max_steps = 10_000
@@ -86,12 +87,13 @@ class GridWorldEnv(Env):
         )
 
         # Pygame visual setup
-        pygame.init()
-        self.fixed_window_size = 750
-        self.cell_size = self.fixed_window_size // max(self.grid_width, self.grid_height)
-        self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
-        pygame.display.set_caption("GridWorld Visualization")
-        self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
+        if self.render_mode:
+            pygame.init()
+            self.fixed_window_size = 750
+            self.cell_size = self.fixed_window_size // max(self.grid_width, self.grid_height)
+            self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
+            pygame.display.set_caption("GridWorld Visualization")
+            self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
 
         self.reset()
 
@@ -214,14 +216,6 @@ class GridWorldEnv(Env):
         else:
             return 0.0
 
-    def f_exit(self):
-        '''
-        Hard positive reward for when the agent reaches an exit
-        (influenced by avg battery level along path travelled by agent
-        to reach the exit)
-        '''
-        return 100.0 if tuple(self.agent_pos) in self.goal_positions else 0.0
-
     def in_bounds(self, pos):
         return 0 <= pos[0] < self.grid_height \
     and 0 <= pos[1] < self.grid_width
@@ -280,6 +274,9 @@ class GridWorldEnv(Env):
         }
     
     def render_pygame(self):
+        if not self.render_mode:
+            return
+        
         screen = self.screen
         font = self.font
         cell_size = self.cell_size
@@ -366,7 +363,8 @@ class GridWorldEnv(Env):
             print("   Agent never entered a sensor radar zone.")
 
     def close(self):
-        pygame.quit()
+        if self.render_mode:
+            pygame.quit()
 
     def _in_radar(self, sensor_pos, agent_pos, radius=2):
         dx = abs(sensor_pos[0] - agent_pos[0])

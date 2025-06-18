@@ -31,7 +31,7 @@ def run_sample_agent(episodes, env):
 
 def PPO_train_model(time_steps):
     # Create environment
-    env = GridWorldEnv()
+    env = GridWorldEnv(render_mode=False)
     vec_env = make_vec_env(lambda: GridWorldEnv(), n_envs=1)
 
     # Logging paths
@@ -40,7 +40,7 @@ def PPO_train_model(time_steps):
 
     # Create the PPO model
     model = PPO(
-        "MlpPolicy",
+        "MultiInputPolicy",
         vec_env,
         verbose=1,
         tensorboard_log=log_path
@@ -202,11 +202,12 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
 if __name__ == "__main__":
 
 
-    test_env =  GridWorldEnv()
-    #run_sample_agent(3, test_env)
-    #Training and evaluating PPO model
+    # test_env =  GridWorldEnv(render_mode=True)
+    # run_sample_agent(3, test_env)
+    # Training and evaluating PPO model
 
-    PPO_train_model(500000)
+    train_env =  GridWorldEnv(render_mode=False)
+    PPO_train_model(1_000_000)
     PPO_model = PPO.load("SavedModels/PPO_custom_grid.zip", env=test_env)
     evaluate_Model(PPO_model)
     
