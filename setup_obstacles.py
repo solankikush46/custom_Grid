@@ -69,3 +69,12 @@ def generate_and_save_sensors(rows, cols, obstacle_file="obstacle_coords.txt", s
         for r, c, battery in sensor_data:
             f.write(f"{r},{c},{battery}\n")
 
+def compute_sensor_radar_zone(sensor_coords, grid_size, radius=2):
+    radar_zone = set()
+    for x, y in sensor_coords:
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < grid_size and 0 <= ny < grid_size:
+                    radar_zone.add((nx, ny))
+    return radar_zone

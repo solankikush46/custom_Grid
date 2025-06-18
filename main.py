@@ -17,8 +17,9 @@ def run_sample_agent(episodes, env):
         print(f"\n Episode-{ep+1}: ")
         obs = env.reset()
         terminated = False
+        truncated = False
 
-        while not terminated: 
+        while not (terminated or truncated): 
             action =  env.action_space.sample()
             obs, reward, terminated, truncated, info = env.step(action)
             env.render_pygame()
