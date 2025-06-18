@@ -143,7 +143,32 @@ class GridWorldEnv(Env):
 
         return self.get_observation(), {}
 
+    def f_distance(self):
+        pass
+
+    def f_wall(self):
+        pass
+
+    def f_battery(self):
+        pass
+
+    def f_exit(self):
+        pass
+
     def step(self, action):
+        self.episode_steps += 1
+
+        # Deplete sensor battery levels
+        depletion_rate = 0.01
+        for coord in self.sensor_batteries:
+            self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - depletion_rate)
+
+        # Calculate old distance to nearest goal
+        old_dist = min(np.linalg.norm(self.agent_pos - np.array(goal)) for goal in self.goal_positions)
+            
+        reward = -1  # base penalty per step
+
+        # Movement
         direction_map = {
             0: (-1,  0),  # N
             1: (-1, +1),  # NE
@@ -154,21 +179,10 @@ class GridWorldEnv(Env):
             6: ( 0, -1),  # W
             7: (-1, -1),  # NW
         }
-
         move = direction_map[int(action)]
         new_pos = self.agent_pos + move
 
-        self.episode_steps += 1
-        reward = -1  # base penalty per step
-
-        # Deplete sensor battery levels
-        depletion_rate = 0.01
-        for coord in self.sensor_batteries:
-            self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - depletion_rate)
-
-        # Calculate old distance to nearest goal
-        old_dist = min(np.linalg.norm(self.agent_pos - np.array(goal)) for goal in self.goal_positions)
-
+        # Check for wall collisions
         if 0 <= new_pos[0] < self.grid_size and 0 <= new_pos[1] < self.grid_size:
             char = self.grid[tuple(new_pos)]
             if char == '#':
