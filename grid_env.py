@@ -201,7 +201,6 @@ class GridWorldEnv(Env):
                 sensors[(r, c)] = 100.0
         return sensors
 
-        
     def init_pygame(self):
         if not self.pygame_initialized:
             pygame.init()
@@ -345,7 +344,7 @@ class GridWorldEnv(Env):
         '''
         Reward based on distance from agent to closest exit
         '''
-        exit_distances = self.get_exit_distances(normalize=False)
+        exit_distances = get_exit_distances(normalize=False)
         d_min = min(exit_distances)
         norm = max(self.n_rows - 1, self.n_cols - 1)
         return np.exp(-d_min / norm)
@@ -354,8 +353,8 @@ class GridWorldEnv(Env):
         '''
         Reward that penalizes agent for colliding with walls
         '''
-        n_collisions = self.obstacle_hits
-        n_steps = self.episode_steps
+        n_collisions = 1
+        n_steps = 1
         return np.exp(-n_collisions / n_steps)
 
     def f_battery(self):
@@ -370,14 +369,11 @@ class GridWorldEnv(Env):
         battery_level = self.sensor_batteries.get(nearest_sensor, 0.0)
         return battery_level / 100
 
-    def f_time(self):
-        k = 5
-        return np.exp(-k * self.episode_steps)
-
     def f_exit(self):
         '''
-        Hard positive reward for when the agent reaches an exit,
-        influenced by the average battery level along the path travelled by the agent.
+        Hard positive reward for when the agent reaches an exit
+        (influenced by avg battery level along path travelled by agent
+        to reach the exit)
         '''
         if tuple(self.agent_pos) in self.goal_positions:
             if self.battery_values_in_radar:
@@ -400,12 +396,11 @@ class GridWorldEnv(Env):
         new_pos = self.agent_pos + move
 
         self.episode_steps += 1
+        reward = -1
 
-        # deplete sensor battery levels
         for coord in self.sensor_batteries:
             self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - 0.01)
-
-        # check if in range of sensor
+        
         for sensor_pos, battery in self.sensor_batteries.items():
             if self._in_radar(sensor_pos, self.agent_pos, radius=2):
                 self.battery_values_in_radar.append(battery)
@@ -418,7 +413,7 @@ class GridWorldEnv(Env):
         else:
             self.obstacle_hits += 1
             hit_wall = True
-
+            
         terminated = tuple(self.agent_pos) in self.goal_positions
         truncated = self.episode_steps >= self.max_steps
 
@@ -447,6 +442,7 @@ class GridWorldEnv(Env):
                     float(self.hit_wall(new_pos)),
                     0.3 * self.f_battery(), 0.3 * self.f_exit()))
         '''
+
         self.total_reward += reward
 
         return self.get_observation(), reward, terminated, truncated, {
@@ -454,8 +450,7 @@ class GridWorldEnv(Env):
             "steps": self.episode_steps,
             "agent_pos": self.agent_pos.copy()
         }
-    
-    
+
     def episode_summary(self):
         print(f"   Episode Summary:")
         print(f"   Total Steps     : {self.episode_steps}")
@@ -474,7 +469,7 @@ class GridWorldEnv(Env):
         if self.pygame_initialized:
             pygame.quit()
             self.pygame_initialized = False
-        
+
     def _in_radar(self, sensor_pos, agent_pos, radius=2):
         dx = abs(sensor_pos[0] - agent_pos[0])
         dy = abs(sensor_pos[1] - agent_pos[1])
