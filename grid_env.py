@@ -8,57 +8,15 @@ import os
 import pygame
 import grid_gen
 from constants import *
-
-##==============================================================
-## Helpers
-##==============================================================
-def chebyshev_distance(x0, x1, y0, y1):
-    dx = abs(x0 - x1)
-    dy = abs(y0 - y1)
-    return max(dx, dy)
-
-def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
-        x0, y0 = pos
-        if normalize:
-            norm = max(grid_width - 1, grid_height - 1)
-            return np.array([
-                chebyshev_distance(x0, tx, y0, ty) / norm for tx, ty in targets
-            ], dtype=np.float32)
-        else:
-            return np.array([
-                chebyshev_distance(x0, tx, y0, ty) for tx, ty in targets
-            ], dtype=np.float32)
-
-def load_obstacles_from_file(filename="obstacle_coords.txt"):
-    obstacles = []
-    try:
-        with open(filename, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    r, c = map(int, line.split(","))
-                    obstacles.append((r, c))
-    except FileNotFoundError:
-        print(f"[WARNING] Obstacle file '{filename}' not found.")
-    return obstacles
-
-def load_sensors_with_batteries(filename="sensor_coords.txt"):
-    sensors = {}
-    try:
-        with open(filename, "r") as f:
-            for line in f:
-                r, c, battery = map(float, line.strip().split(","))
-                sensors[(int(r), int(c))] = battery
-    except FileNotFoundError:
-        print(f"[WARNING] Sensor file '{filename}' not found.")
-    return sensors
+from utils import *
+from reward_functions import compute_reward
 
 ##==============================================================
 ## GridWorldEnv Class
 ##==============================================================
 class GridWorldEnv(Env):
-    def __init__(self, grid_height=50, grid_width=50,
-                 n_obstacles=45, n_sensors=5,
+    def __init__(self, grid_height, grid_width,
+                 n_obstacles, n_sensors,
                  obstacle_file=None, sensor_file=None):
         super(GridWorldEnv, self).__init__()
 
@@ -111,16 +69,16 @@ class GridWorldEnv(Env):
         max_dim = max(self.n_cols, self.n_rows)
         self.observation_space = Dict({
             "agent_pos": Box(low=0, high=max_dim - 1, shape=(2,), dtype=np.int32),
-            "sensor_pos": Box(low=0, high=max_dim - 1, shape=(5, 2), dtype=np.int32),
-            "battery_levels": Box(low=0.0, high=100.0, shape=(5,), dtype=np.float32),
+            "sensor_pos": Box(low=0, high=max_dim - 1, shape=(self.n_sensors, 2), dtype=np.int32),
+            "battery_levels": Box(low=0.0, high=100.0, shape=(self.n_sensors,), dtype=np.float32),
             "exit_distances": Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32),
         })
 
     def _init_goals(self):
         self.goal_positions = [
             (self.n_rows - 1, self.n_cols - 1),
-            (0, self.n_cols - 1),
-            (self.n_rows - 1, 0)
+            #(0, self.n_cols - 1),
+            #(self.n_rows - 1, 0)
         ]
         for r, c in self.goal_positions:
             if self.in_bounds((r, c)) and self.is_empty((r, c)):
@@ -132,7 +90,7 @@ class GridWorldEnv(Env):
                                              self.n_rows,
                                              self.n_cols,
                                              radius=2)
-
+    
     def _init_obstacles(self):
         # get obstacle positions (either random or specified)
         if self.obstacle_file:
@@ -296,7 +254,15 @@ class GridWorldEnv(Env):
         sensor_positions = np.array([list(pos) for pos, _ in sorted_sensors], dtype=np.int32)
         battery_levels = np.array([level for _, level in sorted_sensors], dtype=np.float32)
 
-        while len(sensor_positions) < 5:
+        # for case where zero sensors
+        if sorted_sensors:
+            sensor_positions = np.array([list(pos) for pos, _ in sorted_sensors], dtype=np.int32)
+            battery_levels = np.array([level for _, level in sorted_sensors], dtype=np.float32)
+        else:
+            sensor_positions = np.empty((0, 2), dtype=np.int32)
+            battery_levels = np.empty((0,), dtype=np.float32)
+        
+        while len(sensor_positions) < self.n_sensors:
             sensor_positions = np.vstack((sensor_positions, [[-1, -1]]))
             battery_levels = np.append(battery_levels, -1.0)
 
@@ -304,8 +270,8 @@ class GridWorldEnv(Env):
 
         return {
             "agent_pos": agent_pos,
-            "sensor_pos": sensor_positions[:5],
-            "battery_levels": battery_levels[:5],
+            "sensor_pos": sensor_positions[:self.n_sensors],
+            "battery_levels": battery_levels[:self.n_sensors],
             "exit_distances": exit_distances
         }
 
@@ -340,110 +306,56 @@ class GridWorldEnv(Env):
             self.static_grid[pos[0], pos[1]] != OBSTACLE and \
                 self.static_grid[pos[0], pos[1]] != SENSOR
 
-    def f_distance(self):
-        '''
-        Reward based on distance from agent to closest exit
-        '''
-        exit_distances = get_exit_distances(normalize=False)
-        d_min = min(exit_distances)
-        norm = max(self.n_rows - 1, self.n_cols - 1)
-        return np.exp(-d_min / norm)
-
-    def f_wall(self):
-        '''
-        Reward that penalizes agent for colliding with walls
-        '''
-        n_collisions = 1
-        n_steps = 1
-        return np.exp(-n_collisions / n_steps)
-
-    def f_battery(self):
-        '''
-        Reward that is based off the battery level of the nearest sensor
-        (motivates agent to go along high-battery level paths)
-        '''
-        sensor_coords = list(self.sensor_batteries.keys())
-        distances = chebyshev_distances(self.agent_pos, sensor_coords, self.n_cols, self.n_rows, normalize=False)
-        nearest_index = int(np.argmin(distances))
-        nearest_sensor = sensor_coords[nearest_index]
-        battery_level = self.sensor_batteries.get(nearest_sensor, 0.0)
-        return battery_level / 100
-
-    def f_exit(self):
-        '''
-        Hard positive reward for when the agent reaches an exit
-        (influenced by avg battery level along path travelled by agent
-        to reach the exit)
-        '''
-        if tuple(self.agent_pos) in self.goal_positions:
-            if self.battery_values_in_radar:
-                average_battery = sum(self.battery_values_in_radar) / len(self.battery_values_in_radar)
-                return average_battery
-            else:
-                return 0.0
-        else:
-            return 0.0
-
     def in_bounds(self, pos):
         return 0 <= pos[0] < self.n_rows \
     and 0 <= pos[1] < self.n_cols
 
     def hit_wall(self, pos):
-        return self.grid[tuple(pos)] == OBSTACLE
+        return self.grid[tuple(pos)] == OBSTACLE or \
+            self.grid[tuple(pos)] == SENSOR
 
+    def agent_reached_exit(self):
+        return tuple(self.agent_pos) in self.goal_positions
+    
     def step(self, action):
         move = DIRECTION_MAP[int(action)]
         new_pos = self.agent_pos + move
-
         self.episode_steps += 1
-        reward = -1
 
+        # check for collision
+        hit_wall = not self.can_move_to(new_pos)
+        
+        # move agent
+        if not hit_wall:
+            self.agent_pos = new_pos
+        else:
+            self.obstacle_hits += 1
+
+        # deplete sensor battery values over time
         for coord in self.sensor_batteries:
             self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - 0.01)
-        
+
+        # add battery values encountered in path to list
         for sensor_pos, battery in self.sensor_batteries.items():
             if self._in_radar(sensor_pos, self.agent_pos, radius=2):
                 self.battery_values_in_radar.append(battery)
 
-        # check for collisions with walls
-        if self.can_move_to(new_pos):
-            self.agent_pos = new_pos
-            self.visited.add(tuple(self.agent_pos))
-            hit_wall = False
-        else:
-            self.obstacle_hits += 1
-            hit_wall = True
-            
+        # compute reward, then mark current agent_pos
+        # as visited
+        reward = compute_reward(self)
+        self.total_reward += reward
+
+        self.visited.add(tuple(self.agent_pos))       
+
         terminated = tuple(self.agent_pos) in self.goal_positions
         truncated = self.episode_steps >= self.max_steps
-
-        '''
-        reward = (
-            0.3 * self.f_distance()
-            - 1.0 * float(hit_wall)
-            + 0.3 * self.f_battery()
-            + 0.3 * self.f_exit()
-            - 0.01 * self.f_time()
-        )
-        '''
-      
-        # decay = np.exp(-5 * self.episode_steps / self.max_steps)
-        reward = (
-            0.2 * self.f_distance()
-            #- float(self.hit_wall(new_pos))
-            + 0.2 * self.f_wall()
-            + 0.3 * self.f_battery()
-            + 0.3 * self.f_exit()
-            #- 0.01 * self.f_time()
-        )
+        
         s = "action: %s, f_dist: %s, f_wall: %s, f_battery: %s , f_exit: %s"
         '''
         print (s % (action, 0.2 * self.f_distance(),
                     float(self.hit_wall(new_pos)),
                     0.3 * self.f_battery(), 0.3 * self.f_exit()))
         '''
-
-        self.total_reward += reward
 
         return self.get_observation(), reward, terminated, truncated, {
             "collisions": self.obstacle_hits,

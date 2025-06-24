@@ -2,7 +2,6 @@
 
 from grid_env import GridWorldEnv
 from episode_callback import EpisodeStatsCallback
-import time
 import os
 import numpy as np
 import gymnasium as gym
@@ -14,10 +13,12 @@ from Qlearning import QLearningAgent
 from torch.utils.tensorboard import SummaryWriter
 import time
 
+N_SENSORS = 4  # Match this to GridWorldEnv n_sensors
+
 def run_sample_agent(episodes, env):
     for ep in range(episodes):
         print(f"\n Episode-{ep+1}: ")
-        obs = env.reset()
+        obs, _ = env.reset()
         terminated = False
         truncated = False
 
@@ -33,8 +34,11 @@ def run_sample_agent(episodes, env):
 
 def PPO_train_model(time_steps):
     # Create environment
-    env = GridWorldEnv(render_mode=False)
-    vec_env = make_vec_env(lambda: GridWorldEnv(), n_envs=1)
+    def make_env():
+        return GridWorldEnv(grid_height=20, grid_width=20, n_obstacles=40, n_sensors=N_SENSORS)
+
+    env = make_env()
+    vec_env = make_vec_env(make_env, n_envs=1)
 
     # Logging paths
     log_path = os.path.join('logs', 'PPO_custom_grid')
@@ -60,8 +64,11 @@ def PPO_train_model(time_steps):
     return model
 
 def DQN_train_model(time_steps):
-    env = GridWorldEnv()
-    vec_env = make_vec_env(lambda: GridWorldEnv(), n_envs=1)
+    def make_env():
+        return GridWorldEnv(grid_height=20, grid_width=20, n_obstacles=40, n_sensors=N_SENSORS)
+
+    env = make_env()
+    vec_env = make_vec_env(make_env, n_envs=1)
 
     log_path = os.path.join('logs', 'DQN_custom_grid')
     model_save_path = os.path.join("SavedModels", "DQN_custom_grid")
@@ -81,7 +88,7 @@ def DQN_train_model(time_steps):
     return model
 
 def train_Q_agent(agent, writer, log_path, total_timesteps=500_000, max_steps=200):
-    env = GridWorldEnv()
+    env = GridWorldEnv(grid_height=20, grid_width=20, n_obstacles=40, n_sensors=N_SENSORS)
     timestep_count = 0
     episode_count = 0
 
@@ -101,7 +108,7 @@ def train_Q_agent(agent, writer, log_path, total_timesteps=500_000, max_steps=20
 
         while steps < max_steps and not done:
             if timestep_count >= total_timesteps:
-                break  # stop collecting timesteps beyond the target
+                break
 
             action = agent.choose_action(state_idx)
             next_state, reward, terminated, truncated, info = env.step(action)
@@ -118,19 +125,16 @@ def train_Q_agent(agent, writer, log_path, total_timesteps=500_000, max_steps=20
         agent.decay_epsilon(episode_count)
         episode_count += 1
 
-        # Final distance to nearest goal
         goals = [(19, 19), (0, 19), (19, 0)]
         agent_pos = np.array(info.get("agent_pos", [0, 0]))
         final_distance = min(np.linalg.norm(agent_pos - np.array(goal)) for goal in goals)
         collisions = info.get("collisions", -1)
 
-        # TensorBoard logging — use timestep_count as the x-axis
         writer.add_scalar("custom/episode_reward", total_reward, timestep_count)
         writer.add_scalar("custom/steps", steps, timestep_count)
         writer.add_scalar("custom/final_distance", final_distance, timestep_count)
         writer.add_scalar("custom/collisions", collisions, timestep_count)
 
-        # Local logging (optional)
         rewards_log.append(total_reward)
         steps_log.append(steps)
         collisions_log.append(collisions)
@@ -139,24 +143,15 @@ def train_Q_agent(agent, writer, log_path, total_timesteps=500_000, max_steps=20
         if episode_count % 100 == 0:
             print(f"[Q] Ep {episode_count} | Total Reward: {total_reward:.2f} | Steps: {steps} | ε={agent.epsilon:.3f} | T={timestep_count}")
 
-    # Save Q-table and stats
     agent.save_q_table(os.path.join(log_path, "q_table.npy"))
-    """
-    np.save(os.path.join(log_path, "q_rewards.npy"), rewards_log)
-    np.save(os.path.join(log_path, "q_steps.npy"), steps_log)
-    np.save(os.path.join(log_path, "q_collisions.npy"), collisions_log)
-    np.save(os.path.join(log_path, "q_distances.npy"), final_distance_log)
-    """
 
 
-
-
-def evaluate_Model(model, n_eval_episodes=5, sleep_time=0.1):
+def evaluate_model(model, n_eval_episodes=5, sleep_time=0.1):
     total_rewards = []
-    final_env = None  # To store the last environment's state
+    final_env = None
 
     for ep in range(n_eval_episodes):
-        env = GridWorldEnv(render_mode=True)
+        env = GridWorldEnv(grid_height=20, grid_width=20, n_obstacles=40, n_sensors=N_SENSORS)
         obs, _ = env.reset()
         terminated = False
         truncated = False
@@ -173,7 +168,7 @@ def evaluate_Model(model, n_eval_episodes=5, sleep_time=0.1):
         total_rewards.append(episode_reward)
 
         if ep == n_eval_episodes - 1:
-            final_env = env  # Save the last episode for stats
+            final_env = env
 
         env.close()
 
