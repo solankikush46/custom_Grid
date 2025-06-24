@@ -47,12 +47,11 @@ def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
 ## GridWorldEnv Class
 ##==============================================================
 class GridWorldEnv(Env):
-    def __init__(self, render_mode=False):
+    def __init__(self):
         super(GridWorldEnv, self).__init__()
-        self.render_mode = render_mode
         self.grid_width = 50
         self.grid_height = 50
-        self.max_steps = 10_000
+        self.max_steps = 500
         self.num_obstacles = 45
 
         self.action_space = Discrete(8)
@@ -87,13 +86,12 @@ class GridWorldEnv(Env):
         )
 
         # Pygame visual setup
-        if self.render_mode:
-            pygame.init()
-            self.fixed_window_size = 750
-            self.cell_size = self.fixed_window_size // max(self.grid_width, self.grid_height)
-            self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
-            pygame.display.set_caption("GridWorld Visualization")
-            self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
+        pygame.init()
+        self.fixed_window_size = 750
+        self.cell_size = self.fixed_window_size // max(self.grid_width, self.grid_height)
+        self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
+        pygame.display.set_caption("GridWorld Visualization")
+        self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
 
         self.reset()
 
@@ -173,7 +171,7 @@ class GridWorldEnv(Env):
         '''
         Reward based on distance from agent to closest exit
         '''
-        exit_distances = self.get_exit_distances(normalize=False)
+        exit_distances = get_exit_distances(normalize=False)
         d_min = min(exit_distances)
         norm = max(self.grid_height - 1, self.grid_width - 1)
         return np.exp(-d_min / norm)
@@ -182,8 +180,8 @@ class GridWorldEnv(Env):
         '''
         Reward that penalizes agent for colliding with walls
         '''
-        n_collisions = self.obstacle_hits
-        n_steps = self.episode_steps
+        n_collisions = 1
+        n_steps = 1
         return np.exp(-n_collisions / n_steps)
 
     def f_battery(self):
@@ -198,30 +196,13 @@ class GridWorldEnv(Env):
         battery_level = self.sensor_batteries.get(nearest_sensor, 0.0)
         return battery_level / 100
 
-    def f_time(self):
-        k = 5
-        return np.exp(-k * self.episode_steps)
-
     def f_exit(self):
         '''
-        Hard positive reward for when the agent reaches an exit,
-        influenced by the average battery level along the path travelled by the agent.
+        Hard positive reward for when the agent reaches an exit
+        (influenced by avg battery level along path travelled by agent
+        to reach the exit)
         '''
-        if tuple(self.agent_pos) in self.goal_positions:
-            if self.battery_values_in_radar:
-                average_battery = sum(self.battery_values_in_radar) / len(self.battery_values_in_radar)
-                return 100.0 * (average_battery / 100.0)
-            else:
-                return 0.0
-        else:
-            return 0.0
-
-    def in_bounds(self, pos):
-        return 0 <= pos[0] < self.grid_height \
-    and 0 <= pos[1] < self.grid_width
-
-    def hit_wall(self, pos):
-        return self.grid[tuple(pos)] == '#'
+        pass
 
     def step(self, action):
         direction_map = {
@@ -233,38 +214,38 @@ class GridWorldEnv(Env):
         new_pos = self.agent_pos + move
 
         self.episode_steps += 1
+        reward = -1
 
-        # deplete sensor battery levels
         for coord in self.sensor_batteries:
             self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - 0.01)
-
-        # check if in range of sensor
+        
         for sensor_pos, battery in self.sensor_batteries.items():
             if self._in_radar(sensor_pos, self.agent_pos, radius=2):
                 self.battery_values_in_radar.append(battery)
 
-        # check for collisions with walls
-        if self.in_bounds(new_pos) and not self.hit_wall(new_pos):
-            self.agent_pos = new_pos
-            self.visited.add(tuple(self.agent_pos))
+
+        old_dist = min(np.linalg.norm(self.agent_pos - np.array(goal)) for goal in self.goal_positions)
+
+        if 0 <= new_pos[0] < self.grid_height and 0 <= new_pos[1] < self.grid_height:
+            char = self.grid[tuple(new_pos)]
+            if char == '#':
+                reward = -5
+                self.obstacle_hits += 1
+            else:
+                self.agent_pos = new_pos
+                self.visited.add(tuple(self.agent_pos))
         else:
-            self.obstacle_hits += 1
+            reward = -10
+
+        new_dist = min(np.linalg.norm(self.agent_pos - np.array(goal)) for goal in self.goal_positions)
+        reward += (old_dist - new_dist) * 2.0
 
         terminated = tuple(self.agent_pos) in self.goal_positions
         truncated = self.episode_steps >= self.max_steps
 
-        # decay = np.exp(-5 * self.episode_steps / self.max_steps)
-        c_dist = 0.4
-        c_wall = 0.3
-        c_battery = 0.3
-        reward = (
-            c_dist * self.f_distance() +
-            c_wall * self.f_wall() +
-            c_battery * self.f_battery() +
-            self.f_exit() -
-            1
-        )
-        
+        if terminated:
+            reward = 100
+
         self.total_reward += reward
 
         return self.get_observation(), reward, terminated, truncated, {
@@ -272,11 +253,8 @@ class GridWorldEnv(Env):
             "steps": self.episode_steps,
             "agent_pos": self.agent_pos.copy()
         }
-    
+
     def render_pygame(self):
-        if not self.render_mode:
-            return
-        
         screen = self.screen
         font = self.font
         cell_size = self.cell_size
@@ -346,7 +324,7 @@ class GridWorldEnv(Env):
             if event.type == pygame.QUIT:
                 self.close()
 
-        pygame.time.wait(0)
+        pygame.time.wait(100)
 
     def episode_summary(self):
         print(f"   Episode Summary:")
@@ -363,8 +341,7 @@ class GridWorldEnv(Env):
             print("   Agent never entered a sensor radar zone.")
 
     def close(self):
-        if self.render_mode:
-            pygame.quit()
+        pygame.quit()
 
     def _in_radar(self, sensor_pos, agent_pos, radius=2):
         dx = abs(sensor_pos[0] - agent_pos[0])

@@ -65,7 +65,7 @@ def DQN_train_model(time_steps):
     model_save_path = os.path.join("SavedModels", "DQN_custom_grid")
 
     model = DQN(
-        "MultiInputPolicy",
+        "MlpPolicy",
         vec_env,
         verbose=1,
         tensorboard_log=log_path
@@ -154,7 +154,7 @@ def evaluate_Model(model, n_eval_episodes=5, sleep_time=0.1):
     final_env = None  # To store the last environment's state
 
     for ep in range(n_eval_episodes):
-        env = GridWorldEnv()
+        env = GridWorldEnv(render_mode = True)
         obs, _ = env.reset()
         terminated = False
         truncated = False
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
 
     test_env =  GridWorldEnv()
-    run_sample_agent(3, test_env)
+    #run_sample_agent(3, test_env)
     """
     #Training and evaluating PPO model
 
@@ -211,10 +211,10 @@ if __name__ == "__main__":
     PPO_model = PPO.load("SavedModels/PPO_custom_grid.zip", env=test_env)
     evaluate_Model(PPO_model)
     """
-    '''
+
     #Training and evaluating DQN model
 
-    #DQN_train_model(500000)
+    #DQN_train_model(100000)
     DQN_model = DQN.load("SavedModels/DQN_custom_grid.zip", env=test_env)
     evaluate_Model(DQN_model)
 
