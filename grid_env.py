@@ -67,12 +67,16 @@ class GridWorldEnv(Env):
     def _init_spaces(self):
         self.action_space = Discrete(8)
         max_dim = max(self.n_cols, self.n_rows)
+        '''
         self.observation_space = Dict({
             "agent_pos": Box(low=0, high=max_dim - 1, shape=(2,), dtype=np.int32),
             "sensor_pos": Box(low=0, high=max_dim - 1, shape=(self.n_sensors, 2), dtype=np.int32),
             "battery_levels": Box(low=0.0, high=100.0, shape=(self.n_sensors,), dtype=np.float32),
             "exit_distances": Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32),
         })
+        '''
+        self.observation_space = Box(low=0, high=max_dim - 1,
+                                     shape=(2,), dtype=np.int32)
 
     def _init_goals(self):
         self.goal_positions = [
@@ -185,7 +189,7 @@ class GridWorldEnv(Env):
         for pos in self.visited:
             row, col = pos
             if (row, col) != tuple(self.agent_pos) and (row, col) not in self.goal_positions:
-                if self.static_grid[row, col] != SENSOR:
+                if self.can_move_to((row, col)):
                     if (row, col) in self.sensor_radar_zone:
                         grid_copy[row, col] = TRAIL_INSIDE  # trail in radar zone (pink)
                     else:
@@ -248,6 +252,8 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
     
     def get_observation(self):
+        return np.array(self.agent_pos, dtype=np.int32)
+
         agent_pos = self.agent_pos.copy()
 
         sorted_sensors = sorted(self.sensor_batteries.items())
@@ -321,11 +327,15 @@ class GridWorldEnv(Env):
         move = DIRECTION_MAP[int(action)]
         new_pos = self.agent_pos + move
         self.episode_steps += 1
-
-        # check for collision
-        hit_wall = not self.can_move_to(new_pos)
         
+        # compute reward, then mark new_pos as visited
+        reward = compute_reward(self, new_pos)
+        self.total_reward += reward
+
+        self.visited.add(tuple(new_pos))       
+
         # move agent
+        hit_wall = not self.can_move_to(new_pos)
         if not hit_wall:
             self.agent_pos = new_pos
         else:
@@ -340,29 +350,23 @@ class GridWorldEnv(Env):
             if self._in_radar(sensor_pos, self.agent_pos, radius=2):
                 self.battery_values_in_radar.append(battery)
 
-        # compute reward, then mark current agent_pos
-        # as visited
-        reward = compute_reward(self)
-        self.total_reward += reward
-
-        self.visited.add(tuple(self.agent_pos))       
-
-        terminated = tuple(self.agent_pos) in self.goal_positions
-        truncated = self.episode_steps >= self.max_steps
-        
-        s = "action: %s, f_dist: %s, f_wall: %s, f_battery: %s , f_exit: %s"
         '''
+        s = "action: %s, f_dist: %s, f_wall: %s, f_battery: %s , f_exit: %s"
         print (s % (action, 0.2 * self.f_distance(),
                     float(self.hit_wall(new_pos)),
                     0.3 * self.f_battery(), 0.3 * self.f_exit()))
         '''
 
-        return self.get_observation(), reward, terminated, truncated, {
+        terminated = self.agent_reached_exit()
+        truncated = self.episode_steps >= self.max_steps
+
+        ret = self.get_observation(), reward, terminated, truncated, {
             "collisions": self.obstacle_hits,
             "steps": self.episode_steps,
             "agent_pos": self.agent_pos.copy()
         }
-
+        return ret
+    
     def episode_summary(self):
         print(f"   Episode Summary:")
         print(f"   Total Steps     : {self.episode_steps}")
@@ -437,5 +441,7 @@ class GridWorldEnv(Env):
                         done = terminated or truncated
                         last_move_time = current_time
                         break # only process one direction at a time
+
+        self.close()  
 
                 

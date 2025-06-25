@@ -8,7 +8,7 @@ from utils import chebyshev_distances
 ##==============================================================
 # simple reward
 #-----------------------
-def get_simple_reward(env):
+def get_simple_reward(env, new_pos):
     reward = 0.0
 
     if env.agent_reached_exit():
@@ -18,12 +18,12 @@ def get_simple_reward(env):
         reward += -0.04
 
         # penalized for making invalid move
-        if not env.can_move_to(env.agent_pos):
+        if not env.can_move_to(new_pos):
             reward += -0.75
 
         # penalized for revisiting a cell
-        if tuple(env.agent_pos) in env.visited:
-            reward += -0.25
+        if new_pos in env.visited:
+            reward += -0.21
 
     return reward
 
@@ -79,5 +79,6 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
     else:
         return 0.0
 
-def compute_reward(env):
-    return get_simple_reward(env)
+def compute_reward(env, new_pos):
+    new_pos = tuple(new_pos)
+    return get_simple_reward(env, new_pos)
