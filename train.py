@@ -202,7 +202,8 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
 def train_PPO_model(env: gym.Env, timesteps: int):
     # create environment
     # why creating two GridWorldEnv???
-    vec_env = make_vec_env(lambda: GridWorldEnv(20, 20, 0, 0), n_envs=1)
+    #vec_env = make_vec_env(lambda: GridWorldEnv(20, 20, 0, 0), n_envs=1)
+    vec_env = DummyVecEnv([lambda: env])
 
     # logging paths
     log_path = os.path.join('logs', 'PPO_custom_grid')
@@ -210,11 +211,16 @@ def train_PPO_model(env: gym.Env, timesteps: int):
 
     # create PPO model
     model = PPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=1,
-        tensorboard_log=log_path
-        )
+    "MlpPolicy",
+    env,
+    ent_coef=0.5,
+    gae_lambda=0.90,
+    learning_rate=3e-4,
+    n_steps=2048,
+    batch_size=64,
+    n_epochs=10,
+    verbose=1
+    )
 
     callback = EpisodeStatsCallback()
 
@@ -227,44 +233,7 @@ def train_PPO_model(env: gym.Env, timesteps: int):
 
     return model
 
-def evaluate_model(env: gym.Env, model, n_eval_episodes=5, sleep_time=0.1):
-    total_rewards = []
-
-    for ep in range(n_eval_episodes):
-        obs = env.reset()
-        if isinstance(obs, tuple):  # stable baselines3 sometimes returns tuple
-            obs = obs[0]
-
-        terminated, truncated = False, False
-        episode_reward = 0
-        print(f"\n--- Episode {ep + 1} ---")
-
-        while not (terminated or truncated):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, _ = env.step(action)
-            env.render_pygame()
-            time.sleep(sleep_time)
-            episode_reward += reward
-
-        total_rewards.append(episode_reward)
-
-    mean_reward = sum(total_rewards) / len(total_rewards)
-    print(f"\n Evaluation complete over {n_eval_episodes} episodes")
-    print(f" Mean Reward: {mean_reward:.2f}")
-    print("\n Final Episode Summary:")
-    env.episode_summary()
-
-def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0.1, render: bool = True):
-    """
-    Load a PPO model and evaluate it on the provided environment.
-
-    Args:
-        model_key (str): Key name of the model in config.MODELS
-        env (gym.Env): The environment instance for evaluation.
-        n_eval_episodes (int): Number of episodes to run.
-        sleep_time (float): Delay between steps for rendering.
-        render (bool): Whether to render the environment using pygame.
-    """
+def load_model(model_key: str, env):
     model_path = MODELS.get(model_key)
     if not model_path:
         raise ValueError(f"Unknown model key: {model_key}")
@@ -274,8 +243,11 @@ def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0
 
     vec_env = DummyVecEnv([lambda: env])
     model = PPO.load(model_path, env=vec_env)
+    return model
 
+def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool = True):
     total_rewards = []
+    success_count = 0
 
     for ep in range(n_eval_episodes):
         obs = env.reset()
@@ -296,9 +268,26 @@ def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0
             episode_reward += reward
 
         total_rewards.append(episode_reward)
-
+        if terminated: # if agent reached exit
+            success_count += 1
+            
     mean_reward = sum(total_rewards) / len(total_rewards)
     print(f"\n Evaluation complete over {n_eval_episodes} episodes")
     print(f" Mean Reward: {mean_reward:.2f}")
+    print(f" Successful Episodes (Reached Goal): {success_count} / {n_eval_episodes}")
     print("\n Final Episode Summary:")
     env.episode_summary()
+
+def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0.1, render: bool = True):
+    """
+    Load a model and evaluate it on the provided environment.
+
+    Args:
+        model_key (str): Key name of the model in config.MODELS
+        env (gym.Env): The environment instance for evaluation.
+        n_eval_episodes (int): Number of episodes to run.
+        sleep_time (float): Delay between steps for rendering.
+        render (bool): Whether to render the environment using pygame.
+    """
+    model = load_model(model_key, env)
+    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render)
