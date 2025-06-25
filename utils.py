@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+import math
 
 ##==============================================================
 ## Helpers
@@ -22,6 +23,23 @@ def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
             return np.array([
                 chebyshev_distance(x0, tx, y0, ty) for tx, ty in targets
             ], dtype=np.float32)
+
+def euclidean_distance(x0, x1, y0, y1):
+    dx = x0 - x1
+    dy = y0 - y1
+    return math.sqrt(dx * dx + dy * dy)
+
+def euclidean_distances(pos, targets, grid_width, grid_height, normalize=True):
+    x0, y0 = pos
+    if normalize:
+        norm = euclidean_distance(0, grid_width - 1, 0, grid_height - 1)
+        return np.array([
+            euclidean_distance(x0, tx, y0, ty) / norm for tx, ty in targets
+        ], dtype=np.float32)
+    else:
+        return np.array([
+            euclidean_distance(x0, tx, y0, ty) for tx, ty in targets
+        ], dtype=np.float32)
 
 def load_obstacles_from_file(filename="obstacle_coords.txt"):
     obstacles = []

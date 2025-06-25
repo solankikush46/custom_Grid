@@ -81,8 +81,8 @@ class GridWorldEnv(Env):
     def _init_goals(self):
         self.goal_positions = [
             (self.n_rows - 1, self.n_cols - 1),
-            #(0, self.n_cols - 1),
-            #(self.n_rows - 1, 0)
+            (0, self.n_cols - 1),
+            (self.n_rows - 1, 0)
         ]
         for r, c in self.goal_positions:
             if self.in_bounds((r, c)) and self.is_empty((r, c)):
