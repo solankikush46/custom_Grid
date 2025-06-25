@@ -9,6 +9,7 @@ git g:
 	git push
 
 reset_venv rv:
+	@echo "Resetting venv..."
 	rm -rf venv
 	python3 -m venv venv
 	source venv/bin/activate
@@ -16,4 +17,16 @@ reset_venv rv:
 	pip install --upgrade pip
 	mkdir -p $$HOME/.cache/pip-tmp
 	TMPDIR=$$HOME/.cache/pip-tmp pip install -r requirements.txt
+	@echo "Finished resetting logs"
 
+clean_logs cl:
+	@echo "Cleaning contents of logs/..."
+	rm -rf logs/*
+	rm -rf logs/.*
+	@echo "Finished cleaning logs"
+
+tensorboard tb:
+	source venv/bin/activate && \
+	tensorboard --logdir . & \
+	sleep 2 && \
+	xdg-open http://localhost:6006/

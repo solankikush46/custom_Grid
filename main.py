@@ -48,10 +48,17 @@ def test_simple_reward_20_20():
 
     env.episode_summary()
     env.close()
+
+def test_simple_PPO():
+    env = GridWorldEnv(20, 20, 0, 0)
+    #model = train_PPO_model(env, timesteps=700_000)
+    #evaluate_model(env, model)
+    load_model_and_evaluate("ppo", env, 20, render=True)
     
 if __name__ == "__main__":
     #test_simple_grid()
-    test_manual_control()
+    #test_manual_control()
     #test_simple_reward_20_20()
-    model = train_PPO_model(timesteps=100_000)
-    evaluate_model(model)
+    test_simple_PPO()
+    #model = train_PPO_model(timesteps=100_000)
+    #evaluate_model(model)
