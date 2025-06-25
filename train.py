@@ -12,6 +12,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from Qlearning import QLearningAgent
 from torch.utils.tensorboard import SummaryWriter
 import time
+from constants import *
 
 N_SENSORS = 4 
 
@@ -198,8 +199,9 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
 ##==============================================================
 ## Cole's Experiments
 ##==============================================================
-def train_PPO_model(timesteps: int):
+def train_PPO_model(env: gym.Env, timesteps: int):
     # create environment
+    # why creating two GridWorldEnv???
     vec_env = make_vec_env(lambda: GridWorldEnv(20, 20, 0, 0), n_envs=1)
 
     # logging paths
@@ -225,18 +227,18 @@ def train_PPO_model(timesteps: int):
 
     return model
 
-def evaluate_model(model, n_eval_episodes=5, sleep_time=0.1):
+def evaluate_model(env: gym.Env, model, n_eval_episodes=5, sleep_time=0.1):
     total_rewards = []
-    final_env = None  # To store the last environment's state
 
-    env = GridWorldEnv(20, 20, 0, 0)
     for ep in range(n_eval_episodes):
-        obs, _ = env.reset()
-        terminated = False
-        truncated = False
-        episode_reward = 0
+        obs = env.reset()
+        if isinstance(obs, tuple):  # stable baselines3 sometimes returns tuple
+            obs = obs[0]
 
+        terminated, truncated = False, False
+        episode_reward = 0
         print(f"\n--- Episode {ep + 1} ---")
+
         while not (terminated or truncated):
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, _ = env.step(action)
@@ -246,13 +248,57 @@ def evaluate_model(model, n_eval_episodes=5, sleep_time=0.1):
 
         total_rewards.append(episode_reward)
 
-        if ep == n_eval_episodes - 1:
-            final_env = env  # Save the last episode for stats
+    mean_reward = sum(total_rewards) / len(total_rewards)
+    print(f"\n Evaluation complete over {n_eval_episodes} episodes")
+    print(f" Mean Reward: {mean_reward:.2f}")
+    print("\n Final Episode Summary:")
+    env.episode_summary()
 
-        env.close()
+def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0.1, render: bool = True):
+    """
+    Load a PPO model and evaluate it on the provided environment.
+
+    Args:
+        model_key (str): Key name of the model in config.MODELS
+        env (gym.Env): The environment instance for evaluation.
+        n_eval_episodes (int): Number of episodes to run.
+        sleep_time (float): Delay between steps for rendering.
+        render (bool): Whether to render the environment using pygame.
+    """
+    model_path = MODELS.get(model_key)
+    if not model_path:
+        raise ValueError(f"Unknown model key: {model_key}")
+
+    if not os.path.exists(model_path + ".zip"):
+        raise FileNotFoundError(f"Model file not found at: {model_path}.zip")
+
+    vec_env = DummyVecEnv([lambda: env])
+    model = PPO.load(model_path, env=vec_env)
+
+    total_rewards = []
+
+    for ep in range(n_eval_episodes):
+        obs = env.reset()
+        if isinstance(obs, tuple):
+            obs = obs[0]
+
+        terminated = False
+        truncated = False
+        episode_reward = 0
+
+        print(f"\n--- Episode {ep + 1} ---")
+        while not (terminated or truncated):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, _ = env.step(action)
+            if render:
+                env.render_pygame()
+                time.sleep(sleep_time)
+            episode_reward += reward
+
+        total_rewards.append(episode_reward)
 
     mean_reward = sum(total_rewards) / len(total_rewards)
     print(f"\n Evaluation complete over {n_eval_episodes} episodes")
     print(f" Mean Reward: {mean_reward:.2f}")
     print("\n Final Episode Summary:")
-    final_env.episode_summary()
+    env.episode_summary()

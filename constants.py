@@ -1,4 +1,5 @@
 # constants.py
+import os
 
 # grid symbols
 EMPTY = '.'
@@ -28,5 +29,21 @@ RENDER_COLORS = {
 DIRECTION_MAP = {
     0: (-1,  0), 1: (-1, +1), 2: (0, +1), 3: (+1, +1),
     4: (+1,  0), 5: (+1, -1), 6: (0, -1), 7: (-1, -1),
+}
+
+# model saving and logging
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_DIR = os.path.join(BASE_DIR, "SavedModels")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+
+MODELS = {
+    "ppo": os.path.join(MODEL_DIR, "PPO_custom_grid"),
+    "dqn": os.path.join(MODEL_DIR, "DQN_custom_grid")
+}
+
+LOGS = {
+    "ppo": os.path.join(LOG_DIR, "PPO_custom_grid"),
+    "dqn": os.path.join(LOG_DIR, "DQN_custom_grid"),
 }
 
