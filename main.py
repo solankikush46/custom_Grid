@@ -1,6 +1,7 @@
 # main.py
 
 import time
+import os
 from grid_env import GridWorldEnv
 from train import *
 
@@ -47,9 +48,10 @@ def test_simple_reward_20_20():
 
     env.episode_summary()
     env.close()
-
+    
 if __name__ == "__main__":
     #test_simple_grid()
-    #test_manual_control()
+    test_manual_control()
     #test_simple_reward_20_20()
-    test_ppo_model()
+    model = train_PPO_model(timesteps=100_000)
+    evaluate_model(model)

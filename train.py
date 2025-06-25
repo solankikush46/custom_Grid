@@ -13,7 +13,7 @@ from Qlearning import QLearningAgent
 from torch.utils.tensorboard import SummaryWriter
 import time
 
-N_SENSORS = 4  # Match this to GridWorldEnv n_sensors
+N_SENSORS = 4 
 
 def run_sample_agent(episodes, env):
     for ep in range(episodes):
@@ -145,7 +145,7 @@ def train_Q_agent(agent, writer, log_path, total_timesteps=500_000, max_steps=20
 
     agent.save_q_table(os.path.join(log_path, "q_table.npy"))
 
-
+'''
 def evaluate_model(model, n_eval_episodes=5, sleep_time=0.1):
     total_rewards = []
     final_env = None
@@ -177,6 +177,7 @@ def evaluate_model(model, n_eval_episodes=5, sleep_time=0.1):
     print(f" Mean Reward: {mean_reward:.2f}")
     print("\n Final Episode Summary:")
     final_env.episode_summary()
+'''
 
 def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
     print("\nEvaluating trained agent...\n")
@@ -193,3 +194,65 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
             state_idx = agent.state_to_index(next_state)
             done = terminated or truncated
         env.episode_summary()
+
+##==============================================================
+## Cole's Experiments
+##==============================================================
+def train_PPO_model(timesteps: int):
+    # create environment
+    vec_env = make_vec_env(lambda: GridWorldEnv(20, 20, 0, 0), n_envs=1)
+
+    # logging paths
+    log_path = os.path.join('logs', 'PPO_custom_grid')
+    model_save_path = os.path.join("SavedModels", "PPO_custom_grid")
+
+    # create PPO model
+    model = PPO(
+        "MlpPolicy",
+        vec_env,
+        verbose=1,
+        tensorboard_log=log_path
+        )
+
+    callback = EpisodeStatsCallback()
+
+    # train the model with callback
+    model.learn(total_timesteps=timesteps, callback=callback)
+
+    # save trained model
+    model.save(model_save_path)
+    print("\n PPO training complete and metrics logged to TensorBoard.")
+
+    return model
+
+def evaluate_model(model, n_eval_episodes=5, sleep_time=0.1):
+    total_rewards = []
+    final_env = None  # To store the last environment's state
+
+    env = GridWorldEnv(20, 20, 0, 0)
+    for ep in range(n_eval_episodes):
+        obs, _ = env.reset()
+        terminated = False
+        truncated = False
+        episode_reward = 0
+
+        print(f"\n--- Episode {ep + 1} ---")
+        while not (terminated or truncated):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, _ = env.step(action)
+            env.render_pygame()
+            time.sleep(sleep_time)
+            episode_reward += reward
+
+        total_rewards.append(episode_reward)
+
+        if ep == n_eval_episodes - 1:
+            final_env = env  # Save the last episode for stats
+
+        env.close()
+
+    mean_reward = sum(total_rewards) / len(total_rewards)
+    print(f"\n Evaluation complete over {n_eval_episodes} episodes")
+    print(f" Mean Reward: {mean_reward:.2f}")
+    print("\n Final Episode Summary:")
+    final_env.episode_summary()
