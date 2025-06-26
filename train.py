@@ -5,7 +5,7 @@ from episode_callback import EpisodeStatsCallback
 import os
 import numpy as np
 import gymnasium as gym
-from stable_baselines3 import PPO, DQN
+from stable_baselines3 import PPO, DQN, SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -199,10 +199,10 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
 ##==============================================================
 ## Cole's Experiments
 ##==============================================================
+# diferent SB3 algorithms for training model
+#-------------------------------------------
 def train_PPO_model(env: gym.Env, timesteps: int):
     # create environment
-    # why creating two GridWorldEnv???
-    #vec_env = make_vec_env(lambda: GridWorldEnv(20, 20, 0, 0), n_envs=1)
     vec_env = DummyVecEnv([lambda: env])
 
     # logging paths
@@ -233,6 +233,46 @@ def train_PPO_model(env: gym.Env, timesteps: int):
 
     return model
 
+def train_DQN_model(env: gym.Env, timesteps: int):
+    # create environment
+    vec_env = DummyVecEnv([lambda: env])
+
+    # logging paths
+    log_path = os.path.join('logs', 'DQN_custom_grid')
+    model_save_path = os.path.join("SavedModels", "DQN_custom_grid")
+
+    # create DQN model
+    model = DQN(
+        "MlpPolicy",
+        vec_env,
+        learning_rate=1e-3,
+        buffer_size=50_000,
+        learning_starts=1_000,
+        batch_size=64,
+        tau=1.0,
+        gamma=0.99,
+        train_freq=4,
+        target_update_interval=1_000,
+        exploration_fraction=0.1,
+        exploration_final_eps=0.02,
+        verbose=1
+    )
+
+    callback = EpisodeStatsCallback()
+
+    # train the model
+    model.learn(total_timesteps=timesteps, callback=callback)
+
+    # save the model
+    model.save(model_save_path)
+    print("\n DQN training complete and metrics logged to TensorBoard.")
+
+    return model
+
+# SAC requires continuous action sapce
+
+# training utils
+#-------------------------------------------------
 def load_model(model_key: str, env):
     model_path = MODELS.get(model_key)
     if not model_path:
@@ -245,7 +285,7 @@ def load_model(model_key: str, env):
     model = PPO.load(model_path, env=vec_env)
     return model
 
-def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool = True):
+def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool = True, verbose: bool = False):
     total_rewards = []
     success_count = 0
 
@@ -262,6 +302,8 @@ def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool =
         while not (terminated or truncated):
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, _ = env.step(action)
+            if verbose:
+                print("reward", reward)
             if render:
                 env.render_pygame()
                 time.sleep(sleep_time)
@@ -278,7 +320,7 @@ def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool =
     print("\n Final Episode Summary:")
     env.episode_summary()
 
-def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0.1, render: bool = True):
+def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
     Load a model and evaluate it on the provided environment.
 
@@ -290,4 +332,4 @@ def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0
         render (bool): Whether to render the environment using pygame.
     """
     model = load_model(model_key, env)
-    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render)
+    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose)

@@ -10,7 +10,7 @@ AGENT = 'A'
 FINISHED = 'F'
 TRAIL_OUTSIDE = '*'
 TRAIL_INSIDE = 'T'
-RADAR_BG = 'BG'
+RADAR_BG = 'B'
 
 # rgb colors for pygame rendering
 RENDER_COLORS = {
@@ -46,4 +46,11 @@ LOGS = {
     "ppo": os.path.join(LOG_DIR, "PPO_custom_grid"),
     "dqn": os.path.join(LOG_DIR, "DQN_custom_grid"),
 }
+
+# directory for storing generated ASCII grids
+GRID_DIR = os.path.join(BASE_DIR, "saved_grids")
+RANDOM_GRID_DIR = os.path.join(GRID_DIR, "random")
+FIXED_GRID_DIR = os.path.join(GRID_DIR, "fixed")
+
+
 

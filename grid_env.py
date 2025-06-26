@@ -1,7 +1,7 @@
 # grid_env.py
 
-from gym import Env
-from gym.spaces import Discrete, Box, Dict
+from gymnasium import Env
+from gymnasium.spaces import Discrete, Box, Dict
 import numpy as np
 import random 
 import os  
@@ -15,18 +15,22 @@ from reward_functions import compute_reward
 ## GridWorldEnv Class
 ##==============================================================
 class GridWorldEnv(Env):
-    def __init__(self, grid_height, grid_width,
-                 n_obstacles, n_sensors,
-                 obstacle_file=None, sensor_file=None):
+    def __init__(self,
+                 grid_file: str = None,
+                 grid_height: int = None,
+                 grid_width: int = None,
+                 obstacle_percentage=None,
+                 n_sensors=None
+                 ):
         super(GridWorldEnv, self).__init__()
 
         ##=============== member variables ===============##
         # grid config
-        self.n_rows = grid_height
-        self.n_cols = grid_width
-        self.max_steps = 10_000
-        self.n_obstacles = n_obstacles
-        self.n_sensors = n_sensors
+        self._init_grid_config(grid_file,
+                               grid_height, grid_width,
+                               obstacle_percentage,
+                               n_sensors)
+        self.max_steps = 1_000
 
         # pygame rendering
         self.pygame_initialized = False
@@ -37,32 +41,45 @@ class GridWorldEnv(Env):
         self.clock = None
         self.render_fps = 30
 
-        # environment variables
-        self.grid = None
-        self.static_grid = np.full((self.n_rows, self.n_cols),
-                                   EMPTY, dtype='<U1')
+        # environment state variables
+        self.grid = self.static_grid.copy()
         self.agent_pos = None
         self.visited = None
         self.battery_values_in_radar = None
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
-
-        # files for fixed grids
-        self.obstacle_file = obstacle_file
-        self.sensor_file = sensor_file
-
+        self.last_action = -1
+            
         # observation/action spaces
         self._init_spaces()
 
-        # static environment elements
-        self._init_goals()
-        self._init_obstacles()
-        self._init_sensors()
+        # radar around sensors
         self._init_radar_zone()
         ##================================================##
 
         self.reset()
+
+    def _init_grid_config(self, grid_file, grid_height, grid_width, obstacle_percentage, n_sensors):
+        if grid_file:
+            grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
+            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries = grid_gen.load_grid(grid_path)
+            self.n_rows, self.n_cols = self.static_grid.shape
+        else:
+            assert grid_height is not None and grid_width is not None, \
+                "Must provide grid_height and grid_width when not using a grid_file."
+            self.n_rows = grid_height
+            self.n_cols = grid_width
+            save_path = os.path.join(RANDOM_GRID_DIR, f"grid_{self.n_rows}x{self.n_cols}{obstacle_percentage*100}p.txt")
+            
+            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries = grid_gen.gen_and_save_grid(
+                self.n_rows, self.n_cols,
+                obstacle_percentage=obstacle_percentage,
+                n_sensors=n_sensors,
+                place_agent=False,
+                save_path=save_path
+            )
+        self.original_sensor_batteries = self.sensor_batteries
 
     def _init_spaces(self):
         self.action_space = Discrete(8)
@@ -75,18 +92,13 @@ class GridWorldEnv(Env):
             "exit_distances": Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32),
         })
         '''
+        '''
         self.observation_space = Box(low=0, high=max_dim - 1,
                                      shape=(2,), dtype=np.int32)
-
-    def _init_goals(self):
-        self.goal_positions = [
-            (self.n_rows - 1, self.n_cols - 1),
-            (0, self.n_cols - 1),
-            (self.n_rows - 1, 0)
-        ]
-        for r, c in self.goal_positions:
-            if self.in_bounds((r, c)) and self.is_empty((r, c)):
-                self.static_grid[r, c] = GOAL
+        '''
+        self.observation_space = Box(low=0, high=8,
+                                     shape=(10, ), dtype=np.int32)
+        # 10 comes from 3x3 view agent has, plus 1 for last action
 
     def _get_goal_exclusion_zone(self):
         # goal is not placed in sensor radar range???
@@ -94,48 +106,6 @@ class GridWorldEnv(Env):
                                              self.n_rows,
                                              self.n_cols,
                                              radius=2)
-    
-    def _init_obstacles(self):
-        # get obstacle positions (either random or specified)
-        if self.obstacle_file:
-            self.fixed_obstacles = load_obstacles_from_file(self.obstacle_file)
-        else:
-            grid_gen.generate_and_save_obstacles(
-                rows=self.n_rows,
-                cols=self.n_cols,
-                exclude_coords=self._get_goal_exclusion_zone(),
-                filename="obstacle_coords.txt",
-                n_obstacles=self.n_obstacles
-            )
-            self.fixed_obstacles = load_obstacles_from_file("obstacle_coords.txt")
-
-        # place obstacles on grid
-        for (r, c) in self.fixed_obstacles:
-            if self.in_bounds((r, c)) and self.is_empty((r, c)):
-                self.static_grid[r, c] = OBSTACLE
-
-    def _init_sensors(self):
-        # get sensor positions (either random or specified)
-        if self.sensor_file:
-            self.original_sensor_batteries = load_sensors_with_batteries(self.sensor_file)
-        else:
-            grid_gen.generate_and_save_sensors(
-                rows=self.n_rows,
-                cols=self.n_cols,
-                obstacle_file="obstacle_coords.txt",
-                sensor_file="sensor_coords.txt",
-                goal_coords=self.goal_positions,
-                n_sensors=self.n_sensors
-            )
-            self.original_sensor_batteries = load_sensors_with_batteries("sensor_coords.txt")
-
-        # get sensor battery levels
-        self.sensor_batteries = dict(self.original_sensor_batteries)
-
-        # place sensors
-        for (r, c) in self.sensor_batteries:
-            if self.in_bounds((r, c)) and self.is_empty((r, c)):
-                self.static_grid[r, c] = SENSOR
 
     def _init_radar_zone(self):
         self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(
@@ -143,7 +113,7 @@ class GridWorldEnv(Env):
             self.n_rows,
             self.n_cols
         )
-
+        
     def is_empty(self, pos):
         return self.static_grid[pos[0], pos[1]] == EMPTY
 
@@ -252,8 +222,28 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
     
     def get_observation(self):
-        return np.array(self.agent_pos, dtype=np.int32)
+        r, c = self.agent_pos
 
+        # pad grid with OBSTACLE so agent can see walls representing
+        # "out of bounds"
+        padded = np.full((self.n_rows + 2, self.n_cols + 2), OBSTACLE, dtype='<U1')
+        padded[1:-1, 1:-1] = self.grid
+
+        r_p, c_p = r + 1, c + 1
+        local_view = padded[r_p - 1:r_p + 2, c_p - 1:c_p + 2]
+
+        # 1 if obstacle or sensor, 0 otherwise
+        is_blocked = np.isin(local_view, [OBSTACLE, SENSOR]).astype(np.int32)
+
+        # flatten to 1D array
+        flat_view = is_blocked.flatten()
+
+        # add last action
+        obs = np.concatenate([flat_view, [self.last_action]])
+    
+        return obs
+    
+        '''
         agent_pos = self.agent_pos.copy()
 
         sorted_sensors = sorted(self.sensor_batteries.items())
@@ -280,12 +270,27 @@ class GridWorldEnv(Env):
             "battery_levels": battery_levels[:self.n_sensors],
             "exit_distances": exit_distances
         }
+        '''
 
     def reset(self, seed=None, options=None):
+        """
+        Resets the environment to the starting state for a new episode.
+        Returns the initial observation and an empty info dict.
+        """
+        # register seed
+        super().reset(seed=seed)
+
+        # restore static grid layout
         self.grid = np.copy(self.static_grid)
 
+        # reset state trackers
         self.battery_values_in_radar = []
+        self.sensor_batteries = dict(self.original_sensor_batteries)
+        self.episode_steps = 0
+        self.total_reward = 0
+        self.obstacle_hits = 0
 
+        # place agent
         while True:
             x, y = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
             if self.grid[x, y] == EMPTY:
@@ -293,12 +298,12 @@ class GridWorldEnv(Env):
                 break
 
         self.visited = {tuple(self.agent_pos)}
-        self.sensor_batteries = dict(self.original_sensor_batteries)
-        self.episode_steps = 0
-        self.total_reward = 0
-        self.obstacle_hits = 0
+        
 
+        # recompute radar zone
+        '''
         self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(self.sensor_batteries.keys(), self.n_rows, self.n_cols)
+        '''
 
         return self.get_observation(), {}
 
@@ -365,6 +370,8 @@ class GridWorldEnv(Env):
             "steps": self.episode_steps,
             "agent_pos": self.agent_pos.copy()
         }
+
+        self.last_action = action
         return ret
     
     def episode_summary(self):
