@@ -39,7 +39,7 @@ class GridWorldEnv(Env):
         self.screen = None
         self.font = None
         self.clock = None
-        self.render_fps = 30
+        self.render_fps = 160
 
         # environment state variables
         self.grid = self.static_grid.copy()
@@ -96,10 +96,18 @@ class GridWorldEnv(Env):
         self.observation_space = Box(low=0, high=max_dim - 1,
                                      shape=(2,), dtype=np.int32)
         '''
+        '''
         self.observation_space = Box(low=0, high=8,
                                      shape=(10, ), dtype=np.int32)
         # 10 comes from 3x3 view agent has, plus 1 for last action
-
+        '''
+        self.observation_space = Box(
+            low=0.0,
+            high=1.0,
+            shape=(13,),
+            dtype=np.float32
+        )
+        
     def _get_goal_exclusion_zone(self):
         # goal is not placed in sensor radar range???
         return grid_gen.get_safe_zone_around(self.goal_positions,
@@ -220,7 +228,8 @@ class GridWorldEnv(Env):
 
     def get_exit_distances(self, normalize=True):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
-    
+
+    """
     def get_observation(self):
         r, c = self.agent_pos
 
@@ -271,6 +280,47 @@ class GridWorldEnv(Env):
             "exit_distances": exit_distances
         }
         '''
+    """
+    def get_observation(self):
+        r, c = self.agent_pos
+
+        # 3x3 local view, padded with obstacles
+        padded = np.full((self.n_rows + 2, self.n_cols + 2), OBSTACLE, dtype='<U1')
+        padded[1:-1, 1:-1] = self.grid
+
+        r_p, c_p = r + 1, c + 1
+        local_view = padded[r_p - 1:r_p + 2, c_p - 1:c_p + 2]
+
+        # 1 if obstacle or sensor, 0 otherwise
+        is_blocked = np.isin(local_view, [OBSTACLE, SENSOR]).astype(np.float32)
+        flat_view = is_blocked.flatten()  # shape (9,)
+
+        # Normalize position to [0,1]
+        norm_row = r / (self.n_rows - 1)
+        norm_col = c / (self.n_cols - 1)
+
+        # Chebyshev distance to nearest goal, normalized
+        distances = chebyshev_distances(
+            self.agent_pos,
+            self.goal_positions,
+            self.n_cols,
+            self.n_rows,
+            normalize=True
+        )
+        min_dist = min(distances)
+
+        # Normalize last action (0–7) to [0,1]
+        norm_last_action = self.last_action / 7.0
+
+        # Concatenate all parts
+        obs = np.concatenate([
+            flat_view,               # (9,)
+            [norm_row, norm_col],    # (2,)
+            [min_dist],              # (1,)
+            [norm_last_action]       # (1,)
+        ])
+
+        return obs
 
     def reset(self, seed=None, options=None):
         """
@@ -450,5 +500,3 @@ class GridWorldEnv(Env):
                         break # only process one direction at a time
 
         self.close()  
-
-                

@@ -62,27 +62,23 @@ def test_PPO_20x20():
     filename_15 = "grid_20x20_15p.txt"
     save_path_15 = os.path.join(FIXED_GRID_DIR, filename_15)
 
-    '''
     grid_gen.gen_and_save_grid(
     rows=20,
     cols=20,
-    obstacle_percentage=0.15,
-    n_sensors=5,
+    obstacle_percentage=0.05,
+    n_sensors=0,
     place_agent=True,
     save_path=save_path_15
     )
-    '''
 
     env_15 = GridWorldEnv(grid_file=filename_15)
     model_15 = train_PPO_model(env_15, timesteps=100_000)
     load_model_and_evaluate("ppo", env_15, 20, render=True, verbose=True)
 
-
     # === Generate and train on 30% obstacle grid ===
     filename_30 = "grid_20x20_30p.txt"
     save_path_30 = os.path.join(FIXED_GRID_DIR, filename_30)
 
-    '''
     grid_gen.gen_and_save_grid(
     rows=20,
     cols=20,
@@ -91,15 +87,14 @@ def test_PPO_20x20():
     place_agent=True,
     save_path=save_path_30
     )
-    '''
 
     env_30 = GridWorldEnv(grid_file=filename_30)
-    # model_30 = train_PPO_model(env_30, timesteps=1_000_000)
+    model_30 = train_PPO_model(env_30, timesteps=1_000_000)
     load_model_and_evaluate("ppo", env_30, 20, render=True, verbose=True)
     
 if __name__ == "__main__":
     #test_simple_grid()
-    #test_manual_control()
+    test_manual_control()
     #test_simple_reward_20_20()
     #test_simple_PPO()
     #model = train_PPO_model(timesteps=100_000)

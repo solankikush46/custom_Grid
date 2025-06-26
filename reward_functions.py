@@ -11,10 +11,9 @@ from utils import chebyshev_distances
 def get_simple_reward(env, new_pos):
     reward = 0.0
 
-    # if new position is exit?
     if (new_pos in env.goal_positions):
         reward = env.n_rows * env.n_cols # reward should make worst case scenario positive
-        print("reached exit, reward =", reward)
+        #print("reached exit, reward =", reward)
     else:
         # penalty per timestep
         reward += -0.04
