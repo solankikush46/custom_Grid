@@ -72,7 +72,7 @@ def test_PPO_20x20():
     )
 
     env_15 = GridWorldEnv(grid_file=filename_15)
-    # model_15 = train_PPO_model(env_15, timesteps=100_000)
+    model_15 = train_PPO_model(env_15, timesteps=100_000)
     load_model_and_evaluate("ppo", env_15, 20, render=True, verbose=True)
 
     # === Generate and train on 30% obstacle grid ===
