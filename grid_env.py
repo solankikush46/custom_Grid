@@ -371,6 +371,8 @@ class GridWorldEnv(Env):
             "agent_pos": self.agent_pos.copy()
         }
 
+        print(self.get_observation())
+
         self.last_action = action
         return ret
     
