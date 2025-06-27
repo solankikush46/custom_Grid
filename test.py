@@ -19,7 +19,7 @@ def generate_grid(rows: int, cols: int, obstacle_percentage: float,
     '''
     if filename is None:
         filename = f"grid_{rows}x{cols}_{int(obstacle_percentage * 100)}p.txt"
-    save_path = os.path.join(RANDOM_GRID_DIR, filename)
+    save_path = os.path.join(FIXED_GRID_DIR, filename)
 
     grid_gen.gen_and_save_grid(
         rows=rows,
