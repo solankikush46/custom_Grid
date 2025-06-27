@@ -199,7 +199,7 @@ def gen_agent(grid):
         grid[agent_pos] = AGENT
     return agent_pos
 
-def gen_grid(rows, cols, obstacle_percentage=0.3, n_sensors=5, place_agent=True):
+def gen_grid(rows, cols, obstacle_percentage=0.3, n_sensors=5, place_agent=False):
     """
     Generate a complete grid with goals, obstacles, sensors, and an optional agent.
 
@@ -245,7 +245,7 @@ def save_grid(grid, filename):
             f.write("".join(row) + "\n")
     print(f"[INFO] Grid saved to {filename}")
 
-def gen_and_save_grid(rows, cols, obstacle_percentage=0.3, n_sensors=5, place_agent=True, save_path="generated_grid.txt"):
+def gen_and_save_grid(rows, cols, obstacle_percentage=0.3, n_sensors=5, place_agent=False, save_path="generated_grid.txt"):
     """
     Generate a complete grid and save it to a file.
 

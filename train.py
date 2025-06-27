@@ -201,13 +201,13 @@ def evaluate_Q_agent(env, agent, n_episodes=3, delay=0.1):
 ##==============================================================
 # diferent SB3 algorithms for training model
 #-------------------------------------------
-def train_PPO_model(env: gym.Env, timesteps: int):
+def train_PPO_model(env: gym.Env, timesteps: int, model_name: str="PPO"):
     # create environment
     vec_env = DummyVecEnv([lambda: env])
 
     # logging paths
-    log_path = os.path.join('logs', 'PPO_custom_grid')
-    model_save_path = os.path.join("SavedModels", "PPO_custom_grid")
+    log_path = LOGS["ppo"]
+    model_save_path = os.path.join(MODELS["ppo"], model_name)
 
     # create PPO model
     model = PPO(
@@ -238,9 +238,9 @@ def train_DQN_model(env: gym.Env, timesteps: int):
     vec_env = DummyVecEnv([lambda: env])
 
     # logging paths
-    log_path = os.path.join('logs', 'DQN_custom_grid')
-    model_save_path = os.path.join("SavedModels", "DQN_custom_grid")
-
+    log_path = LOGS["dqn"]
+    model_save_path = os.path.join(MODELS["dqn"], model_name)
+    
     # create DQN model
     model = DQN(
         "MlpPolicy",
@@ -273,11 +273,7 @@ def train_DQN_model(env: gym.Env, timesteps: int):
 
 # training utils
 #-------------------------------------------------
-def load_model(model_key: str, env):
-    model_path = MODELS.get(model_key)
-    if not model_path:
-        raise ValueError(f"Unknown model key: {model_key}")
-
+def load_model(model_path: str, env):
     if not os.path.exists(model_path + ".zip"):
         raise FileNotFoundError(f"Model file not found at: {model_path}.zip")
 
@@ -320,16 +316,15 @@ def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool =
     print("\n Final Episode Summary:")
     env.episode_summary()
 
-def load_model_and_evaluate(model_key: str, env, n_eval_episodes=5, sleep_time=0.1, render: bool = True, verbose: bool = True):
+def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
-    Load a model and evaluate it on the provided environment.
-
-    Args:
-        model_key (str): Key name of the model in config.MODELS
-        env (gym.Env): The environment instance for evaluation.
-        n_eval_episodes (int): Number of episodes to run.
-        sleep_time (float): Delay between steps for rendering.
-        render (bool): Whether to render the environment using pygame.
+    Load a model by filename and evaluate.
     """
-    model = load_model(model_key, env)
+    model_path = os.path.join(MODELS["ppo"], model_filename)
+    model = load_model(model_path, env)
     evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose)
+
+def list_models():
+    for f in os.listdir(MODELS["ppo"]):
+        if f.endswith(".zip"):
+            print(f)
