@@ -46,6 +46,9 @@ def test_PPO_20x20(timesteps: int):
     episodes = 100
     render = True
     verbose = False
+    
+    # randomly generated
+    '''
     obstacle_percentages = [0.15, 0.30]
 
     for pct in obstacle_percentages:
@@ -56,4 +59,13 @@ def test_PPO_20x20(timesteps: int):
                                       episodes,
                                       render=render,
                                       verbose=verbose)
-
+    '''
+    # fixed
+    filename = "mine_20x20.txt"
+    model, name, env = train_model(filename, timesteps)
+    train.load_model_and_evaluate(name, env,
+                                      episodes,
+                                      render=render,
+                                      verbose=verbose)
+    
+    

@@ -1,7 +1,7 @@
 # grid_gen.py
 import numpy as np
 import random
-from constants import EMPTY, OBSTACLE, GOAL, SENSOR, AGENT
+from constants import EMPTY, OBSTACLE, GOAL, SENSOR, AGENT, BASE_STATION, MINER
 
 ##==============================================================
 ## Kush
@@ -83,6 +83,7 @@ def generate_and_save_sensors(rows, cols, n_sensors, obstacle_file="obstacle_coo
 
     print(f"[INFO] {len(sensor_data)} sensors saved to {sensor_file}.")
 
+'''
 def compute_sensor_radar_zone(sensor_coords, rows, cols, radius=2):
     """
     Return set of all grid cells within radar radius of sensors.
@@ -95,6 +96,7 @@ def compute_sensor_radar_zone(sensor_coords, rows, cols, radius=2):
                 if 0 <= nx < rows and 0 <= ny < cols:
                     radar_zone.add((nx, ny))
     return radar_zone
+'''
 
 ##==============================================================
 ## Cole
@@ -290,6 +292,7 @@ def load_grid(filename):
     agent_pos = None
     goal_positions = []
     sensor_batteries = {}
+    base_station_positions = []
 
     for r in range(n_rows):
         for c in range(n_cols):
@@ -301,5 +304,7 @@ def load_grid(filename):
                 goal_positions.append((r, c))
             elif symbol == SENSOR:
                 sensor_batteries[(r, c)] = 100.0
+            elif symbol == BASE_STATION:
+                base_station_positions.append((r, c))
 
-    return grid, agent_pos, goal_positions, sensor_batteries
+    return grid, agent_pos, goal_positions, sensor_batteries, base_station_positions

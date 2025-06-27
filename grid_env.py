@@ -10,6 +10,8 @@ import grid_gen
 from constants import *
 from utils import *
 from reward_functions import compute_reward
+from sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
+
 
 ##==============================================================
 ## GridWorldEnv Class
@@ -45,17 +47,21 @@ class GridWorldEnv(Env):
         self.grid = self.static_grid.copy()
         self.agent_pos = None
         self.visited = None
-        self.battery_values_in_radar = None
+        # self.battery_values_in_radar = None
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
         self.last_action = -1
+        self.miners = []
+        self.n_miners = 3
             
         # observation/action spaces
         self._init_spaces()
 
+        '''
         # radar around sensors
         self._init_radar_zone()
+        '''
         ##================================================##
 
         self.reset()
@@ -63,7 +69,7 @@ class GridWorldEnv(Env):
     def _init_grid_config(self, grid_file, grid_height, grid_width, obstacle_percentage, n_sensors):
         if grid_file:
             grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
-            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries = grid_gen.load_grid(grid_path)
+            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries, self.base_station_positions = grid_gen.load_grid(grid_path)
             self.n_rows, self.n_cols = self.static_grid.shape
         else:
             assert grid_height is not None and grid_width is not None, \
@@ -72,7 +78,7 @@ class GridWorldEnv(Env):
             self.n_cols = grid_width
             save_path = os.path.join(RANDOM_GRID_DIR, f"grid_{self.n_rows}x{self.n_cols}{obstacle_percentage*100}p.txt")
             
-            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries = grid_gen.gen_and_save_grid(
+            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries, self.base_station_positions = grid_gen.gen_and_save_grid(
                 self.n_rows, self.n_cols,
                 obstacle_percentage=obstacle_percentage,
                 n_sensors=n_sensors,
@@ -115,12 +121,14 @@ class GridWorldEnv(Env):
                                              self.n_cols,
                                              radius=2)
 
+    '''
     def _init_radar_zone(self):
         self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(
             self.sensor_batteries.keys(),
             self.n_rows,
             self.n_cols
         )
+    '''
         
     def is_empty(self, pos):
         return self.static_grid[pos[0], pos[1]] == EMPTY
@@ -168,10 +176,7 @@ class GridWorldEnv(Env):
             row, col = pos
             if (row, col) != tuple(self.agent_pos) and (row, col) not in self.goal_positions:
                 if self.can_move_to((row, col)):
-                    if (row, col) in self.sensor_radar_zone:
-                        grid_copy[row, col] = TRAIL_INSIDE  # trail in radar zone (pink)
-                    else:
-                        grid_copy[row, col] = TRAIL_OUTSIDE  # trail outside radar (yellow)
+                    grid_copy[row, col] = TRAIL_OUTSIDE  # trail outside radar (yellow)
 
         # Update agent position
         row, col = self.agent_pos
@@ -188,10 +193,13 @@ class GridWorldEnv(Env):
                 # Always start by painting the cell white
                 pygame.draw.rect(screen, colors[EMPTY], (col * cell_size, row * cell_size, cell_size, cell_size))
 
+
+                '''
                 # Then radar zone (orange) if applicable (and not obstacle)
                 if (row, col) in self.sensor_radar_zone and self.static_grid[row, col] != '#':
                     pygame.draw.rect(screen, colors[RADAR_BG], (col * cell_size, row * cell_size, cell_size, cell_size))
-
+                '''
+                
                 # Then foreground item (trail, agent, goal, etc.)
                 if val != EMPTY:
                     color = colors.get(val, (0, 0, 0))
@@ -199,6 +207,11 @@ class GridWorldEnv(Env):
 
                 # Border
                 pygame.draw.rect(screen, (0, 0, 0), (col * cell_size, row * cell_size, cell_size, cell_size), 1)
+
+        # draw miners
+        for row, col in self.miners:
+            pygame.draw.rect(screen, colors[MINER],
+                         (col * cell_size, row * cell_size, cell_size, cell_size)) 
 
         # Draw sensors and battery labels (on top of all)
         for (row, col), battery in self.sensor_batteries.items():
@@ -334,7 +347,7 @@ class GridWorldEnv(Env):
         self.grid = np.copy(self.static_grid)
 
         # reset state trackers
-        self.battery_values_in_radar = []
+        # self.battery_values_in_radar = []
         self.sensor_batteries = dict(self.original_sensor_batteries)
         self.episode_steps = 0
         self.total_reward = 0
@@ -354,6 +367,15 @@ class GridWorldEnv(Env):
         '''
         self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(self.sensor_batteries.keys(), self.n_rows, self.n_cols)
         '''
+
+        # === Spawn miners === #
+        self.miners = []
+
+        while len(self.miners) < self.n_miners:
+            r, c = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
+            
+            if self.is_empty((r, c)) and (r, c) not in self.miners:
+                self.miners.append((r, c))
 
         return self.get_observation(), {}
 
@@ -397,14 +419,46 @@ class GridWorldEnv(Env):
             self.obstacle_hits += 1
 
         # deplete sensor battery values over time
+        '''
         for coord in self.sensor_batteries:
             self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - 0.01)
+        '''
+        self.move_miners_randomly()
+        for miner_pos in self.miners:
+            r, c = miner_pos
 
+        # deplete sensor battery values over time
+        closest_sensor = self._get_closest_sensor(self.agent_pos)
+
+        if closest_sensor:
+            self.sensor_batteries = update_single_sensor_battery(
+                self.sensor_batteries,
+                sensor_pos=closest_sensor,
+                miner=self.agent_pos,
+                base_stations=self.base_station_positions
+                )
+
+        # -------------------------------
+        # Miners deplete closest sensors
+        # -------------------------------
+        for miner_pos in self.miners:
+            closest_sensor = self._get_closest_sensor(miner_pos)
+            if closest_sensor:
+                self.sensor_batteries = update_single_sensor_battery(
+                    self.sensor_batteries,
+                    sensor_pos=closest_sensor,
+                    miner=miner_pos,
+                    base_stations=self.base_station_positions
+                )
+
+        '''
         # add battery values encountered in path to list
         for sensor_pos, battery in self.sensor_batteries.items():
             if self._in_radar(sensor_pos, self.agent_pos, radius=2):
                 self.battery_values_in_radar.append(battery)
 
+        '''
+        
         '''
         s = "action: %s, f_dist: %s, f_wall: %s, f_battery: %s , f_exit: %s"
         print (s % (action, 0.2 * self.f_distance(),
@@ -432,11 +486,14 @@ class GridWorldEnv(Env):
         print(f"   Sensor Battery Levels (Sample):")
         for i, ((x, y), battery) in enumerate(self.sensor_batteries.items()):
             print(f"     Sensor {i+1} at ({x},{y}) → {battery:.2f}")
+
+        '''
         if self.battery_values_in_radar:
             avg_battery = sum(self.battery_values_in_radar) / len(self.battery_values_in_radar)
             print(f"   Avg Battery Level While in Sensor Radar: {avg_battery:.2f}")
         else:
             print("   Agent never entered a sensor radar zone.")
+        '''
 
     def close(self):
         if self.pygame_initialized:
@@ -499,4 +556,25 @@ class GridWorldEnv(Env):
                         last_move_time = current_time
                         break # only process one direction at a time
 
-        self.close()  
+        self.close()
+
+    def _get_closest_sensor(self, pos):
+        if not self.sensor_batteries:
+            return None
+
+        distances = {sensor: euclidean_distance(pos, sensor)
+                    for sensor in self.sensor_batteries}
+        return min(distances, key=distances.get)
+    
+    def move_miners_randomly(self):
+        updated_miners = []
+        for miner_pos in self.miners:
+            action = random.randint(0, 7)  # 8 directions
+            move = DIRECTION_MAP[action]
+            new_pos = (miner_pos[0] + move[0], miner_pos[1] + move[1])
+
+            if self.in_bounds(new_pos) and self.can_move_to(new_pos) and new_pos not in updated_miners:
+                updated_miners.append(new_pos)
+            else:
+                updated_miners.append(miner_pos)  # stay in place if invalid
+        self.miners = updated_miners
