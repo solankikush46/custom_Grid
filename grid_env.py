@@ -11,7 +11,32 @@ from constants import *
 from utils import *
 from reward_functions import compute_reward
 from sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
+from stable_baselines3.common.callbacks import BaseCallback
 
+##==============================================================
+## Logs custom metrics stored in `info` dict to TensorBoard
+##==============================================================
+class CustomTensorboardCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        for i, done in enumerate(self.locals["dones"]):
+            if done:
+                # episode reward
+                # episode length
+                # collisions
+                # avg battery level
+                ep_reward = self.locals["infos"][i].get("episode")["r"]
+                ep_length = self.locals["infos"][i].get("episode")["l"]
+
+                info = self.locals["infos"][i]
+
+                self.logger.record("custom/episode_reward", ep_reward)
+                self.logger.record("custom/episode_length", ep_length)
+                self.logger.record("custom/collisions", info.get("collisions", 0))
+                self.logger.record("custom/average_battery", info.get("average_battery", 0.0))
+        return True
 
 ##==============================================================
 ## GridWorldEnv Class
@@ -47,6 +72,7 @@ class GridWorldEnv(Env):
         self.grid = self.static_grid.copy()
         self.agent_pos = None
         self.visited = None
+        self.current_battery_level = None
         # self.battery_values_in_radar = None
         self.episode_steps = 0
         self.total_reward = 0
@@ -54,6 +80,7 @@ class GridWorldEnv(Env):
         self.last_action = -1
         self.miners = []
         self.n_miners = 3
+        self.battery_levels_during_episode = []
             
         # observation/action spaces
         self._init_spaces()
@@ -152,15 +179,31 @@ class GridWorldEnv(Env):
     def init_pygame(self):
         if not self.pygame_initialized:
             pygame.init()
-            self.fixed_window_size = 750
-            self.cell_size = self.fixed_window_size // max(self.n_cols, self.n_rows)
-            self.screen = pygame.display.set_mode((self.fixed_window_size, self.fixed_window_size))
+
+            # Desired max window size
+            MAX_WIDTH = 1000
+            MAX_HEIGHT = 750
+
+            # Compute scaling factors
+            scale_x = MAX_WIDTH / self.n_cols
+            scale_y = MAX_HEIGHT / self.n_rows
+
+            # Choose the smaller scaling factor to fit both dimensions
+            cell_size = int(min(scale_x, scale_y))
+
+            # Compute the final window size
+            window_width = self.n_cols * cell_size
+            window_height = self.n_rows * cell_size
+
+            # Store
+            self.cell_size = cell_size
+            self.screen = pygame.display.set_mode((window_width, window_height))
             pygame.display.set_caption("GridWorld Visualization")
             self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
             self.clock = pygame.time.Clock()
             self.pygame_initialized = True
-
-    def render_pygame(self, uncap_fps=False):
+    
+    def render_pygame(self, uncap_fps=False, show_miners=True):
         if not self.pygame_initialized:
             self.init_pygame()
 
@@ -178,12 +221,14 @@ class GridWorldEnv(Env):
                 if self.can_move_to((row, col)):
                     grid_copy[row, col] = TRAIL_OUTSIDE  # trail outside radar (yellow)
 
+        '''
         # Update agent position
         row, col = self.agent_pos
         if tuple(self.agent_pos) in self.goal_positions:
             grid_copy[row, col] = FINISHED
         else:
             grid_copy[row, col] = AGENT
+        '''
 
         # Draw each cell
         for row in range(self.n_rows):
@@ -209,11 +254,20 @@ class GridWorldEnv(Env):
                 pygame.draw.rect(screen, (0, 0, 0), (col * cell_size, row * cell_size, cell_size, cell_size), 1)
 
         # draw miners
-        for row, col in self.miners:
-            pygame.draw.rect(screen, colors[MINER],
-                         (col * cell_size, row * cell_size, cell_size, cell_size)) 
+        if show_miners:
+            for row, col in self.miners:
+                pygame.draw.rect(screen, colors[MINER],
+                         (col * cell_size, row * cell_size,
+                          cell_size, cell_size)) 
 
-        # Draw sensors and battery labels (on top of all)
+        # draw agent on top of miners
+        row, col = self.agent_pos
+        color = colors[AGENT]
+        pygame.draw.rect(screen, color, (col * cell_size,
+                                         row * cell_size, cell_size,
+                                         cell_size))
+
+        # draw sensors and battery labels (on top of all)
         for (row, col), battery in self.sensor_batteries.items():
             pygame.draw.rect(screen, colors[SENSOR], (col * cell_size, row * cell_size, cell_size, cell_size))
             label = font.render(f"{int(battery)}", True, (0, 0, 0))
@@ -335,7 +389,7 @@ class GridWorldEnv(Env):
 
         return obs
 
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=None, battery_overrides=None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
@@ -349,6 +403,13 @@ class GridWorldEnv(Env):
         # reset state trackers
         # self.battery_values_in_radar = []
         self.sensor_batteries = dict(self.original_sensor_batteries)
+
+        # optionally override specific sensor batteries
+        if battery_overrides:
+            for pos, value in battery_overrides.items():
+                if pos in self.sensor_batteries:
+                    self.sensor_batteries[pos] = value
+  
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
@@ -399,7 +460,8 @@ class GridWorldEnv(Env):
 
     def agent_reached_exit(self):
         return tuple(self.agent_pos) in self.goal_positions
-    
+
+    ''' logic in this should be moved to helper functions '''
     def step(self, action):
         move = DIRECTION_MAP[int(action)]
         new_pos = self.agent_pos + move
@@ -429,7 +491,13 @@ class GridWorldEnv(Env):
 
         # deplete sensor battery values over time
         closest_sensor = self._get_closest_sensor(self.agent_pos)
-
+        # get battery level of closest sensor
+        if closest_sensor is not None:
+            self.current_battery_level = self.sensor_batteries[closest_sensor]
+            self.battery_levels_during_episode = []
+        else:
+            self.current_battery_level = 0.0
+        
         if closest_sensor:
             self.sensor_batteries = update_single_sensor_battery(
                 self.sensor_batteries,
@@ -472,7 +540,12 @@ class GridWorldEnv(Env):
         ret = self.get_observation(), reward, terminated, truncated, {
             "collisions": self.obstacle_hits,
             "steps": self.episode_steps,
-            "agent_pos": self.agent_pos.copy()
+            "agent_pos": self.agent_pos.copy(),
+            "average_battery": (
+                np.mean(self.battery_levels_during_episode)
+                if self.battery_levels_during_episode
+                else 0.0
+            )
         }
 
         self.last_action = action

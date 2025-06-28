@@ -8,7 +8,7 @@ import train
 import grid_gen
 
 def test_manual_control():
-    env = GridWorldEnv(grid_file="grid_20x20_15p.txt")
+    env = GridWorldEnv(grid_file="mine_20x20.txt")
     env.manual_control_loop()    
 
 def generate_grid(rows: int, cols: int, obstacle_percentage: float,
@@ -42,30 +42,71 @@ def train_model(filename: str, timesteps: int):
                                   model_name=model_name)
     return model, model_name, env
 
-def test_PPO_20x20(timesteps: int):
+def test_PPO(timesteps: int, rows: int, cols: int):
     episodes = 100
     render = True
     verbose = False
     
     # randomly generated
-    '''
     obstacle_percentages = [0.15, 0.30]
 
     for pct in obstacle_percentages:
-        filename = generate_grid(rows=20, cols=20,
-                                 obstacle_percentage=pct)
+        filename = f"grid_{rows}x{cols}_{int(pct * 100)}p.txt"
         model, name, env = train_model(filename, timesteps)
         train.load_model_and_evaluate(name, env,
                                       episodes,
                                       render=render,
                                       verbose=verbose)
-    '''
+        
     # fixed
-    filename = "mine_20x20.txt"
+    filename = f"mine_{rows}x{cols}.txt"
     model, name, env = train_model(filename, timesteps)
     train.load_model_and_evaluate(name, env,
                                       episodes,
                                       render=render,
                                       verbose=verbose)
-    
-    
+
+def train_for_test_battery(timesteps: int):
+    """
+    Train PPO on the battery test grid using train_model helper
+    """
+    grid_filename = "battery_15x8.txt"
+
+    env = GridWorldEnv(grid_file=grid_filename)
+
+    obs, _ = env.reset(battery_overrides={
+        (3, 0): 100.0,   # left sensor full
+        (3, 11): 0.0     # right sensor empty
+    })
+
+    model_name = "battery_test"
+    model = train.train_PPO_model(env, timesteps=timesteps, model_name=model_name)
+
+    print("\nBattery test training complete.")
+    return model, model_name, env
+
+
+def test_battery():
+    """
+    Load the battery test model and evaluate using helper
+    """
+    grid_filename = "battery_15x8.txt"
+    model_name = "battery_test"
+
+    env = GridWorldEnv(grid_file=grid_filename)
+
+    # override sensor batteries
+    obs, _ = env.reset(battery_overrides={
+        (3, 0): 100.0,   # left sensor full
+        (3, 11): 0.0     # right sensor empty
+    })
+
+    train.load_model_and_evaluate(
+        model_filename=model_name,
+        env=env,
+        n_eval_episodes=100,
+        sleep_time=0.1,
+        render=True,
+        verbose=False
+    )
+
