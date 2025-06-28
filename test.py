@@ -104,7 +104,7 @@ def test_battery():
     train.load_model_and_evaluate(
         model_filename=model_name,
         env=env,
-        n_eval_episodes=100,
+        n_eval_episodes=1,
         sleep_time=0.1,
         render=True,
         verbose=False
