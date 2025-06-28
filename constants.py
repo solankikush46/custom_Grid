@@ -1,5 +1,6 @@
 # constants.py
 import os
+import numpy as np
 
 # grid symbols
 EMPTY = '.'
@@ -10,7 +11,9 @@ AGENT = 'A'
 FINISHED = 'F'
 TRAIL_OUTSIDE = '*'
 TRAIL_INSIDE = 'T'
-RADAR_BG = 'B'
+# RADAR_BG = 'b'
+BASE_STATION = 'B'
+MINER = 'M'
 
 # rgb colors for pygame rendering
 RENDER_COLORS = {
@@ -22,7 +25,9 @@ RENDER_COLORS = {
     FINISHED: (0, 255, 255),
     SENSOR: (255, 0, 0),
     TRAIL_INSIDE: (173, 216, 230),
-    RADAR_BG: (255, 165, 0),
+    # RADAR_BG: (255, 165, 0),
+    BASE_STATION: (128, 0, 128),
+    MINER: (0, 100, 0)
 }
 
 # actions agent can take (cardinal directions and diagonals)
@@ -52,5 +57,21 @@ GRID_DIR = os.path.join(BASE_DIR, "saved_grids")
 RANDOM_GRID_DIR = os.path.join(GRID_DIR, "random")
 FIXED_GRID_DIR = os.path.join(GRID_DIR, "fixed")
 
+##=================================
+# Constants (for the Energy Model)
+#=================================
+BATTERY_CAPACITY_JOULES = 10.0 # Total Capacity of each battery
+ALPHA_ELEC = 50e-9          # 50 nJ/bit
+ALPHA_SHORT = 10e-12        # 10 pJ/bit/m^2
+ALPHA_LONG = 0.0013e-12     # 0.0013 pJ/bit/m^4
+THRESHOLD_DIST = int(np.sqrt(10 / 0.0013))  # Threshold distance in the grid
+MAX_COMM_RANGE = 15.0           # Max Communication range (in grid cells)
+
+#========================
+# Message Sizes (in bits)
+#========================
+K_BROADCAST = 10_000 # Sensor-to-Sensor
+K_TO_MINER = 5_000 # Miner-to-Sensor
+K_TO_BASE = 2_000  # Sensor-to-base
 
 

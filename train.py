@@ -1,6 +1,6 @@
 # train.py
 
-from grid_env import GridWorldEnv
+from grid_env import *
 from episode_callback import EpisodeStatsCallback
 import os
 import numpy as np
@@ -211,18 +211,19 @@ def train_PPO_model(env: gym.Env, timesteps: int, model_name: str="PPO"):
 
     # create PPO model
     model = PPO(
-    "MlpPolicy",
-    env,
-    ent_coef=0.5,
-    gae_lambda=0.90,
-    learning_rate=3e-4,
-    n_steps=2048,
-    batch_size=64,
-    n_epochs=10,
-    verbose=1
+        "MlpPolicy",
+        env,
+        ent_coef=0.5,
+        gae_lambda=0.90,
+        learning_rate=3e-4,
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=10,
+        verbose=1,
+        tensorboard_log=log_path
     )
 
-    callback = EpisodeStatsCallback()
+    callback = CustomTensorboardCallback()
 
     # train the model with callback
     model.learn(total_timesteps=timesteps, callback=callback)

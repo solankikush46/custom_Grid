@@ -29,6 +29,11 @@ def euclidean_distance(x0, x1, y0, y1):
     dy = y0 - y1
     return math.sqrt(dx * dx + dy * dy)
 
+def euclidean_distance(pos1, pos2):
+    dx = pos1[0] - pos2[0]
+    dy = pos1[1] - pos2[1]
+    return math.sqrt(dx * dx + dy * dy)
+
 # i should make it so normalize is not passed in,
 # but w and h are set to none by default, and if they are both none
 # then you aren't supposed to normalize, otherwise normalize
