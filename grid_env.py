@@ -494,7 +494,7 @@ class GridWorldEnv(Env):
         # get battery level of closest sensor
         if closest_sensor is not None:
             self.current_battery_level = self.sensor_batteries[closest_sensor]
-            self.battery_levels_during_episode = []
+            self.battery_levels_during_episode.append(closest_sensor)
         else:
             self.current_battery_level = 0.0
         
