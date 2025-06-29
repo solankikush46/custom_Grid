@@ -26,11 +26,9 @@ def get_simple_reward(env, new_pos):
         if new_pos in env.visited:
             reward += -0.21
 
-        '''
         # battery reward is scaled from 0.0-1.0
         if env.current_battery_level is not None:
             reward += 0.5 * (env.current_battery_level / 100.0)
-        '''
         
     return reward
 
