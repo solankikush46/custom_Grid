@@ -389,7 +389,7 @@ class GridWorldEnv(Env):
 
         return obs
 
-    def reset(self, seed=None, battery_overrides=None):
+    def reset(self, seed=None, battery_overrides=None, agent_override=None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
@@ -415,11 +415,14 @@ class GridWorldEnv(Env):
         self.obstacle_hits = 0
 
         # place agent
-        while True:
-            x, y = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
-            if self.grid[x, y] == EMPTY:
-                self.agent_pos = np.array([x, y])
-                break
+        if agent_override:
+            self.agent_pos = np.array(agent_override)
+        else:
+            while True:
+                x, y = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
+                if self.grid[x, y] == EMPTY:
+                    self.agent_pos = np.array([x, y])
+                    break
 
         self.visited = {tuple(self.agent_pos)}
         

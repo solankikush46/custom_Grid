@@ -99,7 +99,7 @@ def test_battery():
     obs, _ = env.reset(battery_overrides={
         (3, 0): 100.0,   # left sensor full
         (3, 11): 0.0     # right sensor empty
-    })
+    }, agent_override=[6, 7])
 
     train.load_model_and_evaluate(
         model_filename=model_name,
