@@ -53,18 +53,22 @@ def test_PPO(timesteps: int, rows: int, cols: int):
     for pct in obstacle_percentages:
         filename = f"grid_{rows}x{cols}_{int(pct * 100)}p.txt"
         model, name, env = train_model(filename, timesteps)
+        '''
         train.load_model_and_evaluate(name, env,
                                       episodes,
                                       render=render,
                                       verbose=verbose)
+        '''
         
     # fixed
     filename = f"mine_{rows}x{cols}.txt"
     model, name, env = train_model(filename, timesteps)
+    '''
     train.load_model_and_evaluate(name, env,
                                       episodes,
                                       render=render,
                                       verbose=verbose)
+    '''
 
 def train_for_test_battery(timesteps: int):
     """

@@ -17,6 +17,7 @@ def ensure_directories_exist():
     
 if __name__ == "__main__":
     ensure_directories_exist()
+    '''
     # 20x20 with 15% obstacles and 3 sensors
     generate_grid(
     rows=20,
@@ -32,6 +33,7 @@ if __name__ == "__main__":
     obstacle_percentage=0.30,
     n_sensors=3
     )
+    '''
     
     #train_for_test_battery(50_000)
     #test_battery()
