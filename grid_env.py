@@ -446,21 +446,17 @@ class GridWorldEnv(Env):
     def can_move_to(self, pos):
         '''
         Return True if the position is in bounds
-        and not blocked by an obstacle or sensor
-        (sensors are placed on obstacles)
+        and not blocked
         '''
         return self.in_bounds(pos) and \
             self.static_grid[pos[0], pos[1]] != OBSTACLE and \
-                self.static_grid[pos[0], pos[1]] != SENSOR
+                self.static_grid[pos[0], pos[1]] != SENSOR and \
+                    self.static_grd[pos[0], pos[1] != BASE_STATION
 
     def in_bounds(self, pos):
         return 0 <= pos[0] < self.n_rows \
     and 0 <= pos[1] < self.n_cols
-
-    def hit_wall(self, pos):
-        return self.grid[tuple(pos)] == OBSTACLE or \
-            self.grid[tuple(pos)] == SENSOR
-
+                                
     def agent_reached_exit(self):
         return tuple(self.agent_pos) in self.goal_positions
 
@@ -497,7 +493,7 @@ class GridWorldEnv(Env):
         # get battery level of closest sensor
         if closest_sensor is not None:
             self.current_battery_level = self.sensor_batteries[closest_sensor]
-            self.battery_levels_during_episode.append(closest_sensor)
+            self.battery_levels_during_episode.append(self.current_battery_level)
         else:
             self.current_battery_level = 0.0
         
