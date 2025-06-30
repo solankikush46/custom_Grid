@@ -8,7 +8,7 @@ import train
 import grid_gen
 
 def test_manual_control():
-    env = GridWorldEnv(grid_file="mine_20x20.txt")
+    env = GridWorldEnv(grid_file="grid_20x20_30p.txt")
     env.manual_control_loop()    
 
 def generate_grid(rows: int, cols: int, obstacle_percentage: float,
@@ -48,7 +48,7 @@ def test_PPO(timesteps: int, rows: int, cols: int):
     verbose = False
     
     # randomly generated
-    obstacle_percentages = [0.15, 0.30]
+    obstacle_percentages = [] #[0.15, 0.30]
 
     for pct in obstacle_percentages:
         filename = f"grid_{rows}x{cols}_{int(pct * 100)}p.txt"
@@ -89,6 +89,22 @@ def train_for_test_battery(timesteps: int):
     print("\nBattery test training complete.")
     return model, model_name, env
 
+def test_fixed(filename: str, episodes: int = 10, render: bool = True, verbose: bool = False):
+    """
+    Load a model trained on the specified grid file and evaluate it.
+    """
+    model_name = os.path.splitext(filename)[0]
+
+    env = GridWorldEnv(grid_file=filename)
+
+    train.load_model_and_evaluate(
+        model_filename=model_name,
+        env=env,
+        n_eval_episodes=episodes,
+        sleep_time=0.1,
+        render=render,
+        verbose=verbose
+    )
 
 def test_battery():
     """

@@ -12,8 +12,7 @@ def get_simple_reward(env, new_pos):
     reward = 0.0
 
     if (new_pos in env.goal_positions):
-        reward = env.n_rows * env.n_cols # reward should make worst case scenario positive
-        #print("reached exit, reward =", reward)
+        reward = env.n_rows * env.n_cols # large positive reward
     else:
         # penalty per timestep
         reward += -0.04
@@ -26,7 +25,7 @@ def get_simple_reward(env, new_pos):
         if new_pos in env.visited:
             reward += -0.21
 
-        # battery reward is scaled from 0.0-1.0
+        # battery reward is scaled from 0.0-0.5
         if env.current_battery_level is not None:
             reward += 0.5 * (env.current_battery_level / 100.0)
         
