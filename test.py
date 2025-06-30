@@ -7,9 +7,12 @@ from constants import *
 import train
 import grid_gen
 
-def test_manual_control():
-    env = GridWorldEnv(grid_file="grid_20x20_30p.txt")
-    env.manual_control_loop()    
+def test_manual_control(grid_file: str = "grid_20x20_30p.txt"):
+    """
+    Launch manual control mode for the specified grid file.
+    """
+    env = GridWorldEnv(grid_file=grid_file)
+    env.manual_control_loop()  
 
 def generate_grid(rows: int, cols: int, obstacle_percentage: float,
                   n_sensors: int=0, filename: str = None
@@ -48,7 +51,7 @@ def test_PPO(timesteps: int, rows: int, cols: int):
     verbose = False
     
     # randomly generated
-    obstacle_percentages = [] #[0.15, 0.30]
+    obstacle_percentages = [0.15, 0.30]
 
     for pct in obstacle_percentages:
         filename = f"grid_{rows}x{cols}_{int(pct * 100)}p.txt"
@@ -91,20 +94,43 @@ def train_for_test_battery(timesteps: int):
 
 def test_fixed(filename: str, episodes: int = 10, render: bool = True, verbose: bool = False):
     """
-    Load a model trained on the specified grid file and evaluate it.
+    Load a trained model for the specified grid file and evaluate it.
+    If no trained model exists, run evaluation with random actions.
     """
     model_name = os.path.splitext(filename)[0]
-
     env = GridWorldEnv(grid_file=filename)
 
-    train.load_model_and_evaluate(
-        model_filename=model_name,
-        env=env,
-        n_eval_episodes=episodes,
-        sleep_time=0.1,
-        render=render,
-        verbose=verbose
-    )
+    model_path = os.path.join(train.MODELS["ppo"], model_name + ".zip")
+
+    if os.path.exists(model_path):
+        if verbose:
+            print(f"Loading model '{model_name}' for evaluation.")
+        model = PPO.load(model_path, env=DummyVecEnv([lambda: env]))
+        # Evaluate the model
+        train.evaluate_model(env, model, n_eval_episodes=episodes, sleep_time=0.1, render=render, verbose=verbose)
+    else:
+        if verbose:
+            print(f"No trained model found for '{model_name}'. Running random policy evaluation.")
+        # Evaluate random policy
+        total_rewards = []
+        for ep in range(episodes):
+            obs, _ = env.reset()
+            done = False
+            ep_reward = 0.0
+            while not done:
+                action = env.action_space.sample()
+                obs, reward, terminated, truncated, info = env.step(action)
+                ep_reward += reward
+                done = terminated or truncated
+                if render:
+                    env.render_pygame()
+                    time.sleep(0.1)
+            total_rewards.append(ep_reward)
+
+        mean_reward = sum(total_rewards) / episodes
+        std_reward = (sum((r - mean_reward) ** 2 for r in total_rewards) / episodes) ** 0.5
+        print(f"\nRandom policy evaluation over {episodes} episodes:")
+        print(f"Mean reward: {mean_reward:.2f} ± {std_reward:.2f}")
 
 def test_battery():
     """

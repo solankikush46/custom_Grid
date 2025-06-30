@@ -19,7 +19,6 @@ if __name__ == "__main__":
     ensure_directories_exist()
     #train_for_test_battery(50_000)
     #test_battery()
-    #test_manual_control()
-    #test_PPO(timesteps=400_000, rows=20, cols=20)
-    test_fixed("mine_20x20.txt", episodes=1000, render=True, verbose=False)
+    test_PPO(timesteps=500_000, rows=20, cols=20)
+    #test_manual_control("grid_20x20_30p.txt")
     
