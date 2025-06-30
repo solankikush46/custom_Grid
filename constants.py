@@ -64,7 +64,7 @@ BATTERY_CAPACITY_JOULES = 10.0 # Total Capacity of each battery
 ALPHA_ELEC = 50e-9          # 50 nJ/bit
 ALPHA_SHORT = 10e-12        # 10 pJ/bit/m^2
 ALPHA_LONG = 0.0013e-12     # 0.0013 pJ/bit/m^4
-THRESHOLD_DIST = int(np.sqrt(10 / 0.0013))  # Threshold distance in the grid
+THRESHOLD_DIST = 9  # Threshold distance in the grid
 MAX_COMM_RANGE = 15.0           # Max Communication range (in grid cells)
 
 #========================
