@@ -21,4 +21,4 @@ if __name__ == "__main__":
     #test_battery()
     #test_PPO(timesteps=500_000, rows=20, cols=20)
     #test_manual_control("grid_20x20_30p.txt")
-    test_PPO(1_000_000)
+    test_PPO(500_000)

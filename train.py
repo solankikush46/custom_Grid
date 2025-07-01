@@ -41,9 +41,9 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
         tensorboard_log=log_path
     )
 
-    #callback = CustomTensorboardCallback()
+    callback = CustomTensorboardCallback()
 
-    model.learn(total_timesteps=timesteps)# callback=callback)
+    model.learn(total_timesteps=timesteps, callback=callback)
     
     model.save(model_save_path)
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
