@@ -43,7 +43,7 @@ def train_model(filename: str, timesteps: int):
     eval_env = GridWorldEnv(grid_file=filename)
     return model, model_name, eval_env
 
-def test_PPO(timesteps: int, rows: int, cols: int):
+def test_PPO(timesteps: int):
     filename = "grid_20x20_15p.txt"
     train.train_PPO_model(filename, timesteps, "grid_20x20_15p_battery")
     
