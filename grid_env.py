@@ -244,7 +244,6 @@ class GridWorldEnv(Env):
                 # Always start by painting the cell white
                 pygame.draw.rect(screen, colors[EMPTY], (col * cell_size, row * cell_size, cell_size, cell_size))
 
-
                 '''
                 # Then radar zone (orange) if applicable (and not obstacle)
                 if (row, col) in self.sensor_radar_zone and self.static_grid[row, col] != '#':
@@ -512,22 +511,28 @@ class GridWorldEnv(Env):
 
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps
-        
-        ret = self.get_observation(), reward, terminated, truncated, {
-            "collisions": self.obstacle_hits,
-            "steps": self.episode_steps,
-            "agent_pos": self.agent_pos.copy(),
-            "average_battery": (
-                np.mean(self.battery_levels_during_episode)
-                if self.battery_levels_during_episode
-                else 0.0
-            ),
-            "subrewards": subrewards
-        }
 
-        self.last_action = action
-        obs = self.get_observation()
-        return ret
+        info = {}
+
+        if terminated or truncated:
+            info = {
+                "episode": {
+                    "r": self.total_reward,
+                    "l": self.episode_steps
+                },
+                "collisions": self.obstacle_hits,
+                "average_battery": (
+                    np.mean(self.battery_levels_during_episode)
+                    if self.battery_levels_during_episode
+                    else 0.0
+                ),
+                "subrewards": subrewards,
+                "steps": self.episode_steps,
+                "agent_pos": self.agent_pos.copy()
+            }
+
+        return self.get_observation(), reward, \
+            terminated, truncated, info
     
     def episode_summary(self):
         print(f"   Episode Summary:")
