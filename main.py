@@ -2,12 +2,6 @@
 
 from test import *
 import os
-import os
-import gym
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-
-from grid_env import GridWorldEnv  # assuming your env is here
 
 def ensure_directories_exist():
     directories = [
