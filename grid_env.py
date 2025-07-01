@@ -23,26 +23,23 @@ class CustomTensorboardCallback(BaseCallback):
     def _on_step(self) -> bool:
         for i, done in enumerate(self.locals["dones"]):
             if done:
-                # episode reward
-                # episode length
-                # collisions
-                # avg battery level
-                ep_reward = self.locals["infos"][i].get("episode")["r"]
-                ep_length = self.locals["infos"][i].get("episode")["l"]
-
                 info = self.locals["infos"][i]
+                ep_info = info.get("episode")
+                if ep_info is not None:
+                    ep_reward = ep_info.get("r", 0.0)
+                    ep_length = ep_info.get("l", 0)
 
-                self.logger.record("custom/episode_reward", ep_reward)
-                self.logger.record("custom/episode_length", ep_length)
+                    self.logger.record("custom/episode_reward", ep_reward)
+                    self.logger.record("custom/episode_length", ep_length)
+
                 self.logger.record("custom/collisions", info.get("collisions", 0))
                 self.logger.record("custom/average_battery", info.get("average_battery", 0.0))
 
-                # subreward components
                 subrewards = info.get("subrewards", {})
                 for key, value in subrewards.items():
                     self.logger.record(f"subreward/{key}", value)
 
-                return True
+        return True
 
 ##==============================================================
 ## GridWorldEnv Class
