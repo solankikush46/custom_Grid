@@ -56,6 +56,7 @@ class GridWorldEnv(Env):
                  n_sensors=None
                  ):
         super(GridWorldEnv, self).__init__()
+        print("Created GridWorldEnv instance")
 
         ##=============== member variables ===============##
         # grid config
@@ -140,7 +141,7 @@ class GridWorldEnv(Env):
         # [10] - last action
         # [11] - distance to closest goal
         # [12, n_sensors-1] - battery levels of all sensors
-        obs_dim = 8 + 2 + 1 + self.n_sensors
+        obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
 
         self.observation_space = Box(
             low=0.0,
@@ -325,39 +326,39 @@ class GridWorldEnv(Env):
             else:
                 return 1
         
-            blocked_flags = np.array([is_blocked(pos) for pos in neighbors], dtype=np.float32)
+        blocked_flags = np.array([is_blocked(pos) for pos in neighbors], dtype=np.float32)
 
-            # normalize agent position
-            norm_row = r / (self.n_rows - 1)
-            norm_col = c / (self.n_cols - 1)
+        # normalize agent position
+        norm_row = r / (self.n_rows - 1)
+        norm_col = c / (self.n_cols - 1)
 
-            # normalize last action
-            norm_last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
+        # normalize last action
+        norm_last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
 
-            # battery levels of all sensors, normalized to [0, 1]
-            battery_levels = np.array(
+        # battery levels of all sensors, normalized to [0, 1]
+        battery_levels = np.array(
                 [self.sensor_batteries.get(pos, 0.0) / 100.0 for pos in self.sensor_batteries],
                 dtype=np.float32
-            )
+        )
 
-            distances = chebyshev_distances(
+        distances = chebyshev_distances(
                 self.agent_pos,
                 self.goal_positions,
                 self.n_cols,
                 self.n_rows,
                 normalize=True
-            )
-            min_dist = min(distances) if distances else 1.0
+        )
+        min_dist = min(distances) if distances is not None else 1.0
 
-            obs = np.concatenate([
+        obs = np.concatenate([
                 blocked_flags,
                 [norm_row, norm_col],
                 [norm_last_action],
                 battery_levels,
                 [min_dist]
-            ])
+        ])
 
-            return obs
+        return obs
 
     def reset(self, seed=None, battery_overrides=None, agent_override=None):
         """
@@ -419,7 +420,8 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
-        return self.get_observation(), {}
+        obs = self.get_observation()
+        return obs, {}
 
     def can_move_to(self, pos):
         '''
@@ -513,7 +515,7 @@ class GridWorldEnv(Env):
 
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps
-
+        
         ret = self.get_observation(), reward, terminated, truncated, {
             "collisions": self.obstacle_hits,
             "steps": self.episode_steps,
@@ -527,6 +529,7 @@ class GridWorldEnv(Env):
         }
 
         self.last_action = action
+        obs = self.get_observation()
         return ret
     
     def episode_summary(self):

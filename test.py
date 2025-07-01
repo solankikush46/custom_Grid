@@ -36,43 +36,23 @@ def generate_grid(rows: int, cols: int, obstacle_percentage: float,
     return filename
 
 def train_model(filename: str, timesteps: int):
-    """
-    Loads the environment and trains the PPO model
-    """
-    env = GridWorldEnv(grid_file=filename)
     model_name = os.path.splitext(filename)[0]
-    model = train.train_PPO_model(env, timesteps=timesteps,
+    model = train.train_PPO_model(grid_file=filename,
+                                  timesteps=timesteps,
                                   model_name=model_name)
-    return model, model_name, env
+    eval_env = GridWorldEnv(grid_file=filename)
+    return model, model_name, eval_env
 
 def test_PPO(timesteps: int, rows: int, cols: int):
-    episodes = 100
-    render = True
-    verbose = False
+    filename = "grid_20x20_15p.txt"
+    train.train_PPO_model(filename, timesteps, "grid_20x20_15p_battery")
     
-    # randomly generated
-    obstacle_percentages = [0.15, 0.30]
+    filename = "grid_20x20_30p.txt"
+    train.train_PPO_model(filename, timesteps, "grid_20x20_30p_battery")
 
-    for pct in obstacle_percentages:
-        filename = f"grid_{rows}x{cols}_{int(pct * 100)}p.txt"
-        model, name, env = train_model(filename, timesteps)
-        '''
-        train.load_model_and_evaluate(name, env,
-                                      episodes,
-                                      render=render,
-                                      verbose=verbose)
-        '''
-        
-    # fixed
-    filename = f"mine_{rows}x{cols}.txt"
-    model, name, env = train_model(filename, timesteps)
-    '''
-    train.load_model_and_evaluate(name, env,
-                                      episodes,
-                                      render=render,
-                                      verbose=verbose)
-    '''
-
+    filename = "mine_20x20.txt"
+    train.train_PPO_model(filename, timesteps, "mine_20x20_battery")
+    
 def train_for_test_battery(timesteps: int):
     """
     Train PPO on the battery test grid using train_model helper
