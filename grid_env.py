@@ -62,7 +62,7 @@ class CustomTensorboardCallback(BaseCallback):
         for k, v in info.items():
             if k == "subrewards" and isinstance(v, dict):
                 for sub_k, sub_v in v.items():
-                    subrewards[f"subreward/{sub_k}"] = sub_v
+                    subrewards[f"{sub_k}"] = sub_v
             elif not isinstance(v, (dict, list)):
                 flat[k] = v
         return flat, subrewards

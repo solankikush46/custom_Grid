@@ -13,6 +13,7 @@ from Qlearning import QLearningAgent
 from torch.utils.tensorboard import SummaryWriter
 import time
 from constants import *
+from plot_metrics import plot_all_metrics
 
 ##==============================================================
 ## Cole's Experiments
@@ -48,6 +49,15 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     model.save(model_save_path)
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
+    # generate graphs from csvs
+    plots = plot_all_metrics(log_dir=log_path, output_dir=os.path.join(log_path, "plots"))
+    
+    print("\n=== Metrics Plots Generated ===")
+    for csv_file, plot_list in plots.items():
+        print(f"\n{csv_file}:")
+        for p in plot_list:
+            print(f"  {p}")
+    
     return model
 
 # SAC requires continuous action sapce
