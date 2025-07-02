@@ -4,7 +4,8 @@ from gymnasium import Env
 from gymnasium.spaces import Discrete, Box, Dict
 import numpy as np
 import random 
-import os  
+import os
+import csv
 import pygame
 import grid_gen
 from constants import *
@@ -12,34 +13,91 @@ from utils import *
 from reward_functions import compute_reward
 from sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
 from stable_baselines3.common.callbacks import BaseCallback
+import datetime
 
 ##==============================================================
-## Logs custom metrics stored in `info` dict to TensorBoard
+## Logs custom metrics stored in `info` dict to TensorBoard at each timestep
 ##==============================================================
 class CustomTensorboardCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
+        self.csv_file = None
+        self.csv_writer = None
+        self.fieldnames = []
+        self.csv_path = None
+        self.verbose = verbose
+
+    def _on_training_start(self) -> None:
+        # at this point, self.logger.dir is available
+        log_dir = self.logger.dir
+        print(f"Logger directory resolved to: {log_dir}")
+
+        # create CSV filename inside this directory
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"metrics_{timestamp}.csv"
+        self.csv_path = os.path.join(log_dir, filename)
+
+        # open the file
+        self.csv_file = open(self.csv_path, mode="w", newline="")
+
+        if self.verbose > 0:
+            print(f"CSV logging to: {self.csv_path}")
+
+    def _flatten_info(self, info):
+        flat_info = {}
+        for k, v in info.items():
+            if k == "subrewards" and isinstance(v, dict):
+                for sub_k, sub_v in v.items():
+                    flat_info[f"subreward/{sub_k}"] = sub_v
+            elif not isinstance(v, (dict, list)):
+                flat_info[k] = v
+        return flat_info
+
+    def _update_fieldnames(self, new_keys):
+        updated = False
+        for k in new_keys:
+            if k not in self.fieldnames:
+                self.fieldnames.append(k)
+                updated = True
+        if updated:
+            # Re-write header
+            self.csv_file.seek(0)
+            self.csv_file.truncate()
+            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.fieldnames)
+            self.csv_writer.writeheader()
+        return updated
 
     def _on_step(self) -> bool:
-        for i, done in enumerate(self.locals["dones"]):
-            if done:
-                info = self.locals["infos"][i]
-                ep_info = info.get("episode")
-                if ep_info is not None:
-                    ep_reward = ep_info.get("r", 0.0)
-                    ep_length = ep_info.get("l", 0)
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            if not info:
+                continue
 
-                    self.logger.record("custom/episode_reward", ep_reward)
-                    self.logger.record("custom/episode_length", ep_length)
+            flat_info = self._flatten_info(info)
 
-                self.logger.record("custom/collisions", info.get("collisions", 0))
-                self.logger.record("custom/average_battery", info.get("average_battery", 0.0))
+            # Log to TensorBoard
+            for k, v in flat_info.items():
+                self.logger.record(f"custom/{k}", v)
 
-                subrewards = info.get("subrewards", {})
-                for key, value in subrewards.items():
-                    self.logger.record(f"subreward/{key}", value)
+            # Update fieldnames dynamically
+            if not self.fieldnames:
+                self.fieldnames = list(flat_info.keys())
+                self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.fieldnames)
+                self.csv_writer.writeheader()
+            else:
+                self._update_fieldnames(flat_info.keys())
+
+            # Ensure all keys present
+            row = {k: flat_info.get(k, "") for k in self.fieldnames}
+            self.csv_writer.writerow(row)
 
         return True
+
+    def _on_training_end(self) -> None:
+        if self.csv_file:
+            self.csv_file.close()
+            if self.verbose > 0:
+                print(f"[CustomTensorboardCallback] CSV file closed: {self.csv_path}")
 
 ##==============================================================
 ## GridWorldEnv Class
@@ -436,54 +494,52 @@ class GridWorldEnv(Env):
     def agent_reached_exit(self):
         return tuple(self.agent_pos) in self.goal_positions
 
-    ''' logic in this should be moved to helper functions '''
     def step(self, action):
         move = DIRECTION_MAP[int(action)]
         new_pos = self.agent_pos + move
         self.episode_steps += 1
-        
-        # compute reward, then mark new_pos as visited
+
+        reward, subrewards = self._compute_reward_and_update(new_pos)
+        self._update_agent_position(new_pos)
+        self._update_sensor_batteries()
+        self._move_miners_and_update_sensors()
+
+        terminated = self.agent_reached_exit()
+        truncated = self.episode_steps >= self.max_steps
+
+        info = self._build_info_dict_if_done(terminated, truncated, subrewards)
+
+        return self.get_observation(), reward, terminated, truncated, info
+
+    def _compute_reward_and_update(self, new_pos):
         reward, subrewards = compute_reward(self, new_pos)
         self.total_reward += reward
+        self.visited.add(tuple(new_pos))
+        return reward, subrewards
 
-        self.visited.add(tuple(new_pos))       
-
-        # move agent
+    def _update_agent_position(self, new_pos):
         hit_wall = not self.can_move_to(new_pos)
         if not hit_wall:
             self.agent_pos = new_pos
         else:
             self.obstacle_hits += 1
 
-        # deplete sensor battery values over time
-        '''
-        for coord in self.sensor_batteries:
-            self.sensor_batteries[coord] = max(0.0, self.sensor_batteries[coord] - 0.01)
-        '''
-        self.move_miners_randomly()
-        for miner_pos in self.miners:
-            r, c = miner_pos
-
-        # deplete sensor battery values over time
+    def _update_sensor_batteries(self):
         closest_sensor = self._get_closest_sensor(self.agent_pos)
-        # get battery level of closest sensor
         if closest_sensor is not None:
             self.current_battery_level = self.sensor_batteries[closest_sensor]
             self.battery_levels_during_episode.append(self.current_battery_level)
-        else:
-            self.current_battery_level = 0.0
-        
-        if closest_sensor:
             self.sensor_batteries = update_single_sensor_battery(
                 self.sensor_batteries,
                 sensor_pos=closest_sensor,
                 miner=self.agent_pos,
                 base_stations=self.base_station_positions
-                )
+            )
+        else:
+            self.current_battery_level = 0.0
 
-        # -------------------------------
-        # Miners deplete closest sensors
-        # -------------------------------
+    def _move_miners_and_update_sensors(self):
+        self.move_miners_randomly()
         for miner_pos in self.miners:
             closest_sensor = self._get_closest_sensor(miner_pos)
             if closest_sensor:
@@ -494,46 +550,23 @@ class GridWorldEnv(Env):
                     base_stations=self.base_station_positions
                 )
 
-        '''
-        # add battery values encountered in path to list
-        for sensor_pos, battery in self.sensor_batteries.items():
-            if self._in_radar(sensor_pos, self.agent_pos, radius=2):
-                self.battery_values_in_radar.append(battery)
-
-        '''
+    def _build_info_dict_if_done(self, terminated, truncated, subrewards):
+        info = {
+            "step": self.episode_steps,
+            "agent_row": self.agent_pos[0],
+            "agent_col": self.agent_pos[1],
+            "reward": self.rewards_during_episode[-1] if self.rewards_during_episode else 0.0,
+            "cumulative_reward": self.total_reward,
+            "obstacle_hits": self.obstacle_hits,
+            "current_battery": self.current_battery_level,
+            "distance_to_goal": self._compute_min_distance_to_goal(),
+            "visited_count": len(self.visited),
+            "terminated": terminated,
+            "truncated": truncated,
+            "subrewards": subrewards,
+        }
+        return info
         
-        '''
-        s = "action: %s, f_dist: %s, f_wall: %s, f_battery: %s , f_exit: %s"
-        print (s % (action, 0.2 * self.f_distance(),
-                    float(self.hit_wall(new_pos)),
-                    0.3 * self.f_battery(), 0.3 * self.f_exit()))
-        '''
-
-        terminated = self.agent_reached_exit()
-        truncated = self.episode_steps >= self.max_steps
-
-        info = {}
-
-        if terminated or truncated:
-            info = {
-                "episode": {
-                    "r": self.total_reward,
-                    "l": self.episode_steps
-                },
-                "collisions": self.obstacle_hits,
-                "average_battery": (
-                    np.mean(self.battery_levels_during_episode)
-                    if self.battery_levels_during_episode
-                    else 0.0
-                ),
-                "subrewards": subrewards,
-                "steps": self.episode_steps,
-                "agent_pos": self.agent_pos.copy()
-            }
-
-        return self.get_observation(), reward, \
-            terminated, truncated, info
-    
     def episode_summary(self):
         print(f"   Episode Summary:")
         print(f"   Total Steps     : {self.episode_steps}")
@@ -634,3 +667,16 @@ class GridWorldEnv(Env):
             else:
                 updated_miners.append(miner_pos)  # stay in place if invalid
         self.miners = updated_miners
+
+    def _compute_min_distance_to_goal(self):
+        if not self.goal_positions:
+            return 0
+        distances = chebyshev_distances(
+            self.agent_pos,
+            self.goal_positions,
+            self.n_cols,
+            self.n_rows,
+            normalize=True
+        )
+        return min(distances)
+

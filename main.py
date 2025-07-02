@@ -9,9 +9,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 def ensure_directories_exist():
     directories = [
         LOGS["ppo"],
-        LOGS["dqn"],
         MODELS["ppo"],
-        MODELS["dqn"],
         FIXED_GRID_DIR,
         RANDOM_GRID_DIR,
     ]
