@@ -14,8 +14,8 @@ def ensure_directories_exist():
         os.makedirs(d, exist_ok=True)
 
 def main():
-    generate_all_plots()
-    #test_PPO(1_000_000)
+    #generate_all_plots()
+    test_PPO(300_000)
         
 if __name__ == "__main__":
     ensure_directories_exist()
