@@ -22,15 +22,19 @@ import datetime
 class CustomTensorboardCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
+
+        # CSV files and writers
         self.timestep_csv_file = None
         self.timestep_csv_writer = None
         self.timestep_fieldnames = []
-        self.timestep_csv_path = None
 
         self.episode_csv_file = None
         self.episode_csv_writer = None
         self.episode_fieldnames = []
-        self.episode_csv_path = None
+
+        self.subrewards_csv_file = None
+        self.subrewards_csv_writer = None
+        self.subrewards_fieldnames = []
 
         self.verbose = verbose
 
@@ -39,46 +43,29 @@ class CustomTensorboardCallback(BaseCallback):
         print(f"Logger directory resolved to: {log_dir}")
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        timestep_filename = f"timestep_metrics_{timestamp}.csv"
-        episode_filename = f"episode_metrics_{timestamp}.csv"
+        self.timestep_csv_path = os.path.join(log_dir, f"timestep_metrics_{timestamp}.csv")
+        self.episode_csv_path = os.path.join(log_dir, f"episode_metrics_{timestamp}.csv")
+        self.subrewards_csv_path = os.path.join(log_dir, f"subrewards_metrics_{timestamp}.csv")
 
-        self.timestep_csv_path = os.path.join(log_dir, timestep_filename)
-        self.timestep_csv_file = open(self.timestep_csv_path, mode="w", newline="")
-
-        self.episode_csv_path = os.path.join(log_dir, episode_filename)
-        self.episode_csv_file = open(self.episode_csv_path, mode="w", newline="")
+        self.timestep_csv_file = open(self.timestep_csv_path, "w", newline="")
+        self.episode_csv_file = open(self.episode_csv_path, "w", newline="")
+        self.subrewards_csv_file = open(self.subrewards_csv_path, "w", newline="")
 
         if self.verbose > 0:
             print(f"Timestep CSV logging to: {self.timestep_csv_path}")
             print(f"Episode CSV logging to: {self.episode_csv_path}")
+            print(f"Subrewards CSV logging to: {self.subrewards_csv_path}")
 
     def _flatten_info(self, info):
-        flat_info = {}
+        flat = {}
+        subrewards = {}
         for k, v in info.items():
             if k == "subrewards" and isinstance(v, dict):
                 for sub_k, sub_v in v.items():
-                    flat_info[f"subreward/{sub_k}"] = sub_v
+                    subrewards[f"subreward/{sub_k}"] = sub_v
             elif not isinstance(v, (dict, list)):
-                flat_info[k] = v
-        return flat_info
-
-    def _update_fieldnames(self, new_keys, is_episode=False):
-        fieldnames = self.episode_fieldnames if is_episode else self.timestep_fieldnames
-        csv_file = self.episode_csv_file if is_episode else self.timestep_csv_file
-        csv_writer_attr = "episode_csv_writer" if is_episode else "timestep_csv_writer"
-
-        updated = False
-        for k in new_keys:
-            if k not in fieldnames:
-                fieldnames.append(k)
-                updated = True
-
-        if updated:
-            csv_file.seek(0)
-            csv_file.truncate()
-            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-            setattr(self, csv_writer_attr, writer)
-            writer.writeheader()
+                flat[k] = v
+        return flat, subrewards
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
@@ -86,64 +73,71 @@ class CustomTensorboardCallback(BaseCallback):
             if not info:
                 continue
 
-            flat_info = self._flatten_info(info)
+            flat_info, subrewards_info = self._flatten_info(info)
 
-            # Split into timestep and episode
+            # Split metrics
             timestep_keys = [
                 "step", "agent_row", "agent_col", "reward",
                 "current_battery", "distance_to_goal",
                 "terminated", "truncated"
             ]
             episode_keys = [
-                "cumulative_reward", "obstacle_hits", "visited_count"
+                "cumulative_reward", "obstacle_hits",
+                "visited_count", "average_battery"
             ]
 
             timestep_data = {k: flat_info.get(k) for k in timestep_keys if k in flat_info}
-            # Subrewards are always timestep-level
-            timestep_data.update({k: v for k, v in flat_info.items() if k.startswith("subreward/")})
-
             episode_data = {k: flat_info.get(k) for k in episode_keys if k in flat_info}
 
-            # Log TensorBoard
+            # TensorBoard logging
             for k, v in timestep_data.items():
                 self.logger.record(f"timestep/{k}", v)
             for k, v in episode_data.items():
                 self.logger.record(f"episode/{k}", v)
+            for k, v in subrewards_info.items():
+                self.logger.record(f"subrewards/{k}", v)
 
-            # CSV timestep
+            # CSV: timestep
             if not self.timestep_fieldnames:
                 self.timestep_fieldnames = list(timestep_data.keys())
                 self.timestep_csv_writer = csv.DictWriter(self.timestep_csv_file, fieldnames=self.timestep_fieldnames)
                 self.timestep_csv_writer.writeheader()
-            else:
-                self._update_fieldnames(timestep_data.keys(), is_episode=False)
-
             timestep_row = {k: timestep_data.get(k, "") for k in self.timestep_fieldnames}
             self.timestep_csv_writer.writerow(timestep_row)
 
-            # CSV episode (only when episode ends)
+            # CSV: subrewards
+            if subrewards_info:
+                # Optionally, attach step number if available
+                if "step" in timestep_data:
+                    subrewards_info = {"step": timestep_data["step"], **subrewards_info}
+                if not self.subrewards_fieldnames:
+                    self.subrewards_fieldnames = list(subrewards_info.keys())
+                    self.subrewards_csv_writer = csv.DictWriter(self.subrewards_csv_file, fieldnames=self.subrewards_fieldnames)
+                    self.subrewards_csv_writer.writeheader()
+                subrewards_row = {k: subrewards_info.get(k, "") for k in self.subrewards_fieldnames}
+                self.subrewards_csv_writer.writerow(subrewards_row)
+
+            # CSV: episode
             if flat_info.get("terminated", False):
                 if not self.episode_fieldnames:
                     self.episode_fieldnames = list(episode_data.keys())
                     self.episode_csv_writer = csv.DictWriter(self.episode_csv_file, fieldnames=self.episode_fieldnames)
                     self.episode_csv_writer.writeheader()
-                else:
-                    self._update_fieldnames(episode_data.keys(), is_episode=True)
-
                 episode_row = {k: episode_data.get(k, "") for k in self.episode_fieldnames}
                 self.episode_csv_writer.writerow(episode_row)
 
         return True
 
     def _on_training_end(self) -> None:
-        if self.timestep_csv_file:
-            self.timestep_csv_file.close()
-            if self.verbose > 0:
-                print(f"Timestep CSV closed: {self.timestep_csv_path}")
-        if self.episode_csv_file:
-            self.episode_csv_file.close()
-            if self.verbose > 0:
-                print(f"Episode CSV closed: {self.episode_csv_path}")
+        for f in [
+            (self.timestep_csv_file, self.timestep_csv_path),
+            (self.episode_csv_file, self.episode_csv_path),
+            (self.subrewards_csv_file, self.subrewards_csv_path)
+        ]:
+            if f[0]:
+                f[0].close()
+                if self.verbose > 0:
+                    print(f"Closed CSV: {f[1]}")
 
 ##==============================================================
 ## GridWorldEnv Class
@@ -188,6 +182,7 @@ class GridWorldEnv(Env):
         self.last_action = -1
         self.miners = []
         self.n_miners = 12
+        self.episode_count = 0
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -463,6 +458,8 @@ class GridWorldEnv(Env):
         # register seed
         super().reset(seed=seed)
 
+        self.episode_count += 1
+
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
 
@@ -594,6 +591,7 @@ class GridWorldEnv(Env):
     def _build_info_dict_if_done(self, terminated, truncated, subrewards):
         info = {
             "step": self.episode_steps,
+            "episode_count": self.episode_count,
             "agent_row": self.agent_pos[0],
             "agent_col": self.agent_pos[1],
             "reward": self.rewards_during_episode[-1] if self.rewards_during_episode else 0.0,
