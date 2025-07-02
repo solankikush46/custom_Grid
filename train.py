@@ -41,7 +41,7 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
         tensorboard_log=log_path
     )
 
-    callback = CustomTensorboardCallback(log_path)
+    callback = CustomTensorboardCallback()
 
     model.learn(total_timesteps=timesteps, callback=callback)
     

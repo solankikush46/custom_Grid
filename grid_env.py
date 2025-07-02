@@ -4,7 +4,8 @@ from gymnasium import Env
 from gymnasium.spaces import Discrete, Box, Dict
 import numpy as np
 import random 
-import os  
+import os
+import csv
 import pygame
 import grid_gen
 from constants import *
@@ -12,6 +13,7 @@ from utils import *
 from reward_functions import compute_reward
 from sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
 from stable_baselines3.common.callbacks import BaseCallback
+import datetime
 
 ##==============================================================
 ## Logs custom metrics stored in `info` dict to TensorBoard at each timestep
@@ -19,6 +21,51 @@ from stable_baselines3.common.callbacks import BaseCallback
 class CustomTensorboardCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
+        self.csv_file = None
+        self.csv_writer = None
+        self.fieldnames = []
+        self.csv_path = None
+        self.verbose = verbose
+
+    def _on_training_start(self) -> None:
+        # at this point, self.logger.dir is available
+        log_dir = self.logger.dir
+        print(f"Logger directory resolved to: {log_dir}")
+
+        # create CSV filename inside this directory
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"metrics_{timestamp}.csv"
+        self.csv_path = os.path.join(log_dir, filename)
+
+        # open the file
+        self.csv_file = open(self.csv_path, mode="w", newline="")
+
+        if self.verbose > 0:
+            print(f"CSV logging to: {self.csv_path}")
+
+    def _flatten_info(self, info):
+        flat_info = {}
+        for k, v in info.items():
+            if k == "subrewards" and isinstance(v, dict):
+                for sub_k, sub_v in v.items():
+                    flat_info[f"subreward/{sub_k}"] = sub_v
+            elif not isinstance(v, (dict, list)):
+                flat_info[k] = v
+        return flat_info
+
+    def _update_fieldnames(self, new_keys):
+        updated = False
+        for k in new_keys:
+            if k not in self.fieldnames:
+                self.fieldnames.append(k)
+                updated = True
+        if updated:
+            # Re-write header
+            self.csv_file.seek(0)
+            self.csv_file.truncate()
+            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.fieldnames)
+            self.csv_writer.writeheader()
+        return updated
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
@@ -26,18 +73,31 @@ class CustomTensorboardCallback(BaseCallback):
             if not info:
                 continue
 
-            # Log scalar fields (skip dicts/lists except subrewards)
-            for k, v in info.items():
-                if isinstance(v, dict) or isinstance(v, list):
-                    continue
+            flat_info = self._flatten_info(info)
+
+            # Log to TensorBoard
+            for k, v in flat_info.items():
                 self.logger.record(f"custom/{k}", v)
 
-            # Log subreward dict separately, if present
-            subrewards = info.get("subrewards", {})
-            for key, value in subrewards.items():
-                self.logger.record(f"subreward/{key}", value)
+            # Update fieldnames dynamically
+            if not self.fieldnames:
+                self.fieldnames = list(flat_info.keys())
+                self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.fieldnames)
+                self.csv_writer.writeheader()
+            else:
+                self._update_fieldnames(flat_info.keys())
+
+            # Ensure all keys present
+            row = {k: flat_info.get(k, "") for k in self.fieldnames}
+            self.csv_writer.writerow(row)
 
         return True
+
+    def _on_training_end(self) -> None:
+        if self.csv_file:
+            self.csv_file.close()
+            if self.verbose > 0:
+                print(f"[CustomTensorboardCallback] CSV file closed: {self.csv_path}")
 
 ##==============================================================
 ## GridWorldEnv Class

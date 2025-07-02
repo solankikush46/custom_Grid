@@ -9,9 +9,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 def ensure_directories_exist():
     directories = [
         LOGS["ppo"],
-        LOGS["dqn"],
         MODELS["ppo"],
-        MODELS["dqn"],
         FIXED_GRID_DIR,
         RANDOM_GRID_DIR,
     ]
@@ -24,4 +22,4 @@ if __name__ == "__main__":
     #test_battery()
     #test_PPO(timesteps=500_000, rows=20, cols=20)
     #test_manual_control("grid_20x20_30p.txt")
-    test_PPO(1000)
+    test_PPO(1_000_000)
