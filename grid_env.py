@@ -92,7 +92,7 @@ class CustomTensorboardCallback(BaseCallback):
             timestep_keys = [
                 "step", "agent_row", "agent_col", "reward",
                 "current_battery", "distance_to_goal",
-                "terminated", "truncated"
+                "terminated", "truncated", "episode_count"
             ]
             episode_keys = [
                 "cumulative_reward", "obstacle_hits", "visited_count"
@@ -188,6 +188,7 @@ class GridWorldEnv(Env):
         self.last_action = -1
         self.miners = []
         self.n_miners = 12
+        self.episode_count = 0
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -463,6 +464,8 @@ class GridWorldEnv(Env):
         # register seed
         super().reset(seed=seed)
 
+        self.episode_count += 1
+
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
 
@@ -594,6 +597,7 @@ class GridWorldEnv(Env):
     def _build_info_dict_if_done(self, terminated, truncated, subrewards):
         info = {
             "step": self.episode_steps,
+            "episode_count": self.episode_count
             "agent_row": self.agent_pos[0],
             "agent_col": self.agent_pos[1],
             "reward": self.rewards_during_episode[-1] if self.rewards_during_episode else 0.0,
