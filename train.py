@@ -58,7 +58,6 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
         for p in plot_list:
             print(f"  {p}")
     
-    
     return model
 
 # SAC requires continuous action sapce
