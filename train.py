@@ -50,7 +50,7 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
     # generate graphs from csvs
-    plots = plot_all_metrics(log_dir=log_path)
+    plots = plot_all_metrics(log_dir=log_path, rolling_window=2000)
     
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
