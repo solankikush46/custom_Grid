@@ -1,6 +1,7 @@
 
 # Logs directory
 logs/
+saved_logs/
 
 # Saved models
 SavedModels/

@@ -5,6 +5,28 @@ from constants import *
 import pandas as pd
 import matplotlib.pyplot as plt
 
+def get_latest_run_dir(base_dir):
+    """
+    Returns the subdirectory with the highest PPO_N number.
+    """
+    if not os.path.exists(base_dir):
+        raise FileNotFoundError(f"Log base directory does not exist: {base_dir}")
+
+    ppo_dirs = []
+    for name in os.listdir(base_dir):
+        if name.startswith("PPO_") and os.path.isdir(os.path.join(base_dir, name)):
+            try:
+                num = int(name.split("_")[1])
+                ppo_dirs.append((num, name))
+            except (IndexError, ValueError):
+                continue
+
+    if not ppo_dirs:
+        raise FileNotFoundError(f"No PPO_N directories found in {base_dir}")
+
+    latest_num, latest_dir = sorted(ppo_dirs, reverse=True)[0]
+    return os.path.join(base_dir, latest_dir)
+
 def plot_csv(csv_path, output_dir, rolling_window=2000):
     """
     Reads a CSV file, applies a rolling mean, and generates line plots for numeric columns.
@@ -27,6 +49,7 @@ def plot_csv(csv_path, output_dir, rolling_window=2000):
 
     # Create the plots directory
     plot_dir = output_dir
+    print("plot_dir", plot_dir)
 
     # Extract base name without extension
     base_name = os.path.splitext(os.path.basename(csv_path))[0]
@@ -61,7 +84,7 @@ def plot_csv(csv_path, output_dir, rolling_window=2000):
 
 def plot_all_metrics(
     log_dir,
-    output_dir,
+    output_dir=None,
     rolling_window=2000
 ):
     """
@@ -75,13 +98,23 @@ def plot_all_metrics(
     Returns:
         dict: Mapping of CSV filenames to lists of saved plot file paths.
     """
-    os.makedirs(output_dir, exist_ok=True)
+    base_name = os.path.basename(os.path.normpath(log_dir))
+    if base_name.startswith("PPO_") and os.path.isdir(log_dir):
+        run_dir = log_dir
+    else:
+        run_dir = get_latest_run_dir(log_dir)
 
+    print("run_dir:", run_dir)
+
+    if output_dir is None:
+        output_dir = os.path.join(run_dir, "plots")
+    os.makedirs(output_dir, exist_ok=True)
+    
     all_plots = {}
 
     # Look for all metrics CSVs
     csv_files = [
-        f for f in os.listdir(log_dir)
+        f for f in os.listdir(run_dir)
         if f.endswith(".csv") and (
             f.startswith("timestep_metrics") or
             f.startswith("episode_metrics") or
@@ -89,8 +122,10 @@ def plot_all_metrics(
         )
     ]
 
+    print("csv_files:", csv_files)
+
     for f in csv_files:
-        csv_path = os.path.join(log_dir, f)
+        csv_path = os.path.join(run_dir, f)
         plots = plot_csv(csv_path, output_dir, rolling_window=rolling_window)
         all_plots[f] = plots
 

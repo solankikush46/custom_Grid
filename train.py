@@ -1,5 +1,5 @@
 # train.py
-
+# train 100x100 for 2 million timesteps
 from grid_env import *
 from episode_callback import EpisodeStatsCallback
 import os
@@ -50,7 +50,7 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
     # generate graphs from csvs
-    plots = plot_all_metrics(log_dir=log_path, output_dir=os.path.join(log_path, "plots"))
+    plots = plot_all_metrics(log_dir=log_path)
     
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
