@@ -27,7 +27,7 @@ def get_latest_run_dir(base_dir):
     latest_num, latest_dir = sorted(ppo_dirs, reverse=True)[0]
     return os.path.join(base_dir, latest_dir)
 
-def plot_csv(csv_path, output_dir, rolling_window=2000):
+def plot_csv(csv_path, output_dir, rolling_window=1):
     """
     Reads a CSV file, applies a rolling mean, and generates line plots for numeric columns.
 
@@ -58,26 +58,55 @@ def plot_csv(csv_path, output_dir, rolling_window=2000):
 
     plots = []
 
-    for col in numeric_cols:
-        smoothed = df[col].rolling(window=rolling_window, min_periods=1).mean()
+    # csv naming scheme is prefix_metric_datetime
+    # Split base_name into parts by '_'
+    parts = base_name.split('_')
+    
+    # Assume last two parts are datetime components (date and time)
+    # and the rest is prefix (could be multiple parts)
+    if len(parts) >= 3:
+        prefix = '_'.join(parts[:-2])  # all except last two
+        datetime_str = '_'.join(parts[-2:])  # last two parts as datetime
+    else:
+        # fallback: treat whole as prefix, no datetime
+        prefix = base_name
+        datetime_str = ""
 
+    is_episode_metrics = "episode_metrics" in base_name
+    for col in numeric_cols:
+        raw_values = df[col]
+        
+        if is_episode_metrics:
+            # plot raw data (no smoothing)
+            y_values = raw_values
+            window_info = "Raw data"
+            x = df["episode"]
+            xlabel = "Episode"
+        else:
+            # apply rolling mean smoothing
+            y_values = df[col].rolling(window=rolling_window, min_periods=1).mean()
+            window_info = f"Rolling Mean window={rolling_window}"
+            x = df.index
+            xlabel = "Timestep"
+        
         plt.figure(figsize=(10, 4))
-        plt.plot(smoothed)
-        plt.title(f"{base_name}: {col} (Rolling Mean window={rolling_window})")
-        plt.xlabel("Row")
+        plt.plot(x, y_values)
+        plt.title(f"{base_name}: {col} ({window_info})")
+        plt.xlabel(xlabel)
         plt.ylabel(col)
         plt.grid(True)
 
-        # Clean column name
+        # build output file name
         safe_col_name = col.replace("/", "_").replace(" ", "_")
+        filename = f"{prefix}_{safe_col_name}_{datetime_str}.png"
 
-        # Build output file name
         out_path = os.path.join(plot_dir, f"{base_name}_{safe_col_name}.png")
         plt.tight_layout()
         plt.savefig(out_path)
         plt.close()
-        plots.append(out_path)
 
+        # save plot
+        plots.append(out_path)
         print(f"Saved plot: {out_path}")
 
     return plots
@@ -85,7 +114,7 @@ def plot_csv(csv_path, output_dir, rolling_window=2000):
 def plot_all_metrics(
     log_dir,
     output_dir=None,
-    rolling_window=2000
+    rolling_window=1
 ):
     """
     Generates plots for all metrics CSVs in a log directory.
@@ -104,7 +133,7 @@ def plot_all_metrics(
     else:
         run_dir = get_latest_run_dir(log_dir)
 
-    print("run_dir:", run_dir)
+    #print("run_dir:", run_dir)
 
     if output_dir is None:
         output_dir = os.path.join(run_dir, "plots")
@@ -122,7 +151,7 @@ def plot_all_metrics(
         )
     ]
 
-    print("csv_files:", csv_files)
+    #print("csv_files:", csv_files)
 
     for f in csv_files:
         csv_path = os.path.join(run_dir, f)
@@ -131,7 +160,7 @@ def plot_all_metrics(
 
     return all_plots
 
-def generate_all_plots(base_dir=None):
+def generate_all_plots(base_dir=None, rolling_window=1):
     """
     Recursively search for folders containing metrics CSVs
     and generate plots for each.
@@ -148,5 +177,7 @@ def generate_all_plots(base_dir=None):
         if csvs:
             print(f"\n=== Processing CSVs in {root} ===")
             output_dir = os.path.join(root, "plots")
-            plots = plot_all_metrics(log_dir=root, output_dir=output_dir)
+            plots = plot_all_metrics(log_dir=root, output_dir=output_dir, rolling_window=rolling_window)
             print(f"Generated {sum(len(v) for v in plots.values())} plots in {output_dir}")
+        else:
+            print(f"No CSVs found in {root}")

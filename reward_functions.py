@@ -8,6 +8,7 @@ from utils import chebyshev_distances
 ##==============================================================
 # simple reward
 #-----------------------
+# reward agent for step closer to goal
 def get_simple_reward(env, new_pos):
     reward = 0.0
     subrewards = {}
@@ -36,6 +37,7 @@ def get_simple_reward(env, new_pos):
             reward += revisit_penalty
         subrewards["revisit_penalty"] = revisit_penalty
 
+        '''
         threshold = 10
         alpha = 1.3
         beta = 0.2
@@ -45,6 +47,13 @@ def get_simple_reward(env, new_pos):
             battery_penalty = -alpha * np.exp(beta * (threshold - battery))
             reward += battery_penalty
         subrewards["battery_penalty"] = battery_penalty
+        '''
+        # increase battery penalty
+        threshold = 10
+        battery = env.current_battery_level
+        if battery <= threshold:
+            battery_penalty = -50
+            reward
 
     return reward, subrewards
 

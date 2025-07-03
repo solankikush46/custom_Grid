@@ -23,6 +23,9 @@ class CustomTensorboardCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
 
+        # tracker
+        self.episode_count = 0
+
         # CSV files and writers
         self.timestep_csv_file = None
         self.timestep_csv_writer = None
@@ -118,12 +121,17 @@ class CustomTensorboardCallback(BaseCallback):
                 self.subrewards_csv_writer.writerow(subrewards_row)
 
             # CSV: episode
-            if flat_info.get("terminated", False):
+            if flat_info.get("terminated", False) or flat_info.get("truncated", False):
+                # add episode count to csv data
+                self.episode_count += 1
+                episode_row = {"episode": self.episode_count}
+                episode_row.update(episode_data)
+                
                 if not self.episode_fieldnames:
-                    self.episode_fieldnames = list(episode_data.keys())
+                    self.episode_fieldnames = ["episode"] + list(episode_data.keys())
                     self.episode_csv_writer = csv.DictWriter(self.episode_csv_file, fieldnames=self.episode_fieldnames)
                     self.episode_csv_writer.writeheader()
-                episode_row = {k: episode_data.get(k, "") for k in self.episode_fieldnames}
+                    
                 self.episode_csv_writer.writerow(episode_row)
 
         return True
@@ -148,7 +156,7 @@ class GridWorldEnv(Env):
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
-                 n_sensors=None
+                 n_sensors=None,
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -182,11 +190,9 @@ class GridWorldEnv(Env):
         self.last_action = -1
         self.miners = []
         self.n_miners = 12
-        self.episode_count = 0
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
-        self.rewards_during_episode = []
             
         # observation/action spaces
         self._init_spaces()
@@ -458,8 +464,6 @@ class GridWorldEnv(Env):
         # register seed
         super().reset(seed=seed)
 
-        self.episode_count += 1
-
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
 
@@ -484,8 +488,7 @@ class GridWorldEnv(Env):
 
         # reset graph trackers
         self.battery_levels_during_episode = []
-        self.rewards_during_episode = []
-
+    
         # place agent
         if agent_override:
             self.agent_pos = np.array(agent_override)
@@ -545,7 +548,7 @@ class GridWorldEnv(Env):
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps
 
-        info = self._build_info_dict_if_done(terminated, truncated, subrewards)
+        info = self._build_info_dict_if_done(terminated, truncated, reward, subrewards)
 
         return self.get_observation(), reward, terminated, truncated, info
 
@@ -588,13 +591,12 @@ class GridWorldEnv(Env):
                     base_stations=self.base_station_positions
                 )
 
-    def _build_info_dict_if_done(self, terminated, truncated, subrewards):
+    def _build_info_dict_if_done(self, terminated, truncated, reward, subrewards):
         info = {
             "step": self.episode_steps,
-            "episode_count": self.episode_count,
             "agent_row": self.agent_pos[0],
             "agent_col": self.agent_pos[1],
-            "reward": self.rewards_during_episode[-1] if self.rewards_during_episode else 0.0,
+            "reward": reward,
             "cumulative_reward": self.total_reward,
             "obstacle_hits": self.obstacle_hits,
             "current_battery": self.current_battery_level,

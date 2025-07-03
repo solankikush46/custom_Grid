@@ -41,3 +41,6 @@ tb_saved:
 	tensorboard --logdir saved_logs --port 6006 & \
 	sleep 2 && \
 	xdg-open http://localhost:6006/
+
+mill m:
+	srun -p gpu --gres gpu:V100-SXM2-32GB:1 -n 8 -N 1 --mem=64G --time=48:00:00 --pty bash
