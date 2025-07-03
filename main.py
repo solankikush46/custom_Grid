@@ -15,7 +15,7 @@ def ensure_directories_exist():
 
 def main():
     #generate_all_plots()
-    test_PPO(300_000)
+    test_PPO(1_000_000, 100, 100)
         
 if __name__ == "__main__":
     ensure_directories_exist()

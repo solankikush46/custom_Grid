@@ -29,7 +29,15 @@ clean_logs cl:
 	@echo "Finished cleaning logs"
 
 tensorboard tb:
+	pkill tensorboard || true
 	source venv/bin/activate && \
-	tensorboard --logdir . & \
+	tensorboard --logdir logs --port 6006 & \
+	sleep 2 && \
+	xdg-open http://localhost:6006/
+
+tb_saved:
+	pkill tensorboard || true
+	source venv/bin/activate && \
+	tensorboard --logdir saved_logs --port 6006 & \
 	sleep 2 && \
 	xdg-open http://localhost:6006/

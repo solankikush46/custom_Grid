@@ -43,16 +43,18 @@ def train_model(filename: str, timesteps: int):
     eval_env = GridWorldEnv(grid_file=filename)
     return model, model_name, eval_env
 
-def test_PPO(timesteps: int):
-    filename = "grid_20x20_15p.txt"
-    train.train_PPO_model(filename, timesteps, "grid_20x20_15p_battery")
-    
-    filename = "grid_20x20_30p.txt"
-    train.train_PPO_model(filename, timesteps, "grid_20x20_30p_battery")
+def test_PPO(timesteps: int, rows: int, cols: int):
+    scenarios = [
+        "grid_{rows}x{cols}_15p.txt",
+        "grid_{rows}x{cols}_30p.txt",
+        "mine_{rows}x{cols}.txt",
+    ]
 
-    filename = "mine_20x20.txt"
-    train.train_PPO_model(filename, timesteps, "mine_20x20_battery")
-    
+    for template in scenarios:
+        filename = template.format(rows=rows, cols=cols)
+        label = filename.rsplit(".", 1)[0]  # remove .txt (1 means max of 1 split)
+        train.train_PPO_model(filename, timesteps, label)
+
 def train_for_test_battery(timesteps: int):
     """
     Train PPO on the battery test grid using train_model helper
