@@ -11,53 +11,42 @@ from utils import chebyshev_distances
 # add real_world time per episode to test data (graph it)
 # reward agent for step closer to goal
 def get_reward_a(env, new_pos):
-    """
-    Reward function encouraging:
-    - Progress toward the goal
-    - Avoiding invalid moves and revisits
-    - Penalizing running low on battery
-    - (No additional sensor reward beyond original code)
-    """
     subrewards = {}
 
-    # Reaching the goal: big positive reward, no penalties
+    # Reaching the goal: large positive reward
     if new_pos in env.goal_positions:
-        subrewards["goal_reward"] = env.n_rows * env.n_cols
-        subrewards["time_penalty"] = 0
+        subrewards["goal_reward"] = 100_000 #env.n_rows * env.n_cols
         subrewards["invalid_penalty"] = 0
-        subrewards["revisit_penalty"] = 0
         subrewards["battery_penalty"] = 0
         subrewards["progress_shaping"] = 0
+        subrewards["revisit_penalty"] = 0
+        subrewards["time_penalty"] = 0
         return sum(subrewards.values()), subrewards
 
-    # Time penalty (small penalty per step)
-    subrewards["time_penalty"] = -0.05
-
-    # Invalid move penalty
+    # Obstacle penalty: can't move to the position
     if not env.can_move_to(new_pos):
-        subrewards["invalid_penalty"] = -1.0
+        subrewards["invalid_penalty"] = -5.0
     else:
         subrewards["invalid_penalty"] = 0
-
-    # Revisit penalty
-    if new_pos in env.visited:
-        subrewards["revisit_penalty"] = -0.25
-    else:
-        subrewards["revisit_penalty"] = 0
-
+        
     # Battery penalty if critically low
     if env.current_battery_level <= 10:
-        subrewards["battery_penalty"] = -50
+        subrewards["battery_penalty"] = -100
     else:
         subrewards["battery_penalty"] = 0
 
-    # Progress shaping (Chebyshev distance)
+    # Progress shaping (Chebyshev distance diff)
     prev_pos = env.agent_pos
     prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
     new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
+    progress = prev_dist - new_dist  # -1, 0 or 1
+    subrewards["progress_shaping"] = progress
+    
+    # Revisit penalty
+    subrewards["revisit_penalty"] = -0.5 if new_pos in env.visited else 0
 
-    progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = 0 # 0.2 * progress
+    # Small time penalty to encourage faster paths
+    subrewards["time_penalty"] = -0.1
 
     reward = sum(subrewards.values())
     return reward, subrewards
