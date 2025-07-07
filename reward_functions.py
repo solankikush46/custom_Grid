@@ -9,17 +9,17 @@ from utils import chebyshev_distances
 # simple reward
 #-----------------------
 # reward agent for step closer to goal
-def get_reward_a(env, new_pos):
+def get_reward_merged(env, new_pos):
     """
     Reward function encouraging:
     - Progress toward the goal
-    - Staying near higher battery sensors
     - Avoiding invalid moves and revisits
     - Penalizing running low on battery
+    - (No additional sensor reward beyond original code)
     """
     subrewards = {}
 
-    # Reaching the goal
+    # Reaching the goal: big positive reward, no penalties
     if new_pos in env.goal_positions:
         subrewards["goal_reward"] = env.n_rows * env.n_cols
         subrewards["time_penalty"] = 0
@@ -29,7 +29,7 @@ def get_reward_a(env, new_pos):
         subrewards["progress_shaping"] = 0
         return sum(subrewards.values()), subrewards
 
-    # Time penalty
+    # Time penalty (small penalty per step)
     subrewards["time_penalty"] = -0.05
 
     # Invalid move penalty
@@ -44,19 +44,19 @@ def get_reward_a(env, new_pos):
     else:
         subrewards["revisit_penalty"] = 0
 
-    # Penalty if battery is critically low
+    # Battery penalty if critically low
     if env.current_battery_level <= 10:
         subrewards["battery_penalty"] = -50
     else:
         subrewards["battery_penalty"] = 0
 
-    # Progress shaping: encourage movement toward the closest goal
+    # Progress shaping (Chebyshev distance)
     prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions))
+    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
+    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
 
-    progress = prev_dist - new_dist  # positive if moved closer
-    subrewards["progress_shaping"] = 0.2 * progress  # scale factor
+    progress = prev_dist - new_dist
+    subrewards["progress_shaping"] = 0.2 * progress
 
     reward = sum(subrewards.values())
     return reward, subrewards
