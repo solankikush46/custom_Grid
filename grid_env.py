@@ -189,7 +189,7 @@ class GridWorldEnv(Env):
         self.obstacle_hits = 0
         self.last_action = -1
         self.miners = []
-        self.n_miners = 12
+        self.n_miners = 1
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
