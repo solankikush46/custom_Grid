@@ -8,6 +8,7 @@ from utils import chebyshev_distances
 ##==============================================================
 # simple reward
 #-----------------------
+# add real_world time per episode to test data (graph it)
 # reward agent for step closer to goal
 def get_reward_a(env, new_pos):
     """
@@ -56,7 +57,7 @@ def get_reward_a(env, new_pos):
     new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
 
     progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = 0.2 * progress
+    subrewards["progress_shaping"] = 0 # 0.2 * progress
 
     reward = sum(subrewards.values())
     return reward, subrewards
