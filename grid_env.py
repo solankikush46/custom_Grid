@@ -45,10 +45,9 @@ class CustomTensorboardCallback(BaseCallback):
         log_dir = self.logger.dir
         print(f"Logger directory resolved to: {log_dir}")
 
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.timestep_csv_path = os.path.join(log_dir, f"timestep_metrics_{timestamp}.csv")
-        self.episode_csv_path = os.path.join(log_dir, f"episode_metrics_{timestamp}.csv")
-        self.subrewards_csv_path = os.path.join(log_dir, f"subrewards_metrics_{timestamp}.csv")
+        self.timestep_csv_path = os.path.join(log_dir, f"timestep_metrics.csv")
+        self.episode_csv_path = os.path.join(log_dir, f"episode_metrics.csv")
+        self.subrewards_csv_path = os.path.join(log_dir, f"subrewards_metrics.csv")
 
         self.timestep_csv_file = open(self.timestep_csv_path, "w", newline="")
         self.episode_csv_file = open(self.episode_csv_path, "w", newline="")
@@ -80,13 +79,14 @@ class CustomTensorboardCallback(BaseCallback):
 
             # Split metrics
             timestep_keys = [
-                "step", "agent_row", "agent_col", "reward",
-                "current_battery", "distance_to_goal",
+                "current_reward", "current_battery",
+                "distance_to_goal",
                 "terminated", "truncated"
             ]
             episode_keys = [
                 "cumulative_reward", "obstacle_hits",
-                "visited_count", "average_battery"
+                "visited_count", "average_battery_level",
+                "episode_length"
             ]
 
             timestep_data = {k: flat_info.get(k) for k in timestep_keys if k in flat_info}
@@ -111,8 +111,6 @@ class CustomTensorboardCallback(BaseCallback):
             # CSV: subrewards
             if subrewards_info:
                 # Optionally, attach step number if available
-                if "step" in timestep_data:
-                    subrewards_info = {"step": timestep_data["step"], **subrewards_info}
                 if not self.subrewards_fieldnames:
                     self.subrewards_fieldnames = list(subrewards_info.keys())
                     self.subrewards_csv_writer = csv.DictWriter(self.subrewards_csv_file, fieldnames=self.subrewards_fieldnames)
@@ -548,7 +546,7 @@ class GridWorldEnv(Env):
         terminated = self.agent_reached_exit() or self.current_battery_level <= 10
         truncated = self.episode_steps >= self.max_steps
 
-        info = self._build_info_dict_if_done(terminated, truncated, reward, subrewards)
+        info = self._build_info_dict(terminated, truncated, reward, subrewards)
 
         return self.get_observation(), reward, terminated, truncated, info
 
@@ -591,11 +589,8 @@ class GridWorldEnv(Env):
                     base_stations=self.base_station_positions
                 )
 
-    def _build_info_dict_if_done(self, terminated, truncated, reward, subrewards):
+    def _build_info_dict(self, terminated, truncated, reward, subrewards):
         info = {
-            "step": self.episode_steps,
-            "agent_row": self.agent_pos[0],
-            "agent_col": self.agent_pos[1],
             "reward": reward,
             "cumulative_reward": self.total_reward,
             "obstacle_hits": self.obstacle_hits,
@@ -606,6 +601,14 @@ class GridWorldEnv(Env):
             "truncated": truncated,
             "subrewards": subrewards,
         }
+        if terminated or truncated:
+            avg_battery = (
+                sum(self.battery_levels_during_episode) / len(self.battery_levels_during_episode)
+                if self.battery_levels_during_episode else 0.0
+        )
+            info["average_battery_level"] = avg_battery
+            info["episode_length"] = self.episode_steps
+
         return info
         
     def episode_summary(self):

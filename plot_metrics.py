@@ -47,31 +47,13 @@ def plot_csv(csv_path, output_dir, rolling_window=1):
 
     print(f"\nLoaded {csv_path}: {df.shape[0]} rows, columns: {list(df.columns)}")
 
-    # Create the plots directory
-    plot_dir = output_dir
-    print("plot_dir", plot_dir)
-
     # Extract base name without extension
     base_name = os.path.splitext(os.path.basename(csv_path))[0]
 
     numeric_cols = df.select_dtypes(include='number').columns
 
     plots = []
-
-    # csv naming scheme is prefix_metric_datetime
-    # Split base_name into parts by '_'
-    parts = base_name.split('_')
     
-    # Assume last two parts are datetime components (date and time)
-    # and the rest is prefix (could be multiple parts)
-    if len(parts) >= 3:
-        prefix = '_'.join(parts[:-2])  # all except last two
-        datetime_str = '_'.join(parts[-2:])  # last two parts as datetime
-    else:
-        # fallback: treat whole as prefix, no datetime
-        prefix = base_name
-        datetime_str = ""
-
     is_episode_metrics = "episode_metrics" in base_name
     for col in numeric_cols:
         raw_values = df[col]
@@ -98,9 +80,9 @@ def plot_csv(csv_path, output_dir, rolling_window=1):
 
         # build output file name
         safe_col_name = col.replace("/", "_").replace(" ", "_")
-        filename = f"{prefix}_{safe_col_name}_{datetime_str}.png"
+        filename = f"{base_name}_{safe_col_name}.png"
 
-        out_path = os.path.join(plot_dir, f"{base_name}_{safe_col_name}.png")
+        out_path = os.path.join(output_dir, filename)
         plt.tight_layout()
         plt.savefig(out_path)
         plt.close()
