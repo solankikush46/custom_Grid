@@ -10,51 +10,35 @@ from utils import chebyshev_distances
 #-----------------------
 # reward agent for step closer to goal
 def get_simple_reward(env, new_pos):
-    reward = 0.0
     subrewards = {}
 
     if new_pos in env.goal_positions:
-        total = env.n_rows * env.n_cols
-        reward = total
-        subrewards["goal_reward"] = total
+        subrewards["goal_reward"] = env.n_rows * env.n_cols
+        subrewards["time_penalty"] = 0
+        subrewards["invalid_penalty"] = 0
+        subrewards["revisit_penalty"] = 0
+        subrewards["battery_penalty"] = 0
     else:
-        # time penalty
-        time_penalty = -0.04
-        reward += time_penalty
-        subrewards["time_penalty"] = time_penalty
-
-        # invalid move
-        invalid_penalty = 0.0
+        subrewards["goal_reward"] = 0
+        subrewards["time_penalty"] = -0.04
+        
         if not env.can_move_to(new_pos):
-            invalid_penalty = -0.75
-            reward += invalid_penalty
-        subrewards["invalid_penalty"] = invalid_penalty
-
-        # revisiting penalty
-        revisit_penalty = 0.0
+            subrewards["invalid_penalty"] = -0.75
+        else:
+            subrewards["invalid_penalty"] = 0
+            
         if new_pos in env.visited:
-            revisit_penalty = -0.21
-            reward += revisit_penalty
-        subrewards["revisit_penalty"] = revisit_penalty
-
-        '''
-        threshold = 10
-        alpha = 1.3
-        beta = 0.2
-        battery = env.current_battery_level
-        battery_penalty = 0.0
-        if battery <= threshold:
-            battery_penalty = -alpha * np.exp(beta * (threshold - battery))
-            reward += battery_penalty
-        subrewards["battery_penalty"] = battery_penalty
-        '''
+            subrewards["revisit_penalty"] = -0.21
+        else:
+            subrewards["revisit_penalty"] = 0
+    
         # increase battery penalty
         threshold = 10
         battery = env.current_battery_level
         if battery <= threshold:
-            battery_penalty = -50
-            reward
+            subrewards["battery_penalty"] = -100
 
+    reward = sum(subrewards.values())
     return reward, subrewards
 
 # composite reward
