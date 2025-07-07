@@ -11,19 +11,11 @@ from utils import chebyshev_distances
 # add real_world time per episode to test data (graph it)
 # reward agent for step closer to goal
 def get_reward_a(env, new_pos):
-    """
-    Reward function prioritizing:
-    1) Reaching the goal
-    2) Avoiding obstacles
-    3) Avoiding low battery
-    4) Getting closer to the goal
-    5) Avoiding revisiting tiles
-    """
     subrewards = {}
 
-    # 1. Reaching the goal: large positive reward
+    # Reaching the goal: large positive reward
     if new_pos in env.goal_positions:
-        subrewards["goal_reward"] = 100.0 
+        subrewards["goal_reward"] = 100_000 #env.n_rows * env.n_cols
         subrewards["invalid_penalty"] = 0
         subrewards["battery_penalty"] = 0
         subrewards["progress_shaping"] = 0
@@ -31,32 +23,31 @@ def get_reward_a(env, new_pos):
         subrewards["time_penalty"] = 0
         return sum(subrewards.values()), subrewards
 
-    # 2. Obstacle penalty: can't move to the position
+    # Obstacle penalty: can't move to the position
     if not env.can_move_to(new_pos):
         subrewards["invalid_penalty"] = -5.0
     else:
         subrewards["invalid_penalty"] = 0
-
-    # 3. Battery penalty if critically low
+        
+    # Battery penalty if critically low
     if env.current_battery_level <= 10:
-        subrewards["battery_penalty"] = -3.0
+        subrewards["battery_penalty"] = -100
     else:
         subrewards["battery_penalty"] = 0
 
-    # 4. Progress shaping (Chebyshev distance diff)
+    # Progress shaping (Chebyshev distance diff)
     prev_pos = env.agent_pos
     prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
     new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
     progress = prev_dist - new_dist  # -1, 0 or 1
     subrewards["progress_shaping"] = progress
     
-    # 5. Revisit penalty
+    # Revisit penalty
     subrewards["revisit_penalty"] = -0.5 if new_pos in env.visited else 0
 
-    # 6. Small time penalty to encourage faster paths
+    # Small time penalty to encourage faster paths
     subrewards["time_penalty"] = -0.1
 
-    # Sum all components
     reward = sum(subrewards.values())
     return reward, subrewards
 
