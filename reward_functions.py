@@ -9,34 +9,54 @@ from utils import chebyshev_distances
 # simple reward
 #-----------------------
 # reward agent for step closer to goal
-def get_simple_reward(env, new_pos):
+def get_reward_a(env, new_pos):
+    """
+    Reward function encouraging:
+    - Progress toward the goal
+    - Staying near higher battery sensors
+    - Avoiding invalid moves and revisits
+    - Penalizing running low on battery
+    """
     subrewards = {}
 
+    # Reaching the goal
     if new_pos in env.goal_positions:
         subrewards["goal_reward"] = env.n_rows * env.n_cols
         subrewards["time_penalty"] = 0
         subrewards["invalid_penalty"] = 0
         subrewards["revisit_penalty"] = 0
         subrewards["battery_penalty"] = 0
+        subrewards["progress_shaping"] = 0
+        return sum(subrewards.values()), subrewards
+
+    # Time penalty
+    subrewards["time_penalty"] = -0.05
+
+    # Invalid move penalty
+    if not env.can_move_to(new_pos):
+        subrewards["invalid_penalty"] = -1.0
     else:
-        subrewards["goal_reward"] = 0
-        subrewards["time_penalty"] = -0.04
-        
-        if not env.can_move_to(new_pos):
-            subrewards["invalid_penalty"] = -0.75
-        else:
-            subrewards["invalid_penalty"] = 0
-            
-        if new_pos in env.visited:
-            subrewards["revisit_penalty"] = -0.21
-        else:
-            subrewards["revisit_penalty"] = 0
-    
-        # increase battery penalty
-        threshold = 10
-        battery = env.current_battery_level
-        if battery <= threshold:
-            subrewards["battery_penalty"] = -100
+        subrewards["invalid_penalty"] = 0
+
+    # Revisit penalty
+    if new_pos in env.visited:
+        subrewards["revisit_penalty"] = -0.25
+    else:
+        subrewards["revisit_penalty"] = 0
+
+    # Penalty if battery is critically low
+    if env.current_battery_level <= 10:
+        subrewards["battery_penalty"] = -50
+    else:
+        subrewards["battery_penalty"] = 0
+
+    # Progress shaping: encourage movement toward the closest goal
+    prev_pos = env.agent_pos
+    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions))
+    new_dist = min(chebyshev_distances(new_pos, env.goal_positions))
+
+    progress = prev_dist - new_dist  # positive if moved closer
+    subrewards["progress_shaping"] = 0.2 * progress  # scale factor
 
     reward = sum(subrewards.values())
     return reward, subrewards
