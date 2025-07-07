@@ -16,6 +16,7 @@ def ensure_directories_exist():
 def main():
     #generate_all_plots(rolling_window=2000)
     test_PPO(300_000, 20, 20)
+    test_PPO(300_000, 100, 100)
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
     
 if __name__ == "__main__":
