@@ -138,3 +138,26 @@ def test_battery():
         verbose=False
     )
 
+def test_100x100_no_obstacles(timesteps: int = 5000, episodes: int = 5, render: bool = True, verbose: bool = True):
+    """
+    Generates a 100x100 grid with 0% obstacles, trains PPO, and evaluates it.
+    """
+    # generate grid filename
+    filename = generate_grid(rows=100, cols=100, obstacle_percentage=0.0)
+
+    # train the model
+    if verbose:
+        print(f"\nTraining PPO model on '{filename}' for {timesteps} timesteps...")
+    model, model_name, eval_env = train_model(filename=filename, timesteps=timesteps)
+
+    # evaluate the trained model
+    if verbose:
+        print(f"\nEvaluating trained model '{model_name}' for {episodes} episodes...")
+    train.evaluate_model(
+        env=eval_env,
+        model=model,
+        n_eval_episodes=episodes,
+        sleep_time=0.1,
+        render=render,
+        verbose=verbose
+    )

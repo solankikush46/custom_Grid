@@ -12,7 +12,17 @@ def chebyshev_distance(x0, x1, y0, y1):
     dy = abs(y0 - y1)
     return max(dx, dy)
 
-
+def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
+        x0, y0 = pos
+        if normalize:
+            norm = max(grid_width - 1, grid_height - 1)
+            return np.array([
+                chebyshev_distance(x0, tx, y0, ty) / norm for tx, ty in targets
+            ], dtype=np.float32)
+        else:
+            return np.array([
+                chebyshev_distance(x0, tx, y0, ty) for tx, ty in targets
+            ], dtype=np.float32)
 
 def euclidean_distance(x0, x1, y0, y1):
     dx = x0 - x1
