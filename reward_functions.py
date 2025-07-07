@@ -9,7 +9,7 @@ from utils import chebyshev_distances
 # simple reward
 #-----------------------
 # reward agent for step closer to goal
-def get_reward_merged(env, new_pos):
+def get_reward_a(env, new_pos):
     """
     Reward function encouraging:
     - Progress toward the goal
