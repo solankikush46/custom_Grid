@@ -36,6 +36,17 @@ DIRECTION_MAP = {
     4: (+1,  0), 5: (+1, -1), 6: (0, -1), 7: (-1, -1),
 }
 
+ACTION_NAMES = {
+    0: "UP",
+    1: "UP-RIGHT",
+    2: "RIGHT",
+    3: "DOWN-RIGHT",
+    4: "DOWN",
+    5: "DOWN-LEFT",
+    6: "LEFT",
+    7: "UP-LEFT"
+}
+
 # model saving and logging
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

@@ -47,58 +47,70 @@ def plot_csv(csv_path, output_dir, rolling_window=1):
 
     print(f"\nLoaded {csv_path}: {df.shape[0]} rows, columns: {list(df.columns)}")
 
-    # Extract base name without extension
     base_name = os.path.splitext(os.path.basename(csv_path))[0]
-
     numeric_cols = df.select_dtypes(include='number').columns
-
     plots = []
-    
-    is_episode_metrics = "episode_metrics" in base_name
-    for col in numeric_cols:
-        raw_values = df[col]
-        
-        if is_episode_metrics:
-            # plot raw data (no smoothing)
-            y_values = raw_values
-            window_info = "Raw data"
-            x = df["episode"]
-            xlabel = "Episode"
-        else:
-            # apply rolling mean smoothing
-            y_values = df[col].rolling(window=rolling_window, min_periods=1).mean()
-            window_info = f"Rolling Mean window={rolling_window}"
-            x = df.index
-            xlabel = "Timestep"
-        
-        plt.figure(figsize=(10, 4))
 
-        if rolling_window > 1 and not is_episode_metrics:
-            # plot raw data faintly in bg
-            plt.plot(x, raw_values, alpha=0.3, label="Raw")
-            # then plot rolling mean in front
-            plt.plot(x, y_values, label=f"Rolling Mean (window={rolling_window}")
-        else:
-            # just plot raw values
-            plt.plot(x, y_values, label="Raw", linewidth=1)
-            
-        plt.title(f"{base_name}: {col} ({window_info})")
-        plt.xlabel(xlabel)
-        plt.ylabel(col)
+    if "sensor_battery_levels" in base_name:
+        # plot all sensor battery levels on one chart
+        plt.figure(figsize=(12, 6))
+        for col in numeric_cols:
+            y_values = df[col]
+            plt.plot(df.index, y_values, label=f"Sensor {col}")
+        
+        plt.title(f"Sensor Battery Levels (Raw Data)")
+        plt.xlabel("Timestep")
+        plt.ylabel("Battery Level")
         plt.grid(True)
+        plt.legend(loc="upper right", ncol=3, fontsize="small")
 
-        # build output file name
-        safe_col_name = col.replace("/", "_").replace(" ", "_")
-        filename = f"{base_name}_{safe_col_name}.png"
-
-        out_path = os.path.join(output_dir, filename)
+        out_path = os.path.join(output_dir, f"{base_name}_all_sensors.png")
         plt.tight_layout()
         plt.savefig(out_path)
         plt.close()
 
-        # save plot
         plots.append(out_path)
-        print(f"Saved plot: {out_path}")
+        print(f"Saved sensor battery plot: {out_path}")
+    else:
+        is_episode_metrics = "episode_metrics" in base_name
+
+        for col in numeric_cols:
+            raw_values = df[col]
+
+            if is_episode_metrics:
+                x = df["episode"]
+                xlabel = "Episode"
+            else:
+                x = df.index
+                xlabel = "Timestep"
+
+            y_values = df[col].rolling(window=rolling_window, min_periods=1).mean()
+            window_info = f"Rolling Mean window={rolling_window}"
+
+            plt.figure(figsize=(10, 4))
+
+            if rolling_window != 1:
+                plt.plot(x, raw_values, alpha=0.3, label="Raw")
+                plt.plot(x, y_values, label=f"Rolling Mean (window={rolling_window})")
+            else:
+                plt.plot(x, y_values, label="Raw", linewidth=1)
+
+            plt.title(f"{base_name}: {col} ({window_info})")
+            plt.xlabel(xlabel)
+            plt.ylabel(col)
+            plt.grid(True)
+            plt.legend(loc="upper right")
+
+            safe_col_name = col.replace("/", "_").replace(" ", "_")
+            filename = f"{base_name}_{safe_col_name}.png"
+            out_path = os.path.join(output_dir, filename)
+
+            plt.tight_layout()
+            plt.savefig(out_path)
+            plt.close()
+
+            plots.append(out_path)
+            print(f"Saved plot: {out_path}")
 
     return plots
 

@@ -33,7 +33,7 @@ def get_reward_a(env, new_pos):
     prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows))
     new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows))
     progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = 0.2 * progress
+    subrewards["progress_shaping"] = 0.2 * progress # 10 * progress
 
     # Revisit penalty
     subrewards["revisit_penalty"] = -0.25 if new_pos in env.visited else 0
