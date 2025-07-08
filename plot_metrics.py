@@ -27,15 +27,17 @@ def get_latest_run_dir(base_dir):
     latest_num, latest_dir = sorted(ppo_dirs, reverse=True)[0]
     return os.path.join(base_dir, latest_dir)
 
-def plot_csv(csv_path, output_dir, rolling_window=1):
+def plot_csv(csv_path, output_dir, num_points=40):
     """
-    Reads a CSV file, applies a rolling mean, and generates line plots for numeric columns.
+    Reads a CSV file, applies chunk-based smoothing (instead of rolling mean),
+    and generates line plots for numeric columns.
 
     Args:
         csv_path (str): Path to the CSV file.
         output_dir (str): Directory to save the PNG plots.
-        rolling_window (int): Window size for rolling mean smoothing.
+        num_points (int): Number of smoothing chunks (approximate).
     """
+    
     try:
         df = pd.read_csv(csv_path)
         if df.empty:
@@ -52,13 +54,12 @@ def plot_csv(csv_path, output_dir, rolling_window=1):
     plots = []
 
     if "sensor_battery_levels" in base_name:
-        # plot all sensor battery levels on one chart
         plt.figure(figsize=(12, 6))
         for col in numeric_cols:
             y_values = df[col]
             plt.plot(df.index, y_values, label=f"Sensor {col}")
         
-        plt.title(f"Sensor Battery Levels (Raw Data)")
+        plt.title("Sensor Battery Levels (Raw Data)")
         plt.xlabel("Timestep")
         plt.ylabel("Battery Level")
         plt.grid(True)
@@ -75,31 +76,27 @@ def plot_csv(csv_path, output_dir, rolling_window=1):
         is_episode_metrics = "episode_metrics" in base_name
 
         for col in numeric_cols:
-            raw_values = df[col]
+            raw_values = df[col].values
+            x_base = df["episode"].values if is_episode_metrics else np.arange(len(df))
 
-            if is_episode_metrics:
-                x = df["episode"]
-                xlabel = "Episode"
-            else:
-                x = df.index
-                xlabel = "Timestep"
+            # Smoothing logic: chunk-average
+            n = len(raw_values)
+            interval = max(1, n // num_points)
+            xs, ys = [], []
 
-            y_values = df[col].rolling(window=rolling_window, min_periods=1).mean()
-            window_info = f"Rolling Mean window={rolling_window}"
+            for i in range(0, n, interval):
+                window = raw_values[i: min(i + interval, n)]
+                x_chunk = x_base[i: min(i + interval, n)]
+                xs.append(np.mean(x_chunk))
+                ys.append(np.mean(window))
 
             plt.figure(figsize=(10, 4))
-
-            if rolling_window != 1:
-                plt.plot(x, raw_values, alpha=0.3, label="Raw")
-                plt.plot(x, y_values, label=f"Rolling Mean (window={rolling_window})")
-            else:
-                plt.plot(x, y_values, label="Raw", linewidth=1)
-
-            plt.title(f"{base_name}: {col} ({window_info})")
-            plt.xlabel(xlabel)
+            plt.plot(xs, ys, marker='o', label=f"Smoothed ({num_points} pts)")
+            plt.title(f"{base_name}: {col} (Smoothed)")
+            plt.xlabel("Episode" if is_episode_metrics else "Timestep")
             plt.ylabel(col)
             plt.grid(True)
-            plt.legend(loc="upper right")
+            plt.legend()
 
             safe_col_name = col.replace("/", "_").replace(" ", "_")
             filename = f"{base_name}_{safe_col_name}.png"
