@@ -16,9 +16,9 @@ def ensure_directories_exist():
 def main():
     #generate_all_plots(rolling_window=50_000)
     #test_PPO(10_000, 20, 20)
-    #test_PPO(300_000, 100, 100)
+    test_PPO(300_000, 100, 100)
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
-    test_20x20_battery_override(1_000_000, 1)
+    #test_20x20_battery_override(1_000_000, 1)
     #load_and_evaluate_battery_override_model(episodes=20, render=True, verbose=True)
     
 if __name__ == "__main__":

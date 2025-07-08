@@ -30,16 +30,20 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     model_save_path = os.path.join(MODELS["ppo"], model_name)
 
     model = PPO(
-        "MlpPolicy",
-        vec_env,
-        ent_coef=0.5,
-        gae_lambda=0.90,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        verbose=1,
-        tensorboard_log=log_path
+        policy         = "MlpPolicy",
+        env            = vec_env,
+        learning_rate  = 3e-5,
+        n_steps        = 2048,
+        batch_size     = 2048,
+        n_epochs       = 10,
+        gamma          = 0.99,
+        gae_lambda     = 0.95,
+        clip_range     = 0.2,
+        clip_range_vf  = 0.5,
+        ent_coef       = 0.01,
+        tensorboard_log= log_path,
+        verbose        = 1,
+        device         = "cuda"
     )
 
     callback = CustomTensorboardCallback()
