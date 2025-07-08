@@ -40,7 +40,7 @@ def test_observation_space():
 if __name__ == "__main__":
     model = create_and_train_cnn_ppo_model(
     grid_file="mine_100x100.txt",
-    total_timesteps=150_000,
+    total_timesteps=500_000,
     save_path="SavedModels/PPO_custom_grid/mine_100x100_ppo_grid_cnn"
 )
 
