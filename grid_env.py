@@ -502,13 +502,12 @@ class GridWorldEnv(Env):
             for pos in self.original_sensor_batteries
         }
 
-
         # optionally override specific sensor batteries
         if battery_overrides:
             for pos, value in battery_overrides.items():
                 if pos in self.sensor_batteries:
                     self.sensor_batteries[pos] = value
-  
+
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
@@ -620,6 +619,7 @@ class GridWorldEnv(Env):
 
     def _build_info_dict(self, terminated, truncated, reward, subrewards):
         info = {
+            "agent_pos": self.agent_pos,
             "reward": reward,
             "cumulative_reward": self.total_reward,
             "obstacle_hits": self.obstacle_hits,

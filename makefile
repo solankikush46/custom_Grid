@@ -19,8 +19,11 @@ reset_venv rv:
 	TMPDIR=$$HOME/.cache/pip-tmp pip install -r requirements.txt
 	@echo "Finished resetting logs"
 
-copy_logs cp:
+copy_logs cpl:
 	scp -r cs3f7@mill.mst.edu:~/custom_Grid/logs /home/student/REU/custom_Grid/
+
+copy_models cpm:
+	scp -r cs3f7@mill.mst.edu:~/custom_Grid/SavedModels /home/student/REU/custom_Grid/
 
 clean_logs cl:
 	@echo "Cleaning contents of logs/..."

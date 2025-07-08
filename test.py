@@ -203,10 +203,10 @@ def test_20x20_battery_override(timesteps: int, episodes: int = 3, render: bool 
     env = GridWorldEnv(grid_file=filename)
     obs, _ = env.reset(battery_overrides=battery_overrides)
 
-    model_name = "battery_override_100x100"
+    model_name = "battery_override_20x20"
     model = train.train_PPO_model(grid_file=filename, timesteps=timesteps, model_name=model_name)
 
-    # --- Step 4: Evaluate using overrides
+    # --- Step 4: Evaluate using overides
     reset_kwargs = {"battery_overrides": battery_overrides}
 
     train.load_model_and_evaluate(
@@ -218,3 +218,59 @@ def test_20x20_battery_override(timesteps: int, episodes: int = 3, render: bool 
         verbose=verbose,
         reset_kwargs=reset_kwargs
     )
+
+def load_and_evaluate_battery_override_model(
+    episodes: int = 3,
+    render: bool = True,
+    verbose: bool = True,
+    sleep_time: float = 0.1
+):
+    """
+    Loads the battery override PPO model created by test_20x20_battery_override,
+    recreates the environment with the same battery overrides, and evaluates the model.
+    """
+
+    filename = "mine_20x20.txt"
+    filepath = os.path.join(FIXED_GRID_DIR, filename)
+
+    # --- Parse sensor positions from file (same as in test_20x20_battery_override)
+    sensor_positions = []
+    with open(filepath, "r") as f:
+        for r, line in enumerate(f):
+            for c, char in enumerate(line.strip()):
+                if char == "S":
+                    sensor_positions.append((r, c))
+
+    if len(sensor_positions) < 2:
+        raise ValueError("Not enough sensors in the grid to run this test.")
+
+    # Sort by row descending (bottom sensors last)
+    sensor_positions_sorted = sorted(sensor_positions, key=lambda x: x[0], reverse=True)
+
+    # Build battery overrides dict
+    battery_overrides = {}
+    bottom_two = sensor_positions_sorted[:2]
+    rest = sensor_positions_sorted[2:]
+
+    for pos in bottom_two:
+        battery_overrides[pos] = 0.0
+    for pos in rest:
+        battery_overrides[pos] = 100.0
+
+    # Create environment
+    env = GridWorldEnv(grid_file=filename)
+
+    # Model name used during training
+    model_name = "battery_override_20x20"
+
+    # Evaluate using train.py helper
+    train.load_model_and_evaluate(
+        model_filename=model_name,
+        env=env,
+        n_eval_episodes=episodes,
+        sleep_time=sleep_time,
+        render=render,
+        verbose=verbose,
+        reset_kwargs={"battery_overrides": battery_overrides}
+    )
+
