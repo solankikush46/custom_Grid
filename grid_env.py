@@ -481,6 +481,13 @@ class GridWorldEnv(Env):
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
         """
+        # manually overwrite bats for 100x100 test
+        battery_overrides = {}
+        battery_overrides[(16, 4)] = 0.0
+        battery_overrides[(11, 17)] = 0.0
+        battery_overrides[(5, 4)] = 100.0
+        battery_overrides[(1, 14)] = 100.0
+        
         # register seed
         super().reset(seed=seed)
 
