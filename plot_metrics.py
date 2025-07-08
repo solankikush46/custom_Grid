@@ -72,7 +72,16 @@ def plot_csv(csv_path, output_dir, rolling_window=1):
             xlabel = "Timestep"
         
         plt.figure(figsize=(10, 4))
-        plt.plot(x, y_values)
+
+        if rolling_window > 1 and not is_episode_metrics:
+            # plot raw data faintly in bg
+            plt.plot(x, raw_values, alpha=0.3, label="Raw")
+            # then plot rolling mean in front
+            plt.plot(x, y_values, label=f"Rolling Mean (window={rolling_window}")
+        else:
+            # just plot raw values
+            plt.plot(x, y_values, label="Raw", linewidth=1)
+            
         plt.title(f"{base_name}: {col} ({window_info})")
         plt.xlabel(xlabel)
         plt.ylabel(col)
@@ -129,7 +138,8 @@ def plot_all_metrics(
         if f.endswith(".csv") and (
             f.startswith("timestep_metrics") or
             f.startswith("episode_metrics") or
-            f.startswith("subrewards_metrics")
+            f.startswith("subrewards_metrics") or
+            f.startswith("sensor_battery_levels")
         )
     ]
 
@@ -153,7 +163,8 @@ def generate_all_plots(base_dir=None, rolling_window=1):
         csvs = [f for f in files if f.endswith(".csv") and (
             f.startswith("timestep_metrics") or
             f.startswith("episode_metrics") or
-            f.startswith("subrewards_metrics")
+            f.startswith("subrewards_metrics") or
+            f.startswith("sensor_battery_levels")
         )]
 
         if csvs:

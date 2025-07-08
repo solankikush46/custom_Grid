@@ -39,6 +39,10 @@ class CustomTensorboardCallback(BaseCallback):
         self.subrewards_csv_writer = None
         self.subrewards_fieldnames = []
 
+        self.sensor_battery_csv_file = None
+        self.sensor_battery_csv_writer = None
+        self.sensor_battery_fieldnames = []
+        
         self.verbose = verbose
 
     def _on_training_start(self) -> None:
@@ -48,16 +52,19 @@ class CustomTensorboardCallback(BaseCallback):
         self.timestep_csv_path = os.path.join(log_dir, f"timestep_metrics.csv")
         self.episode_csv_path = os.path.join(log_dir, f"episode_metrics.csv")
         self.subrewards_csv_path = os.path.join(log_dir, f"subrewards_metrics.csv")
-
+        self.sensor_battery_csv_path = os.path.join(log_dir, "sensor_battery_levels.csv")
+        
         self.timestep_csv_file = open(self.timestep_csv_path, "w", newline="")
         self.episode_csv_file = open(self.episode_csv_path, "w", newline="")
         self.subrewards_csv_file = open(self.subrewards_csv_path, "w", newline="")
+        self.sensor_battery_csv_file = open(self.sensor_battery_csv_path, "w", newline="")
 
         if self.verbose > 0:
             print(f"Timestep CSV logging to: {self.timestep_csv_path}")
             print(f"Episode CSV logging to: {self.episode_csv_path}")
             print(f"Subrewards CSV logging to: {self.subrewards_csv_path}")
-
+            print(f"Sensor Battery CSV logging to: {self.sensor_battery_csv_path}")
+            
     def _flatten_info(self, info):
         flat = {}
         subrewards = {}
@@ -132,13 +139,29 @@ class CustomTensorboardCallback(BaseCallback):
                     
                 self.episode_csv_writer.writerow(episode_row)
 
+            sensor_battery_snapshot = info.get("sensor_batteries")
+            if sensor_battery_snapshot:
+                print("SENSORWERWERWEREWRWERWERWER")
+                if not self.sensor_battery_fieldnames:
+                    # Use stringified sensor positions as column names
+                    self.sensor_battery_fieldnames = list(map(str, sorted(sensor_battery_snapshot.keys())))
+                    self.sensor_battery_csv_writer = csv.DictWriter(
+                        self.sensor_battery_csv_file, fieldnames=self.sensor_battery_fieldnames
+                    )
+                    self.sensor_battery_csv_writer.writeheader()
+                
+                # Write battery values in sorted sensor position order
+                row = {str(k): sensor_battery_snapshot[k] for k in sorted(sensor_battery_snapshot.keys())}
+                self.sensor_battery_csv_writer.writerow(row)
+
         return True
 
     def _on_training_end(self) -> None:
         for f in [
-            (self.timestep_csv_file, self.timestep_csv_path),
-            (self.episode_csv_file, self.episode_csv_path),
-            (self.subrewards_csv_file, self.subrewards_csv_path)
+                (self.timestep_csv_file, self.timestep_csv_path),
+                (self.episode_csv_file, self.episode_csv_path),
+                (self.subrewards_csv_file, self.subrewards_csv_path),
+                (self.sensor_battery_csv_file, self.sensor_battery_csv_path)
         ]:
             if f[0]:
                 f[0].close()
@@ -600,6 +623,7 @@ class GridWorldEnv(Env):
             "terminated": terminated,
             "truncated": truncated,
             "subrewards": subrewards,
+            "sensor_batteries": dict(self.sensor_batteries)
         }
         if terminated or truncated:
             avg_battery = (

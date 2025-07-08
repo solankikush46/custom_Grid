@@ -72,48 +72,49 @@ def load_model(model_path: str, env):
     model = PPO.load(model_path, env=vec_env)
     return model
 
-def evaluate_model(env, model, n_eval_episodes=5, sleep_time=0.1, render: bool = True, verbose: bool = False):
+def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
+    """
+    Evaluate the model in the given environment for a number of episodes.
+
+    Args:
+        env: The environment to evaluate in.
+        model: The trained model.
+        n_eval_episodes: Number of episodes to run.
+        sleep_time: Time to sleep between frames when rendering.
+        render: Whether to show Pygame visualization.
+        verbose: Whether to print debug info.
+        reset_kwargs: Dictionary of kwargs to pass to env.reset().
+    """
     total_rewards = []
-    success_count = 0
 
     for ep in range(n_eval_episodes):
-        obs = env.reset()
-        if isinstance(obs, tuple):
-            obs = obs[0]
+        obs, _ = env.reset(**(reset_kwargs or {}))
+        done = False
+        ep_reward = 0.0
+        while not done:
+            action, _ = model.predict(obs)
+            obs, reward, terminated, truncated, info = env.step(action)
+            ep_reward += reward
+            done = terminated or truncated
 
-        terminated = False
-        truncated = False
-        episode_reward = 0
-
-        print(f"\n--- Episode {ep + 1} ---")
-        while not (terminated or truncated):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, _ = env.step(action)
-            if verbose:
-                print("reward", reward)
             if render:
                 env.render_pygame()
                 time.sleep(sleep_time)
-            episode_reward += reward
 
-        total_rewards.append(episode_reward)
-        if terminated: # if agent reached exit
-            success_count += 1
-            
-    mean_reward = sum(total_rewards) / len(total_rewards)
-    print(f"\n Evaluation complete over {n_eval_episodes} episodes")
-    print(f" Mean Reward: {mean_reward:.2f}")
-    print(f" Successful Episodes (Reached Goal): {success_count} / {n_eval_episodes}")
-    print("\n Final Episode Summary:")
-    env.episode_summary()
+        total_rewards.append(ep_reward)
+        if verbose:
+            print(f"Episode {ep + 1}: Reward = {ep_reward:.2f}")
 
-def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
+    mean_reward = sum(total_rewards) / n_eval_episodes
+    print(f"\nEvaluation complete: Mean reward = {mean_reward:.2f}")
+
+def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
     """
     Load a model by filename and evaluate.
     """
     model_path = os.path.join(MODELS["ppo"], model_filename)
     model = load_model(model_path, env)
-    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose)
+    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose, reset_kwargs=reset_kwargs)
 
 def list_models():
     for f in os.listdir(MODELS["ppo"]):

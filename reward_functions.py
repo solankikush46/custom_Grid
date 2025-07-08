@@ -9,13 +9,12 @@ from utils import chebyshev_distances
 # simple reward
 #-----------------------
 # add real_world time per episode to test data (graph it)
-# reward agent for step closer to goal
 def get_reward_a(env, new_pos):
     subrewards = {}
 
-    # Reaching the goal: large positive reward
+    # Reaching the goal
     if new_pos in env.goal_positions:
-        subrewards["goal_reward"] = 100_000 #env.n_rows * env.n_cols
+        subrewards["goal_reward"] = env.n_rows * env.n_cols
         subrewards["invalid_penalty"] = 0
         subrewards["battery_penalty"] = 0
         subrewards["progress_shaping"] = 0
@@ -23,30 +22,24 @@ def get_reward_a(env, new_pos):
         subrewards["time_penalty"] = 0
         return sum(subrewards.values()), subrewards
 
-    # Obstacle penalty: can't move to the position
-    if not env.can_move_to(new_pos):
-        subrewards["invalid_penalty"] = -5.0
-    else:
-        subrewards["invalid_penalty"] = 0
-        
+    # Invalid move (obstacle)
+    subrewards["invalid_penalty"] = -1.0 if not env.can_move_to(new_pos) else 0
+
     # Battery penalty if critically low
-    if env.current_battery_level <= 10:
-        subrewards["battery_penalty"] = -100
-    else:
-        subrewards["battery_penalty"] = 0
+    subrewards["battery_penalty"] = -50 if env.current_battery_level <= 10 else 0
 
-    # Progress shaping (Chebyshev distance diff)
+    # Progress shaping using Chebyshev distance
     prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
-    progress = prev_dist - new_dist  # -1, 0 or 1
-    subrewards["progress_shaping"] = progress
-    
-    # Revisit penalty
-    subrewards["revisit_penalty"] = -0.5 if new_pos in env.visited else 0
+    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows))
+    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows))
+    progress = prev_dist - new_dist
+    subrewards["progress_shaping"] = 0.2 * progress
 
-    # Small time penalty to encourage faster paths
-    subrewards["time_penalty"] = -0.1
+    # Revisit penalty
+    subrewards["revisit_penalty"] = -0.25 if new_pos in env.visited else 0
+
+    # Small time penalty to encourage efficiency
+    subrewards["time_penalty"] = -0.05
 
     reward = sum(subrewards.values())
     return reward, subrewards
