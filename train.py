@@ -82,15 +82,18 @@ def load_model(model_path: str, env):
 def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
     """
     Evaluate the model in the given environment for a number of episodes,
-    printing agent's position, reward, and action at every timestep.
+    printing agent's position, reward, and action at every timestep, and summarizing performance.
     """
     total_rewards = []
+    total_steps = 0
+    success_count = 0  # Track number of episodes where agent reached the goal
 
     for ep in range(n_eval_episodes):
         obs, _ = env.reset(**(reset_kwargs or {}))
         done = False
         ep_reward = 0.0
         step_num = 0
+        reached_exit = False
 
         while not done:
             action, _ = model.predict(obs)
@@ -100,7 +103,10 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
-            
+
+            # Check for exit condition — adjust if your env tracks it differently
+            reached_exit = bool(info.get("reward") == 400)
+
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
                 print(f"Episode {ep + 1} Step {step_num}: Pos={agent_pos}, Action={action} ({action_dir}), Reward={reward:.2f}")
@@ -114,12 +120,23 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             step_num += 1
 
+        total_steps += step_num
         total_rewards.append(ep_reward)
+        if reached_exit:
+            success_count += 1
+
         if verbose:
             print(f"Episode {ep + 1} complete: Total Reward = {ep_reward:.2f}")
 
     mean_reward = sum(total_rewards) / n_eval_episodes
-    print(f"\nEvaluation complete: Mean reward = {mean_reward:.2f}")
+    success_rate = success_count / n_eval_episodes
+    avg_steps = total_steps / n_eval_episodes
+
+    print("\n=== Evaluation Summary ===")
+    print(f"Total Episodes: {n_eval_episodes}")
+    print(f"Reached Exit: {success_count}/{n_eval_episodes} ({success_rate:.1%})")
+    print(f"Mean Reward: {mean_reward:.2f}")
+    print(f"Average Steps per Episode: {avg_steps:.1f}")
 
 def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
     """

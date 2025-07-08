@@ -7,7 +7,7 @@ from constants import *
 import train
 import grid_gen
 
-def test_manual_control(grid_file: str = "grid_20x20_30p.txt"):
+def test_manual_control(grid_file: str = "mine_20x20.txt"):
     """
     Launch manual control mode for the specified grid file.
     """
@@ -274,3 +274,41 @@ def load_and_evaluate_battery_override_model(
         reset_kwargs={"battery_overrides": battery_overrides}
     )
 
+# Re-import matplotlib after code state reset
+import matplotlib.pyplot as plt
+import os
+
+def simulate_battery_depletion(grid_file="mine_20x20.txt", max_steps=100_000):
+    """
+    Simulates environment until all sensor batteries deplete or max_steps is reached.
+    Saves and plots battery levels over time for each sensor.
+    """
+    env = GridWorldEnv(grid_file)
+    obs, _ = env.reset()
+    step = 0
+    battery_history = {pos: [] for pos in env.sensor_batteries}
+    all_empty = False
+
+    while step < max_steps and not all_empty:
+        action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(action)
+
+        for pos in battery_history:
+            battery_history[pos].append(info["sensor_batteries"].get(pos, 0.0))
+
+        all_empty = all(v <= 0.0 for v in info["sensor_batteries"].values())
+        step += 1
+
+    # Plot battery levels
+    plt.figure(figsize=(10, 6))
+    for pos, levels in battery_history.items():
+        label = f"Sensor {pos}"
+        plt.plot(range(len(levels)), levels, label=label)
+
+    plt.xlabel("Timestep")
+    plt.ylabel("Battery Level (%)")
+    plt.title("Sensor Battery Depletion Over Time")
+    plt.legend(loc='lower left', fontsize='small', ncol=2)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show() 
