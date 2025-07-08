@@ -162,37 +162,34 @@ def test_100x100_no_obstacles(timesteps: int = 5000, episodes: int = 5, render: 
         verbose=verbose
     )
 
-def test_20x20_battery_override(timesteps: int, episodes: int = 3, render: bool = True, verbose: bool = True):
+def test_battery_half_split(grid_filename: str, timesteps: int, episodes: int = 3, render: bool = True, verbose: bool = True):
     """
-    Loads a fixed 20x20 map, overrides bottom 2 sensor batteries to 0.0, others to 100.0,
-    then trains and evaluates PPO on this scenario.
+    Loads a map and sets sensor batteries:
+    - Top half (row < mid): 100.0
+    - Bottom half (row >= mid): 0.0
+    Then trains and evaluates PPO on this scenario.
     """
-    filename = "mine_20x20.txt"
-    filepath = os.path.join(FIXED_GRID_DIR, filename)
+    filepath = os.path.join(FIXED_GRID_DIR, grid_filename)
 
     # --- Step 1: Parse sensor positions from file
     sensor_positions = []
     with open(filepath, "r") as f:
-        for r, line in enumerate(f):
-            for c, char in enumerate(line.strip()):
-                if char == "S":
+        lines = [line.strip() for line in f]
+        for r, line in enumerate(lines):
+            for c, char in enumerate(line):
+                if char == SENSOR:
                     sensor_positions.append((r, c))
 
-    if len(sensor_positions) < 2:
-        raise ValueError("Not enough sensors in the grid to run this test.")
+    if not sensor_positions:
+        raise ValueError("No sensors found in the grid.")
 
-    # Sort by row descending (bottom sensors last)
-    sensor_positions_sorted = sorted(sensor_positions, key=lambda x: x[0], reverse=True)
+    n_rows = len(lines)
+    mid_row = n_rows // 2
 
     # --- Step 2: Build battery override dictionary
     battery_overrides = {}
-    bottom_two = sensor_positions_sorted[:2]
-    rest = sensor_positions_sorted[2:]
-
-    for pos in bottom_two:
-        battery_overrides[pos] = 0.0
-    for pos in rest:
-        battery_overrides[pos] = 100.0
+    for r, c in sensor_positions:
+        battery_overrides[(r, c)] = 100.0 if r < mid_row else 0.0
 
     if verbose:
         print("Battery overrides:")
@@ -200,13 +197,13 @@ def test_20x20_battery_override(timesteps: int, episodes: int = 3, render: bool 
             print(f"  Sensor at {k}: battery = {v}")
 
     # --- Step 3: Create environment and train
-    env = GridWorldEnv(grid_file=filename)
-    obs, _ = env.reset(battery_overrides=battery_overrides)
+    env = GridWorldEnv(grid_file=grid_filename, battery_overrides=battery_overrides)
+    obs, _ = env.reset()
 
-    model_name = "battery_override_20x20"
-    model = train.train_PPO_model(grid_file=filename, timesteps=timesteps, model_name=model_name)
+    model_name = f"battery_halfsplit_{grid_filename.replace('.txt','')}"
+    model = train.train_PPO_model(grid_file=grid_filename, timesteps=timesteps, model_name=model_name)
 
-    # --- Step 4: Evaluate using overides
+    # --- Step 4: Evaluate using overrides
     reset_kwargs = {"battery_overrides": battery_overrides}
 
     train.load_model_and_evaluate(

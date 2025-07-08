@@ -19,7 +19,7 @@ def main():
     #test_PPO(10_000, 20, 20)
     #test_PPO(300_000, 100, 100)
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
-    test_20x20_battery_override(1_000_000, 1)
+    #test_20x20_battery_override(1_000_000, 1)
     #load_and_evaluate_battery_override_model(episodes=20, render=True, verbose=True)
 
 def test_observation_space():
@@ -40,7 +40,7 @@ def test_observation_space():
 if __name__ == "__main__":
     model = create_and_train_cnn_ppo_model(
     grid_file="mine_100x100.txt",
-    total_timesteps=500_000,
+    total_timesteps=1_000_000,
     save_path="SavedModels/PPO_custom_grid/mine_100x100_ppo_grid_cnn"
 )
 
