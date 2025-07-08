@@ -239,13 +239,14 @@ class GridWorldEnv(Env):
             self.n_cols = grid_width
             save_path = os.path.join(RANDOM_GRID_DIR, f"grid_{self.n_rows}x{self.n_cols}{obstacle_percentage*100}p.txt")
             
-            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries, self.base_station_positions = grid_gen.gen_and_save_grid(
+            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries = grid_gen.gen_and_save_grid(
                 self.n_rows, self.n_cols,
                 obstacle_percentage=obstacle_percentage,
                 n_sensors=n_sensors,
                 place_agent=False,
                 save_path=save_path
             )
+            self.base_station_positions = []
             self.n_sensors = n_sensors
             
         self.original_sensor_batteries = self.sensor_batteries
@@ -422,6 +423,7 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
 
     def get_observation(self):
+        '''
         r, c = self.agent_pos
 
         # 8 neighbors around agent
@@ -475,28 +477,38 @@ class GridWorldEnv(Env):
         ])
 
         return obs
+        '''
+        """
+        Efficiently update the observation array using only non-obstacle cells.
+        Updates agent position and sensor battery levels.
+        """
+        for idx in self.non_obstacle_indices:
+            r = idx // self.n_cols
+            c = idx % self.n_cols
+
+            # Update old agent position
+            if self.obs[idx] == 2.0:
+                self.prev_agent_pos = (r, c)
+                self.update_observation_agent()
+
+            # Update sensor battery
+            elif (r, c) in self.sensor_batteries:
+                self.obs[idx] = self.sensor_batteries[(r, c)] / 100.0
+
+        return self.obs
 
     def reset(self, seed=None, battery_overrides=None, agent_override=None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
         """
-        # manually overwrite bats for 100x100 test
-        battery_overrides = {}
-        battery_overrides[(16, 4)] = 0.0
-        battery_overrides[(11, 17)] = 0.0
-        battery_overrides[(5, 4)] = 100.0
-        battery_overrides[(1, 14)] = 100.0
-        
         # register seed
         super().reset(seed=seed)
 
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
 
-        # reset state trackers
-        # self.battery_values_in_radar = []
-        #self.sensor_batteries = dict(self.original_sensor_batteries)
+        # reset sensor battery levels
         self.sensor_batteries = {
             pos: random.uniform(0.0, 100.0)
             for pos in self.original_sensor_batteries
@@ -508,13 +520,12 @@ class GridWorldEnv(Env):
                 if pos in self.sensor_batteries:
                     self.sensor_batteries[pos] = value
 
+        # reset counters
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
-
-        # reset graph trackers
         self.battery_levels_during_episode = []
-    
+
         # place agent
         if agent_override:
             self.agent_pos = np.array(agent_override)
@@ -527,22 +538,52 @@ class GridWorldEnv(Env):
 
         self.visited = {tuple(self.agent_pos)}
 
-        # recompute radar zone
-        '''
-        self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(self.sensor_batteries.keys(), self.n_rows, self.n_cols)
-        '''
-
         # === Spawn miners === #
         self.miners = []
-
         while len(self.miners) < self.n_miners:
             r, c = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
-            
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
-        obs = self.get_observation()
-        return obs, {}
+        # --- Build initial observation ---
+        self.obs = np.full(self.n_rows * self.n_cols, 4.0, dtype=np.float32)  # default to EMPTY
+
+        for r in range(self.n_rows):
+            for c in range(self.n_cols):
+                idx = r * self.n_cols + c
+                pos = (r, c)
+
+                # Sensor
+                if pos in self.sensor_batteries:
+                    self.obs[idx] = self.sensor_batteries[pos] / 100.0
+
+                # Obstacle
+                elif self.grid[r, c] == OBSTACLE:
+                    self.obs[idx] = 3.0
+
+                # Goal
+                elif self.grid[r, c] == GOAL:
+                    self.obs[idx] = 5.0
+
+                # Agent
+                elif np.array_equal(self.agent_pos, [r, c]):
+                    self.obs[idx] = 2.0
+
+                # Otherwise remains as 4.0 (empty)
+
+        # Store agent position
+        self.prev_agent_pos = tuple(self.agent_pos)
+
+        # Precompute non-obstacle indices
+        self.non_obstacle_indices = [
+            r * self.n_cols + c
+            for r in range(self.n_rows)
+            for c in range(self.n_cols)
+            if self.grid[r, c] != OBSTACLE
+        ]
+
+        return self.obs, {}
+
 
     def can_move_to(self, pos):
         '''
