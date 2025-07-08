@@ -161,3 +161,60 @@ def test_100x100_no_obstacles(timesteps: int = 5000, episodes: int = 5, render: 
         render=render,
         verbose=verbose
     )
+
+def test_20x20_battery_override(timesteps: int, episodes: int = 3, render: bool = True, verbose: bool = True):
+    """
+    Loads a fixed 20x20 map, overrides bottom 2 sensor batteries to 0.0, others to 100.0,
+    then trains and evaluates PPO on this scenario.
+    """
+    filename = "mine_20x20.txt"
+    filepath = os.path.join(FIXED_GRID_DIR, filename)
+
+    # --- Step 1: Parse sensor positions from file
+    sensor_positions = []
+    with open(filepath, "r") as f:
+        for r, line in enumerate(f):
+            for c, char in enumerate(line.strip()):
+                if char == "S":
+                    sensor_positions.append((r, c))
+
+    if len(sensor_positions) < 2:
+        raise ValueError("Not enough sensors in the grid to run this test.")
+
+    # Sort by row descending (bottom sensors last)
+    sensor_positions_sorted = sorted(sensor_positions, key=lambda x: x[0], reverse=True)
+
+    # --- Step 2: Build battery override dictionary
+    battery_overrides = {}
+    bottom_two = sensor_positions_sorted[:2]
+    rest = sensor_positions_sorted[2:]
+
+    for pos in bottom_two:
+        battery_overrides[pos] = 0.0
+    for pos in rest:
+        battery_overrides[pos] = 100.0
+
+    if verbose:
+        print("Battery overrides:")
+        for k, v in battery_overrides.items():
+            print(f"  Sensor at {k}: battery = {v}")
+
+    # --- Step 3: Create environment and train
+    env = GridWorldEnv(grid_file=filename)
+    obs, _ = env.reset(battery_overrides=battery_overrides)
+
+    model_name = "battery_override_100x100"
+    model = train.train_PPO_model(grid_file=filename, timesteps=timesteps, model_name=model_name)
+
+    # --- Step 4: Evaluate using overrides
+    reset_kwargs = {"battery_overrides": battery_overrides}
+
+    train.load_model_and_evaluate(
+        model_filename=model_name,
+        env=env,
+        n_eval_episodes=episodes,
+        sleep_time=0.1,
+        render=render,
+        verbose=verbose,
+        reset_kwargs=reset_kwargs
+    )
