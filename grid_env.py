@@ -1,7 +1,7 @@
 # grid_env.py
-
-from gymnasium import Env
-from gymnasium.spaces import Discrete, Box, Dict
+import gym
+from gym import Env
+from gym.spaces import Discrete, Box, Dict
 import numpy as np
 import random 
 import os
@@ -497,7 +497,7 @@ class GridWorldEnv(Env):
 
         return self.obs
 
-    def reset(self, seed=None, battery_overrides=None, agent_override=None):
+    def reset(self, seed=None, options = None, battery_overrides=None, agent_override=None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
@@ -794,4 +794,16 @@ class GridWorldEnv(Env):
             normalize=True
         )
         return min(distances)
+    
+    def update_observation_agent(self):
+        if hasattr(self, "prev_agent_pos"):
+            prev_r, prev_c = self.prev_agent_pos
+            prev_idx = prev_r * self.n_cols + prev_c
+            self.obs[prev_idx] = 4.0  # EMPTY
+
+        curr_r, curr_c = self.agent_pos
+        curr_idx = curr_r * self.n_cols + curr_c
+        self.obs[curr_idx] = 2.0
+
+        self.prev_agent_pos = (curr_r, curr_c)
 

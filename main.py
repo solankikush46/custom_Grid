@@ -2,6 +2,7 @@
 
 from test import *
 from plot_metrics import generate_all_plots
+from train import create_and_train_cnn_ppo_model
 
 def ensure_directories_exist():
     directories = [
@@ -37,7 +38,12 @@ def test_observation_space():
         print(f"Value {val:.2f}: {cnt} times")
     
 if __name__ == "__main__":
-    test_observation_space()
+    model = create_and_train_cnn_ppo_model(
+    grid_file="mine_100x100.txt",
+    total_timesteps=150_000,
+    save_path="SavedModels/PPO_custom_grid/mine_100x100_ppo_grid_cnn"
+)
+
 
 
 
