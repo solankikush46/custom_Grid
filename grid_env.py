@@ -141,7 +141,6 @@ class CustomTensorboardCallback(BaseCallback):
 
             sensor_battery_snapshot = info.get("sensor_batteries")
             if sensor_battery_snapshot:
-                print("SENSORWERWERWEREWRWERWERWER")
                 if not self.sensor_battery_fieldnames:
                     # Use stringified sensor positions as column names
                     self.sensor_battery_fieldnames = list(map(str, sorted(sensor_battery_snapshot.keys())))
