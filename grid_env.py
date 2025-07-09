@@ -541,7 +541,7 @@ class GridWorldEnv(Env):
         self.battery_levels_during_episode = []
 
         # place agent
-        if self.agent_override != {}:
+        if agent_override:
             self.agent_pos = np.array(self.agent_override)
         else:
             while True:
@@ -559,6 +559,7 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
+        '''
         obs_tensor = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
         # Channel 0: Agent presence
@@ -581,6 +582,8 @@ class GridWorldEnv(Env):
             obs_tensor[3, r, c] = 1.0
 
         return obs_tensor, {}
+        '''
+        return self.get_observation(), {}
 
 
     def can_move_to(self, pos):
