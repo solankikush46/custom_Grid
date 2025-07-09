@@ -176,8 +176,7 @@ class GridWorldEnv(Env):
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
-                 n_sensors=None, battery_overrides={},
-                 agent_override={}
+                 n_sensors=None, reset_kwargs={}
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -189,8 +188,7 @@ class GridWorldEnv(Env):
                                obstacle_percentage,
                                n_sensors)
         self.max_steps = 500
-        self.battery_overrides = battery_overrides
-        self.agent_override = agent_override
+        self.reset_kwargs = reset_kwargs
 
         # pygame rendering
         self.pygame_initialized = False
@@ -508,6 +506,7 @@ class GridWorldEnv(Env):
             obs[3, r, c] = 1.0
 
         return obs
+        '''
 
     def reset(self, seed=None, options = None):
         """
@@ -516,6 +515,9 @@ class GridWorldEnv(Env):
         """
         # register seed
         super().reset(seed=seed)
+
+        battery_overrides = self.reset_kwargs.ket("battery_overrides", {})
+        agent_ovveride = self.reset_kwargs.get("agent_override", {})
 
         # restore static grid layout
         self.grid = np.copy(self.static_grid)

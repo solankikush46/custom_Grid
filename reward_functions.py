@@ -38,10 +38,10 @@ def get_reward_a(env, new_pos):
     '''
     # in test (a) distance progress was normalized, so was a lot less
     prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
+    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
+    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
     progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = 0.2 # progress # 10 * progress
+    subrewards["progress_shaping"] = progress # 10 * progress
     
     # Revisit penalty
     subrewards["revisit_penalty"] = -0.25 if new_pos in env.visited else 0
