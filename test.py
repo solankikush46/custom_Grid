@@ -343,7 +343,7 @@ def test_battery_half_split(grid_filename: str, timesteps: int,
                             episodes=episodes, render=render, verbose=verbose)
 
 def test_halfsplit_model(grid_file, episodes):
-    model_name = f"battery_halfsplit_{grid_file.replace('.txt','')}"
+    model_name = f"battery_halfsplit_{grid_file.replace('.txt','')}" + "1"
     grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
     battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
@@ -351,7 +351,7 @@ def test_halfsplit_model(grid_file, episodes):
         model_name=model_name,
         grid_filename=grid_file,
         battery_overrides=battery_overrides,
-        episodes=10,
+        episodes=20,
         render=True,
         verbose=True
     )

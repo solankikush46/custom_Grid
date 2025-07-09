@@ -27,14 +27,6 @@ def main():
         verbose=True
     )
 
-    # Train and evaluate on mine_100x100 grid
-    test_battery_half_split(
-        grid_filename="mine_100x100.txt",
-        timesteps=1_000_000,  # More training steps for bigger grid
-        episodes=5,
-        render=False,
-        verbose=True
-    )
     #render_halfsplit_models()
 
 if __name__ == "__main__":

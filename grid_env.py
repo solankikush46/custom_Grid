@@ -260,7 +260,7 @@ class GridWorldEnv(Env):
         # [10] - last action
         # [11] - distance to closest goal
         # [12, n_sensors-1] - battery levels of all sensors
-        obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
+        obs_dim = 8 + 2 + 1
 
         # cnn observation space is set in wrapper
         self.observation_space = Box(
@@ -451,6 +451,7 @@ class GridWorldEnv(Env):
         norm_row = r / (self.n_rows - 1)
         norm_col = c / (self.n_cols - 1)
 
+        '''
         # normalize last action
         norm_last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
 
@@ -459,6 +460,7 @@ class GridWorldEnv(Env):
                 [self.sensor_batteries.get(pos, 0.0) / 100.0 for pos in self.sensor_batteries],
                 dtype=np.float32
         )
+        '''
 
         distances = chebyshev_distances(
                 self.agent_pos,
