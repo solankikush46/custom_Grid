@@ -76,7 +76,7 @@ ALPHA_ELEC = 50e-9          # 50 nJ/bit
 ALPHA_SHORT = 10e-12        # 10 pJ/bit/m^2
 ALPHA_LONG = 0.0013e-12     # 0.0013 pJ/bit/m^4
 THRESHOLD_DIST = 15.0  # Threshold distance in the grid
-MAX_COMM_RANGE = 100 # 25.0           # Max Communication range (in grid cells)
+MAX_COMM_RANGE = 141 # 25.0           # Max Communication range (in grid cells)
 # have to adjust other variables according to max_comm_range
 #========================
 # Message Sizes (in bits)

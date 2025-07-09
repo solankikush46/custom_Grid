@@ -355,3 +355,36 @@ def test_halfsplit_model(grid_file, episodes):
         render=True,
         verbose=True
     )
+
+def render_halfsplit_models():
+    # Reconstruct battery overrides
+    grid_20 = "mine_20x20.txt"
+    grid_100 = "mine_100x100.txt"
+
+    path_20 = os.path.join(FIXED_GRID_DIR, grid_20)
+    path_100 = os.path.join(FIXED_GRID_DIR, grid_100)
+
+    overrides_20 = train.get_halfsplit_battery_overrides(path_20)
+    overrides_100 = train.get_halfsplit_battery_overrides(path_100)
+
+    # Evaluate the previously saved models
+    train.evaluate_halfsplit_model(
+        model_name="battery_halfsplit_mine_20x201",
+        grid_filename=grid_20,
+        battery_overrides=overrides_20,
+        episodes=100,
+        render=True,
+        verbose=True
+    )
+
+    '''
+    train.evaluate_halfsplit_model(
+        model_name="battery_halfsplit_mine_100x100",
+        grid_filename=grid_100,
+        battery_overrides=overrides_100,
+        episodes=5,
+        render=True,
+        verbose=True
+    )
+    '''
+
