@@ -517,7 +517,7 @@ class GridWorldEnv(Env):
         super().reset(seed=seed)
 
         battery_overrides = self.reset_kwargs.get("battery_overrides", {})
-        agent_ovveride = self.reset_kwargs.get("agent_override", {})
+        agent_override = self.reset_kwargs.get("agent_override", {})
 
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
