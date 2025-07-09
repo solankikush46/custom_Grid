@@ -474,8 +474,8 @@ class GridWorldEnv(Env):
         obs = np.concatenate([
                 blocked_flags,
                 [norm_row, norm_col],
-                [norm_last_action],
-                battery_levels,
+                #[norm_last_action],
+                #battery_levels,
                 [min_dist]
         ])
 
