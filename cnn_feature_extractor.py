@@ -25,31 +25,8 @@ class CustomGridCNNWrapper(ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
 
     def observation(self, obs):
-        grid_tensor = np.zeros((4,self.n_rows, self.n_cols), dtype = np.float32)
+        return obs
 
-        # Channel 0: agent_presence
-
-        ar,ac = self.agent_pos
-        grid_tensor[0, ar, ac] = 1.0
-
-        # Channel 1: Blocked cells
-
-        for r in range(self.n_rows):
-            for c in range(self.n_cols):
-                if self.env.static_grid[r,c] in ('#','S','B'):
-                    grid_tensor[1,r,c] = 1.0
-
-        # Channel 2: Sensor Battery Level
-
-        grid_tensor[2, :, :] = -1.0 # default: not a sensor
-        for (r,c), battery in self.env.sensor_batteries.items():
-            grid_tensor[2,r,c] = battery/100.0
-
-        # Channel 3 : Goal_cells
-        for r,c in self.env.goal_positions:
-            grid_tensor[3,r,c] = 1.0
-
-        return grid_tensor
 
 """
 CNN Feature Extractor for Stable-Baselines3

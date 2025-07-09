@@ -482,20 +482,28 @@ class GridWorldEnv(Env):
         Efficiently update the observation array using only non-obstacle cells.
         Updates agent position and sensor battery levels.
         """
-        for idx in self.non_obstacle_indices:
-            r = idx // self.n_cols
-            c = idx % self.n_cols
+        obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
-            # Update old agent position
-            if self.obs[idx] == 2.0:
-                self.prev_agent_pos = (r, c)
-                self.update_observation_agent()
+        # Channel 0: agent presence
+        r, c = self.agent_pos
+        obs[0, r, c] = 1.0
 
-            # Update sensor battery
-            elif (r, c) in self.sensor_batteries:
-                self.obs[idx] = self.sensor_batteries[(r, c)] / 100.0
+        # Channel 1: blocked cells (obstacle, sensor, base station)
+        for r in range(self.n_rows):
+            for c in range(self.n_cols):
+                if self.static_grid[r, c] in ('#', 'S', 'B'):
+                    obs[1, r, c] = 1.0
 
-        return self.obs
+        # Channel 2: sensor battery levels (or -1.0 if no sensor)
+        obs[2, :, :] = -1.0  # default
+        for (r, c), battery in self.sensor_batteries.items():
+            obs[2, r, c] = battery / 100.0
+
+        # Channel 3: goal cells
+        for r, c in self.goal_positions:
+            obs[3, r, c] = 1.0
+
+        return obs
 
     def reset(self, seed=None, options = None, battery_overrides=None, agent_override=None):
         """
@@ -545,44 +553,28 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
-        # --- Build initial observation ---
-        self.obs = np.full(self.n_rows * self.n_cols, 4.0, dtype=np.float32)  # default to EMPTY
+        obs_tensor = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
+        # Channel 0: Agent presence
+        ar, ac = self.agent_pos
+        obs_tensor[0, ar, ac] = 1.0
+
+        # Channel 1: Blocked
         for r in range(self.n_rows):
             for c in range(self.n_cols):
-                idx = r * self.n_cols + c
-                pos = (r, c)
+                if self.static_grid[r, c] in ('#', 'S', 'B'):
+                    obs_tensor[1, r, c] = 1.0
 
-                # Sensor
-                if pos in self.sensor_batteries:
-                    self.obs[idx] = self.sensor_batteries[pos] / 100.0
+        # Channel 2: Sensor battery
+        obs_tensor[2, :, :] = -1.0
+        for (r, c), battery in self.sensor_batteries.items():
+            obs_tensor[2, r, c] = battery / 100.0
 
-                # Obstacle
-                elif self.grid[r, c] == OBSTACLE:
-                    self.obs[idx] = 3.0
+        # Channel 3: Goals
+        for r, c in self.goal_positions:
+            obs_tensor[3, r, c] = 1.0
 
-                # Goal
-                elif self.grid[r, c] == GOAL:
-                    self.obs[idx] = 5.0
-
-                # Agent
-                elif np.array_equal(self.agent_pos, [r, c]):
-                    self.obs[idx] = 2.0
-
-                # Otherwise remains as 4.0 (empty)
-
-        # Store agent position
-        self.prev_agent_pos = tuple(self.agent_pos)
-
-        # Precompute non-obstacle indices
-        self.non_obstacle_indices = [
-            r * self.n_cols + c
-            for r in range(self.n_rows)
-            for c in range(self.n_cols)
-            if self.grid[r, c] != OBSTACLE
-        ]
-
-        return self.obs, {}
+        return obs_tensor, {}
 
 
     def can_move_to(self, pos):
