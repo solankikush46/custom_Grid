@@ -19,11 +19,18 @@ from plot_metrics import plot_all_metrics
 ##==============================================================
 # different SB3 algorithms for training model
 #-------------------------------------------
-def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: str = None):
+def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
+                    log_name: str = None, reset_kwargs: dict = None):
     if log_name is None:
         log_name = model_name
 
     env = GridWorldEnv(grid_file=grid_file)
+
+    if reset_kwargs:
+        env.reset(**reset_kwargs)
+    else:
+        env.reset()
+
     vec_env = DummyVecEnv([lambda: env])
     
     log_path = os.path.join(LOGS["ppo"], log_name)
@@ -53,11 +60,10 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     model.save(model_save_path)
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
-    # generate graphs from csvs, with rolling window being
-    # 5% of grid area
+    # generate graphs from csvs using chunked smoothing
     grid_area = env.n_rows * env.n_cols
-    rolling_window = int(max(1, 0.05 * grid_area))
-    plots = plot_all_metrics(log_dir=log_path, rolling_window=rolling_window)
+    num_points = int(max(20, grid_area // 10))
+    plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
     
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
@@ -66,8 +72,6 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
             print(f"  {p}")
     
     return model
-
-# SAC requires continuous action sapce
 
 # training utils
 #-------------------------------------------------

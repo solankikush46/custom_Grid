@@ -423,7 +423,6 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
 
     def get_observation(self):
-        '''
         r, c = self.agent_pos
 
         # 8 neighbors around agent
@@ -477,6 +476,7 @@ class GridWorldEnv(Env):
         ])
 
         return obs
+        
         '''
         """
         Efficiently update the observation array using only non-obstacle cells.
@@ -496,6 +496,7 @@ class GridWorldEnv(Env):
                 self.obs[idx] = self.sensor_batteries[(r, c)] / 100.0
 
         return self.obs
+        '''
 
     def reset(self, seed=None, battery_overrides=None, agent_override=None):
         """
@@ -545,6 +546,7 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
+        '''
         # --- Build initial observation ---
         self.obs = np.full(self.n_rows * self.n_cols, 4.0, dtype=np.float32)  # default to EMPTY
 
@@ -581,8 +583,9 @@ class GridWorldEnv(Env):
             for c in range(self.n_cols)
             if self.grid[r, c] != OBSTACLE
         ]
+        ''' # why do this instead of just returning get_observation?
 
-        return self.obs, {}
+        return self.get_observation(), {}
 
 
     def can_move_to(self, pos):

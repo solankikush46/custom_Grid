@@ -4,6 +4,7 @@ import os
 from constants import *
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 def get_latest_run_dir(base_dir):
     """
@@ -114,7 +115,7 @@ def plot_csv(csv_path, output_dir, num_points=40):
 def plot_all_metrics(
     log_dir,
     output_dir=None,
-    rolling_window=1
+    num_points=40
 ):
     """
     Generates plots for all metrics CSVs in a log directory.
@@ -122,7 +123,7 @@ def plot_all_metrics(
     Args:
         log_dir (str): Directory containing CSV files.
         output_dir (str): Directory to save PNG plots.
-        rolling_window (int): Window size for rolling mean smoothing.
+        num_points (int): Number of smoothing chunks (approximate).
 
     Returns:
         dict: Mapping of CSV filenames to lists of saved plot file paths.
@@ -132,8 +133,6 @@ def plot_all_metrics(
         run_dir = log_dir
     else:
         run_dir = get_latest_run_dir(log_dir)
-
-    #print("run_dir:", run_dir)
 
     if output_dir is None:
         output_dir = os.path.join(run_dir, "plots")
@@ -152,19 +151,21 @@ def plot_all_metrics(
         )
     ]
 
-    #print("csv_files:", csv_files)
-
     for f in csv_files:
         csv_path = os.path.join(run_dir, f)
-        plots = plot_csv(csv_path, output_dir, rolling_window=rolling_window)
+        plots = plot_csv(csv_path, output_dir, num_points=num_points)
         all_plots[f] = plots
 
     return all_plots
 
-def generate_all_plots(base_dir=None, rolling_window=1):
+def generate_all_plots(base_dir=None, num_points=40):
     """
     Recursively search for folders containing metrics CSVs
     and generate plots for each.
+
+    Args:
+        base_dir (str): Base directory to start search.
+        num_points (int): Number of smoothing chunks (approximate).
     """
     if base_dir is None:
         base_dir = LOG_DIR
@@ -179,7 +180,7 @@ def generate_all_plots(base_dir=None, rolling_window=1):
         if csvs:
             print(f"\n=== Processing CSVs in {root} ===")
             output_dir = os.path.join(root, "plots")
-            plots = plot_all_metrics(log_dir=root, output_dir=output_dir, rolling_window=rolling_window)
+            plots = plot_all_metrics(log_dir=root, output_dir=output_dir, num_points=num_points)
             print(f"Generated {sum(len(v) for v in plots.values())} plots in {output_dir}")
         else:
             print(f"No CSVs found in {root}")

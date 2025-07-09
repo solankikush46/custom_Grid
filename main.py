@@ -23,8 +23,8 @@ def main():
     #load_and_evaluate_battery_override_model(episodes=20, render=True, verbose=True)
     #simulate_battery_depletion()
     #test_observation_space()
-    test_halfsplit_model("mine_20x20.txt", episodes=20)
-    test_halfsplit_model("mine_100x100.txt", episodes=20)
+    test_halfsplit_model("mine_20x20.txt", episodes=10)
+    test_halfsplit_model("mine_100x100.txt", episodes=10)
     pass
     
 if __name__ == "__main__":

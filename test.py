@@ -331,7 +331,7 @@ def test_battery_half_split(grid_filename: str, timesteps: int,
     Battery overrides are generated once and passed through.
     """
     grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
-    battery_overrides = get_halfsplit_battery_overrides(grid_path)
+    battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
     if verbose:
         print("Battery overrides for training and evaluation:")
