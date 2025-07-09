@@ -274,10 +274,6 @@ def load_and_evaluate_battery_override_model(
         reset_kwargs={"battery_overrides": battery_overrides}
     )
 
-# Re-import matplotlib after code state reset
-import matplotlib.pyplot as plt
-import os
-
 def simulate_battery_depletion(grid_file="mine_20x20.txt", max_steps=100_000):
     """
     Simulates environment until all sensor batteries deplete or max_steps is reached.
@@ -311,4 +307,51 @@ def simulate_battery_depletion(grid_file="mine_20x20.txt", max_steps=100_000):
     plt.legend(loc='lower left', fontsize='small', ncol=2)
     plt.grid(True)
     plt.tight_layout()
-    plt.show() 
+    plt.show()
+
+def test_observation_space():
+    env = GridWorldEnv(grid_height=10, grid_width=10, obstacle_percentage=0.2, n_sensors=5)
+    obs, _ = env.reset()
+
+    print("\nObservation Length:", len(obs))
+    print("Grid Dimensions:", env.n_rows, "x", env.n_cols)
+    print("Sample Observation (first 100 values):")
+    print(np.array(obs[:100]))
+
+    # Count how many of each value type (just for sanity)
+    unique, counts = np.unique(obs, return_counts=True)
+    print("\nUnique values in observation and their counts:")
+    for val, cnt in zip(unique, counts):
+        print(f"Value {val:.2f}: {cnt} times")
+
+def test_battery_half_split(grid_filename: str, timesteps: int,
+                            episodes: int = 3, render: bool = True, verbose: bool = True):
+    """
+    Full pipeline: generate battery overrides, train model, and evaluate on the battery half-split scenario.
+    Battery overrides are generated once and passed through.
+    """
+    grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
+    battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+
+    if verbose:
+        print("Battery overrides for training and evaluation:")
+        for k, v in battery_overrides.items():
+            print(f"  Sensor at {k}: battery = {v}")
+
+    model_name, _ = train.train_halfsplit_model(grid_filename, timesteps, battery_overrides)
+    train.evaluate_halfsplit_model(model_name, grid_filename, battery_overrides,
+                            episodes=episodes, render=render, verbose=verbose)
+
+def test_halfsplit_model(grid_file, episodes):
+    model_name = f"battery_halfsplit_{grid_file.replace('.txt','')}"
+    grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
+    battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+
+    train.evaluate_halfsplit_model(
+        model_name=model_name,
+        grid_filename=grid_file,
+        battery_overrides=battery_overrides,
+        episodes=10,
+        render=True,
+        verbose=True
+    )
