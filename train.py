@@ -3,7 +3,7 @@ from grid_env import *
 from episode_callback import EpisodeStatsCallback
 import os
 import numpy as np
-import gymnasium as gym
+import gym
 from stable_baselines3 import PPO, DQN, SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
@@ -13,6 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 from constants import *
 from plot_metrics import plot_all_metrics
+from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 
 ##==============================================================
 ## Cole's Experiments
@@ -155,6 +156,31 @@ def list_models():
         if f.endswith(".zip"):
             print(f)
 
+##==============================================================
+## Kush's Experiments
+##==============================================================
+
+def create_and_train_cnn_ppo_model(grid_file: str, total_timesteps: int = 100_000, save_path: str = "ppo_model", features_dim: int = 128) -> PPO:
+    """
+    Initializes PPO with a CNN feature extractor and applies a half-split battery override,
+    where the top half of sensors get 100.0 and bottom half get 0.0.
+
+    Args:
+        grid_file (str): Grid layout filename.
+        total_timesteps (int): Total number of timesteps to train.
+        save_path (str): Where to save model checkpoints.
+        features_dim (int): Output size of CNN feature extractor.
+
+    Returns:
+        PPO: Trained PPO model.
+    """
+    # Step 1: Determine battery override
+    sensor_positions = []
+    grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
+    
+    with open(grid_path, "r") as f:
+        for r, line in enumerate(f):
+            for c, char in enumerate(line.strip()):
 def get_halfsplit_battery_overrides(grid_path: str) -> dict:
     """
     Returns a battery override dictionary where:
