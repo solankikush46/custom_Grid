@@ -427,6 +427,7 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
 
     def get_observation(self):
+        '''
         r, c = self.agent_pos
 
         # 8 neighbors around agent
@@ -480,6 +481,7 @@ class GridWorldEnv(Env):
         ])
 
         return obs
+        '''
         
         """
         Efficiently update the observation array using only non-obstacle cells.
@@ -513,6 +515,9 @@ class GridWorldEnv(Env):
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
         """
+        battery_overrides = self.battery_overrides
+        agent_override = self.agent_override
+        
         # register seed
         super().reset(seed=seed)
 
