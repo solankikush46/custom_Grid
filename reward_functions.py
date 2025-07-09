@@ -29,14 +29,6 @@ def get_reward_a(env, new_pos):
     subrewards["battery_penalty"] = -100 if env.current_battery_level <= 10 else 0
 
     # Progress shaping using Chebyshev distance
-    '''
-    prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = progress # 10 * progress
-    '''
-    # in test (a) distance progress was normalized, so was a lot less
     prev_pos = env.agent_pos
     prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
     new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
