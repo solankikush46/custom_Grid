@@ -19,11 +19,18 @@ from plot_metrics import plot_all_metrics
 ##==============================================================
 # different SB3 algorithms for training model
 #-------------------------------------------
-def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: str = None):
+def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
+                    log_name: str = None, reset_kwargs: dict = None):
     if log_name is None:
         log_name = model_name
 
     env = GridWorldEnv(grid_file=grid_file)
+
+    if reset_kwargs:
+        env.reset(**reset_kwargs)
+    else:
+        env.reset()
+
     vec_env = DummyVecEnv([lambda: env])
     
     log_path = os.path.join(LOGS["ppo"], log_name)
@@ -53,11 +60,10 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     model.save(model_save_path)
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
-    # generate graphs from csvs, with rolling window being
-    # 5% of grid area
+    # generate graphs from csvs using chunked smoothing
     grid_area = env.n_rows * env.n_cols
-    rolling_window = int(max(1, 0.05 * grid_area))
-    plots = plot_all_metrics(log_dir=log_path, rolling_window=rolling_window)
+    num_points = int(max(20, grid_area // 10))
+    plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
     
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
@@ -66,8 +72,6 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
             print(f"  {p}")
     
     return model
-
-# SAC requires continuous action sapce
 
 # training utils
 #-------------------------------------------------
@@ -150,3 +154,70 @@ def list_models():
     for f in os.listdir(MODELS["ppo"]):
         if f.endswith(".zip"):
             print(f)
+
+def get_halfsplit_battery_overrides(grid_path: str) -> dict:
+    """
+    Returns a battery override dictionary where:
+    - Top half of sensors have 100.0 battery
+    - Bottom half of sensors have 0.0 battery
+    """
+    sensor_positions = []
+    with open(grid_path, "r") as f:
+        lines = [line.strip() for line in f]
+        for r, line in enumerate(lines):
+            for c, char in enumerate(line):
+                if char == SENSOR:
+                    sensor_positions.append((r, c))
+
+    if not sensor_positions:
+        raise ValueError(f"No sensors found in: {grid_path}")
+
+    n_rows = len(lines)
+    mid_row = n_rows // 2
+
+    battery_overrides = {
+        (r, c): 100.0 if r < mid_row else 0.0
+        for r, c in sensor_positions
+    }
+
+    return battery_overrides
+
+def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict):
+    """
+    Trains a PPO model using the half-split battery override.
+    """
+    model_name = f"battery_halfsplit_{grid_filename.replace('.txt','')}"
+    reset_kwargs = {"battery_overrides": battery_overrides}
+
+    model = train_PPO_model(
+        grid_file=grid_filename,
+        timesteps=timesteps,
+        model_name=model_name,
+        reset_kwargs=reset_kwargs
+    )
+
+    return model_name, model
+
+def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overrides: dict,
+                             episodes: int = 3, render: bool = True, verbose: bool = True):
+    """
+    Evaluates a trained PPO model on a half-split battery scenario.
+    Battery overrides must be passed explicitly.
+    """
+    env = GridWorldEnv(grid_file=grid_filename)
+    reset_kwargs = {"battery_overrides": battery_overrides}
+
+    if verbose:
+        print(f"Evaluating model '{model_name}' on grid '{grid_filename}' with battery overrides:")
+        for sensor_pos, battery_level in battery_overrides.items():
+            print(f"  Sensor at {sensor_pos}: battery = {battery_level}")
+
+    load_model_and_evaluate(
+        model_filename=model_name,
+        env=env,
+        n_eval_episodes=episodes,
+        sleep_time=0.1,
+        render=render,
+        verbose=verbose,
+        reset_kwargs=reset_kwargs
+    )

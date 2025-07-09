@@ -46,4 +46,9 @@ tb_saved:
 	xdg-open http://localhost:6006/
 
 mill m:
+	cd ~/custom_Grid
+	source ~/anaconda3/bin/activate
+	conda activate reu
 	srun -p gpu --gres gpu:V100-SXM2-32GB:1 -n 8 -N 1 --mem=64G --time=48:00:00 --pty bash
+
+
