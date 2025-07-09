@@ -615,7 +615,7 @@ class GridWorldEnv(Env):
         self._update_sensor_batteries()
         self._move_miners_and_update_sensors()
 
-        terminated = self.agent_reached_exit() # or self.current_battery_level <= 10
+        terminated = self.agent_reached_exit() or self.current_battery_level <= 10
         truncated = self.episode_steps >= self.max_steps
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
