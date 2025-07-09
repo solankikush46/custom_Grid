@@ -481,7 +481,6 @@ class GridWorldEnv(Env):
 
         return obs
         
-        '''
         """
         Efficiently update the observation array using only non-obstacle cells.
         Updates agent position and sensor battery levels.
