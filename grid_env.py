@@ -199,7 +199,7 @@ class GridWorldEnv(Env):
         self.screen = None
         self.font = None
         self.clock = None
-        self.render_fps = 160
+        self.render_fps = 5
 
         # environment state variables
         self.grid = self.static_grid.copy()
@@ -212,7 +212,7 @@ class GridWorldEnv(Env):
         self.obstacle_hits = 0
         self.last_action = -1
         self.miners = []
-        self.n_miners = 1
+        self.n_miners = 12
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -427,7 +427,6 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
 
     def get_observation(self):
-        '''
         r, c = self.agent_pos
 
         # 8 neighbors around agent
@@ -481,6 +480,7 @@ class GridWorldEnv(Env):
         ])
 
         return obs
+        
         '''
         """
         Efficiently update the observation array using only non-obstacle cells.
@@ -527,10 +527,11 @@ class GridWorldEnv(Env):
         }
 
         # optionally override specific sensor batteries
-        for pos, value in self.battery_overrides.items():
-            if pos in self.sensor_batteries:
-                self.sensor_batteries[pos] = value
-
+        if battery_overrides:
+            for pos, value in battery_overrides.items():
+                if pos in self.sensor_batteries:
+                    self.sensor_batteries[pos] = value
+                    
         # reset counters
         self.episode_steps = 0
         self.total_reward = 0
@@ -730,6 +731,7 @@ class GridWorldEnv(Env):
         last_move_time = 0
         move_delay = 80 # milliseconds between moves
 
+        step_count = 1
         while not done:
             self.render_pygame(uncap_fps=True)
 
@@ -749,12 +751,18 @@ class GridWorldEnv(Env):
                 keys = pygame.key.get_pressed()
                 for key, action in key_to_action.items():
                     if keys[key]:
+                        step_count += 1
                         obs, reward, terminated, truncated, info = self.step(action)
-                        print(f"Action: {action}, Reward: {reward:.3f}, Pos: {info['agent_pos']}")
+                        subrew_str = ', '.join([f"{k}:{v:.2f}" for k, v in info['subrewards'].items()])
+                        print(
+                            f"Step {step_count} | Pos: {info['agent_pos'].tolist()} | "
+                            f"Reward: {reward:.2f} | Battery: {info['current_battery']:.2f} | "
+                            f"Dist: {info['distance_to_goal']:.3f} | Subrewards: [{subrew_str}]"
+                        )
+
                         done = terminated or truncated
                         last_move_time = current_time
                         break # only process one direction at a time
-
         self.close()
 
     def _get_closest_sensor(self, pos):

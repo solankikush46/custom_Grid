@@ -20,21 +20,29 @@ def get_reward_a(env, new_pos):
         subrewards["progress_shaping"] = 0
         subrewards["revisit_penalty"] = 0
         subrewards["time_penalty"] = 0
-        return sum(subrewards.values()), subrewards
+        return subrewards["goal_reward"], subrewards
 
     # Invalid move (obstacle)
     subrewards["invalid_penalty"] = -1.0 if not env.can_move_to(new_pos) else 0
 
     # Battery penalty if critically low
-    subrewards["battery_penalty"] = -50 if env.current_battery_level <= 10 else 0
+    subrewards["battery_penalty"] = -100 if env.current_battery_level <= 10 else 0
 
     # Progress shaping using Chebyshev distance
+    '''
     prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows))
+    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
+    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
     progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = 0.2 * progress # 10 * progress
-
+    subrewards["progress_shaping"] = progress # 10 * progress
+    '''
+    # in test (a) distance progress was normalized, so was a lot less
+    prev_pos = env.agent_pos
+    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
+    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=True))
+    progress = prev_dist - new_dist
+    subrewards["progress_shaping"] = 0.2 # progress # 10 * progress
+    
     # Revisit penalty
     subrewards["revisit_penalty"] = -0.25 if new_pos in env.visited else 0
 

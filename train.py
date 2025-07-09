@@ -20,27 +20,38 @@ from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 ##==============================================================
 # different SB3 algorithms for training model
 #-------------------------------------------
-def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: str = None):
+def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
+                    log_name: str = None, reset_kwargs: dict = None):
     if log_name is None:
         log_name = model_name
 
     env = GridWorldEnv(grid_file=grid_file)
+
+    if reset_kwargs:
+        env.reset(**reset_kwargs)
+    else:
+        env.reset()
+
     vec_env = DummyVecEnv([lambda: env])
     
     log_path = os.path.join(LOGS["ppo"], log_name)
     model_save_path = os.path.join(MODELS["ppo"], model_name)
 
     model = PPO(
-        "MlpPolicy",
-        vec_env,
-        ent_coef=0.5,
-        gae_lambda=0.90,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        verbose=1,
-        tensorboard_log=log_path
+        policy         = "MlpPolicy",
+        env            = vec_env,
+        learning_rate  = 3e-5,
+        n_steps        = 2048,
+        batch_size     = 2048,
+        n_epochs       = 10,
+        gamma          = 0.99,
+        gae_lambda     = 0.95,
+        clip_range     = 0.2,
+        clip_range_vf  = 0.5,
+        ent_coef       = 0.01,
+        tensorboard_log= log_path,
+        verbose        = 1,
+        device         = "cuda"
     )
 
     callback = CustomTensorboardCallback()
@@ -50,11 +61,10 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
     model.save(model_save_path)
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
-    # generate graphs from csvs, with rolling window being
-    # 5% of grid area
+    # generate graphs from csvs using chunked smoothing
     grid_area = env.n_rows * env.n_cols
-    rolling_window = int(max(1, 0.05 * grid_area))
-    plots = plot_all_metrics(log_dir=log_path, rolling_window=rolling_window)
+    num_points = int(max(20, grid_area // 10))
+    plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
     
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
@@ -63,8 +73,6 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str, log_name: s
             print(f"  {p}")
     
     return model
-
-# SAC requires continuous action sapce
 
 # training utils
 #-------------------------------------------------
@@ -79,15 +87,18 @@ def load_model(model_path: str, env):
 def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
     """
     Evaluate the model in the given environment for a number of episodes,
-    printing agent's position, reward, and action at every timestep.
+    printing agent's position, reward, and action at every timestep, and summarizing performance.
     """
     total_rewards = []
+    total_steps = 0
+    success_count = 0  # Track number of episodes where agent reached the goal
 
     for ep in range(n_eval_episodes):
         obs, _ = env.reset(**(reset_kwargs or {}))
         done = False
         ep_reward = 0.0
         step_num = 0
+        reached_exit = False
 
         while not done:
             action, _ = model.predict(obs)
@@ -97,7 +108,10 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
-            
+
+            # Check for exit condition — adjust if your env tracks it differently
+            reached_exit = bool(info.get("reward") == 400)
+
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
                 print(f"Episode {ep + 1} Step {step_num}: Pos={agent_pos}, Action={action} ({action_dir}), Reward={reward:.2f}")
@@ -111,12 +125,23 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             step_num += 1
 
+        total_steps += step_num
         total_rewards.append(ep_reward)
+        if reached_exit:
+            success_count += 1
+
         if verbose:
             print(f"Episode {ep + 1} complete: Total Reward = {ep_reward:.2f}")
 
     mean_reward = sum(total_rewards) / n_eval_episodes
-    print(f"\nEvaluation complete: Mean reward = {mean_reward:.2f}")
+    success_rate = success_count / n_eval_episodes
+    avg_steps = total_steps / n_eval_episodes
+
+    print("\n=== Evaluation Summary ===")
+    print(f"Total Episodes: {n_eval_episodes}")
+    print(f"Reached Exit: {success_count}/{n_eval_episodes} ({success_rate:.1%})")
+    print(f"Mean Reward: {mean_reward:.2f}")
+    print(f"Average Steps per Episode: {avg_steps:.1f}")
 
 def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
     """
@@ -156,64 +181,69 @@ def create_and_train_cnn_ppo_model(grid_file: str, total_timesteps: int = 100_00
     with open(grid_path, "r") as f:
         for r, line in enumerate(f):
             for c, char in enumerate(line.strip()):
+def get_halfsplit_battery_overrides(grid_path: str) -> dict:
+    """
+    Returns a battery override dictionary where:
+    - Top half of sensors have 100.0 battery
+    - Bottom half of sensors have 0.0 battery
+    """
+    sensor_positions = []
+    with open(grid_path, "r") as f:
+        lines = [line.strip() for line in f]
+        for r, line in enumerate(lines):
+            for c, char in enumerate(line):
                 if char == SENSOR:
                     sensor_positions.append((r, c))
 
     if not sensor_positions:
-        raise ValueError("No sensors found in grid file.")
+        raise ValueError(f"No sensors found in: {grid_path}")
 
-    # Determine halfway row (based on max row)
-    max_row = max(pos[0] for pos in sensor_positions)
-    halfway_row = max_row // 2
+    n_rows = len(lines)
+    mid_row = n_rows // 2
 
     battery_overrides = {
-        pos: 100.0 if pos[0] <= halfway_row else 0.0
-        for pos in sensor_positions
+        (r, c): 100.0 if r < mid_row else 0.0
+        for r, c in sensor_positions
     }
 
-    print("Battery override applied (top = 100, bottom = 0):")
-    for pos, val in battery_overrides.items():
-        print(f"  {pos}: {val}")
+    return battery_overrides
 
-    # Step 2: Create env with override
-    env = GridWorldEnv(grid_file=grid_file, battery_overrides=battery_overrides)
-    obs, _ = env.reset()
+def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict):
+    """
+    Trains a PPO model using the half-split battery override.
+    """
+    model_name = f"battery_halfsplit_{grid_filename.replace('.txt','')}"
+    reset_kwargs = {"battery_overrides": battery_overrides}
 
-    wrapped_env = CustomGridCNNWrapper(env)
-    vec_env = make_vec_env(lambda: wrapped_env, n_envs=1)
-
-    # Step 3: Define CNN-based policy
-    policy_kwargs = {
-        "features_extractor_class": GridCNNExtractor,
-        "features_extractor_kwargs": {"features_dim": features_dim},
-        "net_arch": dict(pi=[64, 64], vf=[64, 64])
-    }
-
-    # Step 4: Train model
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        policy_kwargs=policy_kwargs,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
-        verbose=1,
-        device="cuda"
+    model = train_PPO_model(
+        grid_file=grid_filename,
+        timesteps=timesteps,
+        model_name=model_name,
+        reset_kwargs=reset_kwargs
     )
 
-    chunk_steps = total_timesteps // 10
-    for i in range(1, 11):
-        print(f"\nTraining chunk {i}/10: {chunk_steps} steps...")
-        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
+    return model_name, model
 
-        # Save checkpoint
-        checkpoint_path = f"{save_path}_{i * 10}pct"
-        model.save(checkpoint_path)
-        print(f"Saved checkpoint: {checkpoint_path}")
+def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overrides: dict,
+                             episodes: int = 3, render: bool = True, verbose: bool = True):
+    """
+    Evaluates a trained PPO model on a half-split battery scenario.
+    Battery overrides must be passed explicitly.
+    """
+    env = GridWorldEnv(grid_file=grid_filename)
+    reset_kwargs = {"battery_overrides": battery_overrides}
 
-    return model
+    if verbose:
+        print(f"Evaluating model '{model_name}' on grid '{grid_filename}' with battery overrides:")
+        for sensor_pos, battery_level in battery_overrides.items():
+            print(f"  Sensor at {sensor_pos}: battery = {battery_level}")
+
+    load_model_and_evaluate(
+        model_filename=model_name,
+        env=env,
+        n_eval_episodes=episodes,
+        sleep_time=0.1,
+        render=render,
+        verbose=verbose,
+        reset_kwargs=reset_kwargs
+    )
