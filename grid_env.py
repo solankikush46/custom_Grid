@@ -516,7 +516,7 @@ class GridWorldEnv(Env):
         # register seed
         super().reset(seed=seed)
 
-        battery_overrides = self.reset_kwargs.ket("battery_overrides", {})
+        battery_overrides = self.reset_kwargs.get("battery_overrides", {})
         agent_ovveride = self.reset_kwargs.get("agent_override", {})
 
         # restore static grid layout
