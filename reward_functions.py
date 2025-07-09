@@ -1,7 +1,7 @@
 # reward_functions.py
 
 import numpy as np
-from utils import chebyshev_distances
+from utils import *
 
 ##==============================================================
 ## Reward functions agent in GridWorldEnv may use
