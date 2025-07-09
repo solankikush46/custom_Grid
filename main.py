@@ -2,6 +2,7 @@
 
 from test import *
 from plot_metrics import generate_all_plots
+from train import create_and_train_cnn_ppo_model
 
 def ensure_directories_exist():
     directories = [
@@ -19,17 +20,12 @@ def main():
     #test_PPO(300_000, 100, 100)
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
     #test_20x20_battery_override(1_000_000, 1)
-    #test_manual_control()
-    #load_and_evaluate_battery_override_model(episodes=20, render=True, verbose=True)
-    #simulate_battery_depletion()
-    #test_observation_space()
-    test_halfsplit_model("mine_20x20.txt", episodes=10)
-    test_halfsplit_model("mine_100x100.txt", episodes=10)
-    pass
+
     
 if __name__ == "__main__":
     ensure_directories_exist()
     main()
+
 
 
 

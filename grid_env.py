@@ -1,7 +1,7 @@
 # grid_env.py
-
-from gymnasium import Env
-from gymnasium.spaces import Discrete, Box, Dict
+import gym
+from gym import Env
+from gym.spaces import Discrete, Box, Dict
 import numpy as np
 import random 
 import os
@@ -176,7 +176,8 @@ class GridWorldEnv(Env):
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
-                 n_sensors=None,
+                 n_sensors=None, battery_overrides={},
+                 agent_override={}
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -188,6 +189,8 @@ class GridWorldEnv(Env):
                                obstacle_percentage,
                                n_sensors)
         self.max_steps = 500
+        self.battery_overrides = battery_overrides
+        self.agent_override = agent_override
 
         # pygame rendering
         self.pygame_initialized = False
@@ -261,6 +264,7 @@ class GridWorldEnv(Env):
         # [12, n_sensors-1] - battery levels of all sensors
         obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
 
+        # cnn observation space is set in wrapper
         self.observation_space = Box(
             low=0.0,
             high=1.0,
@@ -482,23 +486,30 @@ class GridWorldEnv(Env):
         Efficiently update the observation array using only non-obstacle cells.
         Updates agent position and sensor battery levels.
         """
-        for idx in self.non_obstacle_indices:
-            r = idx // self.n_cols
-            c = idx % self.n_cols
+        obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
-            # Update old agent position
-            if self.obs[idx] == 2.0:
-                self.prev_agent_pos = (r, c)
-                self.update_observation_agent()
+        # Channel 0: agent presence
+        r, c = self.agent_pos
+        obs[0, r, c] = 1.0
 
-            # Update sensor battery
-            elif (r, c) in self.sensor_batteries:
-                self.obs[idx] = self.sensor_batteries[(r, c)] / 100.0
+        # Channel 1: blocked cells (obstacle, sensor, base station)
+        for r in range(self.n_rows):
+            for c in range(self.n_cols):
+                if self.static_grid[r, c] in ('#', 'S', 'B'):
+                    obs[1, r, c] = 1.0
 
-        return self.obs
-        '''
+        # Channel 2: sensor battery levels (or -1.0 if no sensor)
+        obs[2, :, :] = -1.0  # default
+        for (r, c), battery in self.sensor_batteries.items():
+            obs[2, r, c] = battery / 100.0
 
-    def reset(self, seed=None, battery_overrides=None, agent_override=None):
+        # Channel 3: goal cells
+        for r, c in self.goal_positions:
+            obs[3, r, c] = 1.0
+
+        return obs
+
+    def reset(self, seed=None, options = None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
@@ -528,8 +539,8 @@ class GridWorldEnv(Env):
         self.battery_levels_during_episode = []
 
         # place agent
-        if agent_override:
-            self.agent_pos = np.array(agent_override)
+        if self.agent_override != {}:
+            self.agent_pos = np.array(self.agent_override)
         else:
             while True:
                 x, y = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
@@ -546,46 +557,28 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
-        '''
-        # --- Build initial observation ---
-        self.obs = np.full(self.n_rows * self.n_cols, 4.0, dtype=np.float32)  # default to EMPTY
+        obs_tensor = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
+        # Channel 0: Agent presence
+        ar, ac = self.agent_pos
+        obs_tensor[0, ar, ac] = 1.0
+
+        # Channel 1: Blocked
         for r in range(self.n_rows):
             for c in range(self.n_cols):
-                idx = r * self.n_cols + c
-                pos = (r, c)
+                if self.static_grid[r, c] in ('#', 'S', 'B'):
+                    obs_tensor[1, r, c] = 1.0
 
-                # Sensor
-                if pos in self.sensor_batteries:
-                    self.obs[idx] = self.sensor_batteries[pos] / 100.0
+        # Channel 2: Sensor battery
+        obs_tensor[2, :, :] = -1.0
+        for (r, c), battery in self.sensor_batteries.items():
+            obs_tensor[2, r, c] = battery / 100.0
 
-                # Obstacle
-                elif self.grid[r, c] == OBSTACLE:
-                    self.obs[idx] = 3.0
+        # Channel 3: Goals
+        for r, c in self.goal_positions:
+            obs_tensor[3, r, c] = 1.0
 
-                # Goal
-                elif self.grid[r, c] == GOAL:
-                    self.obs[idx] = 5.0
-
-                # Agent
-                elif np.array_equal(self.agent_pos, [r, c]):
-                    self.obs[idx] = 2.0
-
-                # Otherwise remains as 4.0 (empty)
-
-        # Store agent position
-        self.prev_agent_pos = tuple(self.agent_pos)
-
-        # Precompute non-obstacle indices
-        self.non_obstacle_indices = [
-            r * self.n_cols + c
-            for r in range(self.n_rows)
-            for c in range(self.n_cols)
-            if self.grid[r, c] != OBSTACLE
-        ]
-        ''' # why do this instead of just returning get_observation?
-
-        return self.get_observation(), {}
+        return obs_tensor, {}
 
 
     def can_move_to(self, pos):
@@ -804,4 +797,16 @@ class GridWorldEnv(Env):
             normalize=True
         )
         return min(distances)
+    
+    def update_observation_agent(self):
+        if hasattr(self, "prev_agent_pos"):
+            prev_r, prev_c = self.prev_agent_pos
+            prev_idx = prev_r * self.n_cols + prev_c
+            self.obs[prev_idx] = 4.0  # EMPTY
+
+        curr_r, curr_c = self.agent_pos
+        curr_idx = curr_r * self.n_cols + curr_c
+        self.obs[curr_idx] = 2.0
+
+        self.prev_agent_pos = (curr_r, curr_c)
 
