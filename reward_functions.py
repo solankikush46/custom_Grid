@@ -138,4 +138,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_b(env, new_pos)
+    return get_reward_a(env, new_pos)
