@@ -519,7 +519,7 @@ class GridWorldEnv(Env):
             for pos, value in battery_overrides.items():
                 if pos in self.sensor_batteries:
                     self.sensor_batteries[pos] = value
-
+                    
         # reset counters
         self.episode_steps = 0
         self.total_reward = 0
