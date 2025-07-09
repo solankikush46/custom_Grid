@@ -137,29 +137,59 @@ def list_models():
 
 def create_and_train_cnn_ppo_model(grid_file: str, total_timesteps: int = 100_000, save_path: str = "ppo_model", features_dim: int = 128) -> PPO:
     """
-    Initializes PPO with a CNN feature extractor for the custom GridWorld environment.
+    Initializes PPO with a CNN feature extractor and applies a half-split battery override,
+    where the top half of sensors get 100.0 and bottom half get 0.0.
 
     Args:
-        grid_file (str): Path to the grid layout file.
-        features_dim (int): Output size of the CNN feature extractor.
+        grid_file (str): Grid layout filename.
+        total_timesteps (int): Total number of timesteps to train.
+        save_path (str): Where to save model checkpoints.
+        features_dim (int): Output size of CNN feature extractor.
 
     Returns:
-        PPO: Ready-to-train PPO model with CNN features.
+        PPO: Trained PPO model.
     """
-    # 1. Load and wrap the environment
-    env = GridWorldEnv(grid_file=grid_file)
+    # Step 1: Determine battery override
+    sensor_positions = []
+    grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
+    
+    with open(grid_path, "r") as f:
+        for r, line in enumerate(f):
+            for c, char in enumerate(line.strip()):
+                if char == SENSOR:
+                    sensor_positions.append((r, c))
+
+    if not sensor_positions:
+        raise ValueError("No sensors found in grid file.")
+
+    # Determine halfway row (based on max row)
+    max_row = max(pos[0] for pos in sensor_positions)
+    halfway_row = max_row // 2
+
+    battery_overrides = {
+        pos: 100.0 if pos[0] <= halfway_row else 0.0
+        for pos in sensor_positions
+    }
+
+    print("Battery override applied (top = 100, bottom = 0):")
+    for pos, val in battery_overrides.items():
+        print(f"  {pos}: {val}")
+
+    # Step 2: Create env with override
+    env = GridWorldEnv(grid_file=grid_file, battery_overrides=battery_overrides)
+    obs, _ = env.reset()
+
     wrapped_env = CustomGridCNNWrapper(env)
     vec_env = make_vec_env(lambda: wrapped_env, n_envs=1)
 
-    # 2. Define CNN-based policy config
+    # Step 3: Define CNN-based policy
     policy_kwargs = {
         "features_extractor_class": GridCNNExtractor,
         "features_extractor_kwargs": {"features_dim": features_dim},
         "net_arch": dict(pi=[64, 64], vf=[64, 64])
-
     }
 
-    # 3. Instantiate PPO model
+    # Step 4: Train model
     model = PPO(
         "MlpPolicy",
         vec_env,
@@ -178,12 +208,12 @@ def create_and_train_cnn_ppo_model(grid_file: str, total_timesteps: int = 100_00
 
     chunk_steps = total_timesteps // 10
     for i in range(1, 11):
-        print(f"\n🚀 Training chunk {i}/10: {chunk_steps} steps...")
+        print(f"\nTraining chunk {i}/10: {chunk_steps} steps...")
         model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
 
         # Save checkpoint
         checkpoint_path = f"{save_path}_{i * 10}pct"
         model.save(checkpoint_path)
-        print(f"✅ Saved checkpoint: {checkpoint_path}")
-    
+        print(f"Saved checkpoint: {checkpoint_path}")
+
     return model

@@ -176,7 +176,8 @@ class GridWorldEnv(Env):
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
-                 n_sensors=None,
+                 n_sensors=None, battery_overrides={},
+                 agent_override={}
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -188,6 +189,8 @@ class GridWorldEnv(Env):
                                obstacle_percentage,
                                n_sensors)
         self.max_steps = 500
+        self.battery_overrides = battery_overrides
+        self.agent_override = agent_override
 
         # pygame rendering
         self.pygame_initialized = False
@@ -261,6 +264,7 @@ class GridWorldEnv(Env):
         # [12, n_sensors-1] - battery levels of all sensors
         obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
 
+        # cnn observation space is set in wrapper
         self.observation_space = Box(
             low=0.0,
             high=1.0,
@@ -505,7 +509,7 @@ class GridWorldEnv(Env):
 
         return obs
 
-    def reset(self, seed=None, options = None, battery_overrides=None, agent_override=None):
+    def reset(self, seed=None, options = None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
@@ -523,10 +527,9 @@ class GridWorldEnv(Env):
         }
 
         # optionally override specific sensor batteries
-        if battery_overrides:
-            for pos, value in battery_overrides.items():
-                if pos in self.sensor_batteries:
-                    self.sensor_batteries[pos] = value
+        for pos, value in self.battery_overrides.items():
+            if pos in self.sensor_batteries:
+                self.sensor_batteries[pos] = value
 
         # reset counters
         self.episode_steps = 0
@@ -535,8 +538,8 @@ class GridWorldEnv(Env):
         self.battery_levels_during_episode = []
 
         # place agent
-        if agent_override:
-            self.agent_pos = np.array(agent_override)
+        if self.agent_override != {}:
+            self.agent_pos = np.array(self.agent_override)
         else:
             while True:
                 x, y = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
