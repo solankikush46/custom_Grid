@@ -27,6 +27,14 @@ def main():
         verbose=True
     )
 
+    test_battery_half_split(
+        grid_filename="mine_100x100.txt",
+        timesteps=1_000_000,   # Adjust timesteps as needed
+        episodes=5,          # Adjust evaluation episodes as needed
+        render=False,
+        verbose=True
+    )
+
     #render_halfsplit_models()
 
 if __name__ == "__main__":
