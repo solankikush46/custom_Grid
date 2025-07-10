@@ -473,7 +473,7 @@ def train_all_halfsplit_models(timesteps: int = 500_000):
 
         # Call your train_halfsplit_model function (make sure it saves with correct model_name)
         model_name, model = train.train_halfsplit_model(
-            grid_file=config["grid_file"],
+            grid_filename=config["grid_file"],
             timesteps=timesteps,
             battery_overrides=battery_overrides,
             is_cnn=config["is_cnn"],

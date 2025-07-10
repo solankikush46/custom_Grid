@@ -223,11 +223,12 @@ def get_halfsplit_battery_overrides(grid_path: str) -> dict:
 
     return battery_overrides
 
-def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False):
+def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False, model_name=None):
     """
     Trains a PPO model using the half-split battery override.
     """
-    model_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
+    if not model_name:
+        model_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
     reset_kwargs = {"battery_overrides": battery_overrides}
 
     model = train_PPO_model(
