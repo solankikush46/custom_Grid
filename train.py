@@ -25,15 +25,9 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
     if log_name is None:
         log_name = model_name
 
-    env = GridWorldEnv(grid_file=grid_file)
-
-    if reset_kwargs:
-        env.reset(**reset_kwargs)
-    else:
-        env.reset()
-
+    env = GridWorldEnv(grid_file=grid_file, reset_kwargs=reset_kwargs)
     vec_env = DummyVecEnv([lambda: env])
-    
+
     log_path = os.path.join(LOGS["ppo"], log_name)
     model_save_path = os.path.join(MODELS["ppo"], model_name)
 
@@ -57,7 +51,7 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
     callback = CustomTensorboardCallback()
 
     model.learn(total_timesteps=timesteps, callback=callback)
-    
+
     model.save(model_save_path)
     print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
 
@@ -65,13 +59,13 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
     grid_area = env.n_rows * env.n_cols
     num_points = int(max(20, grid_area // 10))
     plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
-    
+
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
         print(f"\n{csv_file}:")
         for p in plot_list:
             print(f"  {p}")
-    
+
     return model
 
 # training utils
@@ -84,7 +78,7 @@ def load_model(model_path: str, env):
     model = PPO.load(model_path, env=vec_env)
     return model
 
-def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
+def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
     Evaluate the model in the given environment for a number of episodes,
     printing agent's position, reward, and action at every timestep, and summarizing performance.
@@ -94,7 +88,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     success_count = 0  # Track number of episodes where agent reached the goal
 
     for ep in range(n_eval_episodes):
-        obs, _ = env.reset(**(reset_kwargs or {}))
+        obs, _ = env.reset()
         done = False
         ep_reward = 0.0
         step_num = 0
@@ -109,7 +103,6 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
 
-            # Check for exit condition — adjust if your env tracks it differently
             reached_exit = bool(info.get("reward") == 400)
 
             if verbose:
@@ -143,13 +136,13 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Reward: {mean_reward:.2f}")
     print(f"Average Steps per Episode: {avg_steps:.1f}")
 
-def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True, reset_kwargs=None):
+def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
     Load a model by filename and evaluate.
     """
     model_path = os.path.join(MODELS["ppo"], model_filename)
     model = load_model(model_path, env)
-    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose, reset_kwargs=reset_kwargs)
+    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose)
 
 def list_models():
     for f in os.listdir(MODELS["ppo"]):
@@ -262,8 +255,8 @@ def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overri
     Evaluates a trained PPO model on a half-split battery scenario.
     Battery overrides must be passed explicitly.
     """
-    env = GridWorldEnv(grid_file=grid_filename)
     reset_kwargs = {"battery_overrides": battery_overrides}
+    env = GridWorldEnv(grid_file=grid_filename, reset_kwargs=reset_kwargs)
 
     if verbose:
         print(f"Evaluating model '{model_name}' on grid '{grid_filename}' with battery overrides:")
@@ -276,8 +269,7 @@ def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overri
         n_eval_episodes=episodes,
         sleep_time=0.1,
         render=render,
-        verbose=verbose,
-        reset_kwargs=reset_kwargs
+        verbose=verbose
     )
 
 def create_and_train_cnn_halfsplit_model(grid_filename: str, total_timesteps: int = 500_000, features_dim: int = 128):

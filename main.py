@@ -8,8 +8,7 @@ def ensure_directories_exist():
     directories = [
         LOGS["ppo"],
         MODELS["ppo"],
-        FIXED_GRID_DIR,
-        RANDOM_GRID_DIR,
+        FIXED_GRID_DIR
     ]
     for d in directories:
         os.makedirs(d, exist_ok=True)
