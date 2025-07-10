@@ -21,7 +21,8 @@ def main():
     #test_20x20_battery_override(1_000_000, 1)
     create_and_train_cnn_halfsplit_model("mine_20x20.txt", 1_000_000)
     create_and_train_cnn_halfsplit_model("mine_100x100.txt", 1_000_000)
-
+    #evaluate_all_week8_wed_models()
+    
 if __name__ == "__main__":
     ensure_directories_exist()
     main()
