@@ -2,6 +2,7 @@
 
 from test import *
 from plot_metrics import generate_all_plots
+from train import *
 
 def ensure_directories_exist():
     directories = [
