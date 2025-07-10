@@ -260,7 +260,7 @@ class GridWorldEnv(Env):
         # [10] - last action
         # [11] - distance to closest goal
         # [12, n_sensors-1] - battery levels of all sensors
-        obs_dim = 8 + 2 + 1
+        obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
 
         # cnn observation space is set in wrapper
         self.observation_space = Box(
