@@ -194,15 +194,20 @@ def create_and_train_cnn_ppo_model(grid_file: str, total_timesteps: int = 100_00
         device="cuda"
     )
 
+    callback = CustomTensorboardCallback()
+    model.learn(total_timesteps=total_timesteps, callback=callback)
+    
+    '''
     chunk_steps = total_timesteps // 10
     for i in range(1, 11):
-        print(f"\n🚀 Training chunk {i}/10: {chunk_steps} steps...")
+        print(f"\nTraining chunk {i}/10: {chunk_steps} steps...")
         model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
 
         # Save checkpoint
         checkpoint_path = f"{save_path}_{i * 10}pct"
         model.save(checkpoint_path)
-        print(f"✅ Saved checkpoint: {checkpoint_path}")
+        print(f"Saved checkpoint: {checkpoint_path}")
+    '''
     
     return model
     
