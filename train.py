@@ -282,7 +282,7 @@ def create_and_train_cnn_halfsplit_model(grid_filename: str, total_timesteps: in
 
     # Create env with overrides
     base_env = GridWorldEnv(grid_file=grid_filename)
-    base_env.reset(battery_overrides=battery_overrides)
+    base_env.reset()
     wrapped_env = CustomGridCNNWrapper(base_env)
     vec_env = DummyVecEnv([lambda: wrapped_env])
 
