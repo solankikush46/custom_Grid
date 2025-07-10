@@ -388,3 +388,29 @@ def render_halfsplit_models():
     )
     '''
 
+def evaluate_all_week8_wed_models(episodes=20):
+    """
+    Evaluates and renders all 4 Week 8 halfsplit models using the correct grid,
+    environment type (CNN or not), and battery overrides.
+    """
+    model_configs = [
+        ("battery_halfsplit_mine_20x20",      "mine_20x20.txt"),
+        ("battery_halfsplit_mine_100x100",    "mine_100x100.txt"),
+        ("cnn_battery_halfsplit_mine_20x20",  "mine_20x20.txt"),
+        ("cnn_battery_halfsplit_mine_100x100","mine_100x100.txt"),
+    ]
+
+    for model_name, grid_filename in model_configs:
+        is_cnn = "cnn" in model_name
+        grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
+        battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+
+        print(f"\n=== Evaluating {model_name} ===")
+        train.evaluate_halfsplit_model(
+            model_name=model_name,
+            grid_filename=grid_filename,
+            battery_overrides=battery_overrides,
+            episodes=episodes,
+            render=True,
+            verbose=True
+        )
