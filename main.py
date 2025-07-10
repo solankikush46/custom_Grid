@@ -2,7 +2,7 @@
 
 from test import *
 from plot_metrics import generate_all_plots
-from train import create_and_train_cnn_ppo_model
+from train import *
 
 def ensure_directories_exist():
     directories = [
