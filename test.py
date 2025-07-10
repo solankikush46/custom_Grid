@@ -6,6 +6,7 @@ from grid_env import GridWorldEnv
 from constants import *
 import train
 import grid_gen
+from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 
 def test_manual_control(grid_file: str = "mine_20x20.txt"):
     """
@@ -388,29 +389,68 @@ def render_halfsplit_models():
     )
     '''
 
-def evaluate_all_week8_wed_models(episodes=20):
+def evaluate_all_models():
     """
-    Evaluates and renders all 4 Week 8 halfsplit models using the correct grid,
-    environment type (CNN or not), and battery overrides.
+    Automatically evaluates and renders all PPO models in SavedModels/PPO_custom_grid.
+    Infers CNN/MLP, grid file, and battery override from filename.
     """
-    model_configs = [
-        ("battery_halfsplit_mine_20x20",      "mine_20x20.txt"),
-        ("battery_halfsplit_mine_100x100",    "mine_100x100.txt"),
-        ("cnn_battery_halfsplit_mine_20x20",  "mine_20x20.txt"),
-        ("cnn_battery_halfsplit_mine_100x100","mine_100x100.txt"),
+    model_dir = MODELS["ppo"]
+    model_files = [
+        f for f in os.listdir(model_dir)
+        if f.endswith(".zip") and os.path.isfile(os.path.join(model_dir, f))
     ]
 
-    for model_name, grid_filename in model_configs:
+    for model_file in model_files:
+        model_name = model_file.replace(".zip", "")
+
+        # Determine CNN or MLP
         is_cnn = "cnn" in model_name
-        grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
-        battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+
+        # Infer grid filename
+        if "100x100" in model_name:
+            grid_filename = "mine_100x100.txt"
+        elif "20x20" in model_name:
+            grid_filename = "mine_20x20.txt"
+        else:
+            print(f"Skipping {model_name}: cannot infer grid file.")
+            continue
+
+        # Infer battery overrides
+        reset_kwargs = {}
+        if "halfsplit" in model_name:
+            grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
+            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+            reset_kwargs["battery_overrides"] = battery_overrides
 
         print(f"\n=== Evaluating {model_name} ===")
-        train.evaluate_halfsplit_model(
-            model_name=model_name,
-            grid_filename=grid_filename,
-            battery_overrides=battery_overrides,
-            episodes=episodes,
+        print(f"Grid: {grid_filename} | CNN: {is_cnn} | Halfsplit: {'halfsplit' in model_name}")
+
+        train.load_model_and_evaluate(
+            model_filename=model_name,
+            grid_file=grid_filename,
+            is_cnn=is_cnn,
+            reset_kwargs=reset_kwargs,
+            n_eval_episodes=3,
+            sleep_time=0.1,
             render=True,
             verbose=True
         )
+
+def test_render_junk_model(is_cnn=False):
+    # Example usage
+    grid_file = "mine_20x20.txt"  # or whatever grid you want to test
+    
+    # Train junk model
+    model_name = train.train_quick_junk_model(grid_file, is_cnn)
+    
+    # Load env for evaluation with same grid
+    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn)
+    if is_cnn:
+        env = CustomGridCNNWrapper(env)
+    
+    model_path = os.path.join(MODELS["ppo"], model_name)
+    model = train.load_model(model_path, grid_file=grid_file, is_cnn=is_cnn)
+    
+    # Evaluate with rendering enabled to watch agent behavior
+    train.evaluate_model(env, model, n_eval_episodes=3, render=True, verbose=True)
+

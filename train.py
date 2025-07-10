@@ -16,37 +16,66 @@ from plot_metrics import plot_all_metrics
 from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 
 ##==============================================================
-## Cole's Experiments
+## Unified PPO Training Function (MLP or CNN)
 ##==============================================================
-# different SB3 algorithms for training model
-#-------------------------------------------
-def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
-                    log_name: str = None, reset_kwargs: dict = None):
+def train_PPO_model(grid_file: str,
+                    timesteps: int,
+                    model_name: str,
+                    log_name: str = None,
+                    reset_kwargs: dict = {},
+                    is_cnn: bool = False,
+                    features_dim: int = 128):
     if log_name is None:
         log_name = model_name
 
-    env = GridWorldEnv(grid_file=grid_file, reset_kwargs=reset_kwargs)
+    # Initialize environment (wrapped if CNN)
+    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    if is_cnn:
+        env = CustomGridCNNWrapper(env)
+
     vec_env = DummyVecEnv([lambda: env])
 
     log_path = os.path.join(LOGS["ppo"], log_name)
     model_save_path = os.path.join(MODELS["ppo"], model_name)
 
+    # Setup CNN policy kwargs if needed
+    policy_kwargs = None
+    if is_cnn:
+        policy_kwargs = {
+            "features_extractor_class": GridCNNExtractor,
+            "features_extractor_kwargs": {"features_dim": features_dim},
+            "net_arch": dict(pi=[64, 64], vf=[64, 64]),
+        }
+
     model = PPO(
-        policy         = "MlpPolicy",
-        env            = vec_env,
-        learning_rate  = 3e-5,
-        n_steps        = 2048,
-        batch_size     = 2048,
-        n_epochs       = 10,
-        gamma          = 0.99,
-        gae_lambda     = 0.95,
-        clip_range     = 0.2,
-        clip_range_vf  = 0.5,
-        ent_coef       = 0.01,
-        tensorboard_log= log_path,
-        verbose        = 1,
-        device         = "cuda"
+        policy="MlpPolicy",
+        env=vec_env,
+        learning_rate=3e-4 if is_cnn else 3e-5,
+        n_steps=2048,
+        batch_size=64 if is_cnn else 2048,
+        n_epochs=10,
+        gamma=0.99,
+        gae_lambda=0.95,
+        clip_range=0.2,
+        clip_range_vf=0.5,
+        ent_coef=0.01,
+        tensorboard_log=log_path,
+        verbose=1,
+        policy_kwargs=policy_kwargs
     )
+    '''
+    model = PPO(
+        policy="MlpPolicy",
+        env=vec_env,
+        ent_coef=0.5,
+        gae_lambda=0.90,
+        learning_rate=3e-4,
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=10,
+        verbose=1
+    )
+    '''
 
     callback = CustomTensorboardCallback()
 
@@ -70,11 +99,23 @@ def train_PPO_model(grid_file: str, timesteps: int, model_name: str,
 
 # training utils
 #-------------------------------------------------
-def load_model(model_path: str, env):
-    if not os.path.exists(model_path + ".zip"):
-        raise FileNotFoundError(f"Model file not found at: {model_path}.zip")
+def load_model(model_path: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
+    """
+    Load a PPO model with environment matching the training setup.
+    Args:
+        model_path: full path to the saved model (without .zip)
+        grid_file: grid text filename used for environment construction
+        is_cnn: whether to wrap env for CNN input
+        reset_kwargs: optional reset keyword args (e.g., battery overrides)
+    """
+    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    if is_cnn:
+        env = CustomGridCNNWrapper(env)
+
+    print("Loading env observation space:", env.observation_space)
 
     vec_env = DummyVecEnv([lambda: env])
+
     model = PPO.load(model_path, env=vec_env)
     return model
 
@@ -136,13 +177,15 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Reward: {mean_reward:.2f}")
     print(f"Average Steps per Episode: {avg_steps:.1f}")
 
-def load_model_and_evaluate(model_filename: str, env, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
+def load_model_and_evaluate(model_filename: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
+                            n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
-    Load a model by filename and evaluate.
+    Load a model by filename and evaluate it in the matching environment.
     """
     model_path = os.path.join(MODELS["ppo"], model_filename)
-    model = load_model(model_path, env)
-    evaluate_model(env, model, n_eval_episodes=n_eval_episodes, sleep_time=sleep_time, render=render, verbose=verbose)
+    model = load_model(model_path, grid_file, is_cnn, reset_kwargs)
+    evaluate_model(env=model.get_env().envs[0], model=model, n_eval_episodes=n_eval_episodes,
+                   sleep_time=sleep_time, render=render, verbose=verbose)
 
 def list_models():
     for f in os.listdir(MODELS["ppo"]):
@@ -150,78 +193,9 @@ def list_models():
             print(f)
 
 ##==============================================================
-## Kush's Experiments
+## Utilities for Half-Split Battery Scenarios
 ##==============================================================
 
-def create_and_train_cnn_ppo_model(grid_file: str, total_timesteps: int = 100_000, save_path: str = "ppo_model", features_dim: int = 128) -> PPO:
-    """
-    Initializes PPO with a CNN feature extractor for the custom GridWorld environment.
-
-    Args:
-        grid_file (str): Path to the grid layout file.
-        features_dim (int): Output size of the CNN feature extractor.
-
-    Returns:
-        PPO: Ready-to-train PPO model with CNN features.
-    """
-    # 1. Load and wrap the environment
-    env = GridWorldEnv(grid_file=grid_file)
-    wrapped_env = CustomGridCNNWrapper(env)
-    vec_env = make_vec_env(lambda: wrapped_env, n_envs=1)
-
-    # 2. Define CNN-based policy config
-    policy_kwargs = {
-        "features_extractor_class": GridCNNExtractor,
-        "features_extractor_kwargs": {"features_dim": features_dim},
-        "net_arch": dict(pi=[64, 64], vf=[64, 64])
-
-    }
-
-    # 3. Instantiate PPO model
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        policy_kwargs=policy_kwargs,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
-        verbose=1,
-        device="cuda"
-    )
-
-    callback = CustomTensorboardCallback()
-    model.learn(total_timesteps=total_timesteps, callback=callback)
-    
-    '''
-    chunk_steps = total_timesteps // 10
-    for i in range(1, 11):
-        print(f"\nTraining chunk {i}/10: {chunk_steps} steps...")
-        model.learn(total_timesteps=chunk_steps, reset_num_timesteps=False)
-
-        # Save checkpoint
-        checkpoint_path = f"{save_path}_{i * 10}pct"
-        model.save(checkpoint_path)
-        print(f"Saved checkpoint: {checkpoint_path}")
-    '''
-
-    # generate graphs from csvs using chunked smoothing
-    grid_area = env.n_rows * env.n_cols
-    num_points = int(max(20, grid_area // 10))
-    plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
-
-    print("\n=== Metrics Plots Generated ===")
-    for csv_file, plot_list in plots.items():
-        print(f"\n{csv_file}:")
-        for p in plot_list:
-            print(f"  {p}")
-    
-    return model
-    
 def get_halfsplit_battery_overrides(grid_path: str) -> dict:
     """
     Returns a battery override dictionary where:
@@ -249,18 +223,19 @@ def get_halfsplit_battery_overrides(grid_path: str) -> dict:
 
     return battery_overrides
 
-def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict):
+def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False):
     """
     Trains a PPO model using the half-split battery override.
     """
-    model_name = f"battery_halfsplit_{grid_filename.replace('.txt','')}"
+    model_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
     reset_kwargs = {"battery_overrides": battery_overrides}
 
     model = train_PPO_model(
         grid_file=grid_filename,
         timesteps=timesteps,
         model_name=model_name,
-        reset_kwargs=reset_kwargs
+        reset_kwargs=reset_kwargs,
+        is_cnn=is_cnn
     )
 
     return model_name, model
@@ -281,91 +256,25 @@ def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overri
 
     load_model_and_evaluate(
         model_filename=model_name,
-        env=env,
+        grid_file=grid_filename,
+        reset_kwargs=reset_kwargs,
         n_eval_episodes=episodes,
         sleep_time=0.1,
         render=render,
         verbose=verbose
     )
 
-def create_and_train_cnn_halfsplit_model(
-    grid_filename: str,
-    total_timesteps: int = 500_000,
-    features_dim: int = 128,
-):
-    """
-    Trains a CNN PPO model using the half-split battery override setup.
-
-    Args:
-        grid_filename (str): Name of the grid file to load.
-        total_timesteps (int): Number of training timesteps.
-        features_dim (int): Feature dimension for the CNN extractor.
-
-    Returns:
-        Tuple[str, PPO]: Model name and trained PPO model instance.
-    """
-    model_name = f"cnn_battery_halfsplit_{grid_filename.replace('.txt','')}"
-    grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
-
-    # Generate half-split battery overrides from the grid file
-    battery_overrides = get_halfsplit_battery_overrides(grid_path)
-
-    # Create base environment with reset_kwargs to inject battery overrides on reset
-    base_env = GridWorldEnv(grid_file=grid_filename, reset_kwargs={"battery_overrides": battery_overrides})
-
-    # Wrap the base env with your CNN wrapper
-    wrapped_env = CustomGridCNNWrapper(base_env)
-
-    # Vectorize environment for stable-baselines3
-    vec_env = DummyVecEnv([lambda: wrapped_env])
-
-    # Define PPO policy kwargs to use your CNN feature extractor
-    policy_kwargs = {
-        "features_extractor_class": GridCNNExtractor,
-        "features_extractor_kwargs": {"features_dim": features_dim},
-        "net_arch": dict(pi=[64, 64], vf=[64, 64]),
-    }
-
-    log_path = os.path.join(LOGS["ppo"], model_name)
-    model_save_path = os.path.join(MODELS["ppo"], model_name)
-
-    # Initialize PPO with your CNN policy
-    model = PPO(
-        policy="MlpPolicy",
-        env=vec_env,
-        policy_kwargs=policy_kwargs,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
-        verbose=1,
-        tensorboard_log=log_path,
-        device="cuda",
+def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
+    # Very small training for quick testing
+    junk_model_name = f"junk_{'cnn_' if is_cnn else ''}{grid_file.replace('.txt','')}"
+    timesteps = 500  # super low for quick test
+    
+    model = train_PPO_model(
+        grid_file=grid_file,
+        timesteps=timesteps,
+        model_name=junk_model_name,
+        is_cnn=is_cnn
     )
-
-    print(f"Starting CNN PPO training on {grid_filename} with half-split battery overrides...")
-    callback = CustomTensorboardCallback()
-
-    # Train the model
-    model.learn(total_timesteps=total_timesteps, callback=callback)
-
-    # Save the trained model
-    model.save(model_save_path)
-    print(f"Saved CNN PPO model to: {model_save_path}")
-
-    # Optional: plot training metrics from logs
-    grid_area = base_env.n_rows * base_env.n_cols
-    num_points = max(20, grid_area // 10)
-    plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
-
-    print("\n=== CNN Metrics Plots Generated ===")
-    for csv_file, plot_list in plots.items():
-        print(f"\n{csv_file}:")
-        for p in plot_list:
-            print(f"  {p}")
-
-    return model_name, model
+    
+    print(f"Trained junk model '{junk_model_name}' for {timesteps} timesteps.")
+    return junk_model_name
