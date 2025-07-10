@@ -176,8 +176,7 @@ class GridWorldEnv(Env):
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
-                 n_sensors=None, battery_overrides={},
-                 agent_override={}
+                 n_sensors=None, reset_kwargs={}
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -189,8 +188,7 @@ class GridWorldEnv(Env):
                                obstacle_percentage,
                                n_sensors)
         self.max_steps = 500
-        self.battery_overrides = battery_overrides
-        self.agent_override = agent_override
+        self.reset_kwargs = reset_kwargs
 
         # pygame rendering
         self.pygame_initialized = False
@@ -262,7 +260,7 @@ class GridWorldEnv(Env):
         # [10] - last action
         # [11] - distance to closest goal
         # [12, n_sensors-1] - battery levels of all sensors
-        obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
+        obs_dim = 8 + 2 + 1
 
         # cnn observation space is set in wrapper
         self.observation_space = Box(
@@ -454,6 +452,7 @@ class GridWorldEnv(Env):
         norm_row = r / (self.n_rows - 1)
         norm_col = c / (self.n_cols - 1)
 
+        '''
         # normalize last action
         norm_last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
 
@@ -462,6 +461,7 @@ class GridWorldEnv(Env):
                 [self.sensor_batteries.get(pos, 0.0) / 100.0 for pos in self.sensor_batteries],
                 dtype=np.float32
         )
+        '''
 
         distances = chebyshev_distances(
                 self.agent_pos,
@@ -475,8 +475,8 @@ class GridWorldEnv(Env):
         obs = np.concatenate([
                 blocked_flags,
                 [norm_row, norm_col],
-                [norm_last_action],
-                battery_levels,
+                #[norm_last_action],
+                #battery_levels,
                 [min_dist]
         ])
 
@@ -509,6 +509,7 @@ class GridWorldEnv(Env):
             obs[3, r, c] = 1.0
 
         return obs
+        '''
 
     def reset(self, seed=None, options = None):
         """
@@ -520,6 +521,9 @@ class GridWorldEnv(Env):
         
         # register seed
         super().reset(seed=seed)
+
+        battery_overrides = self.reset_kwargs.get("battery_overrides", {})
+        agent_override = self.reset_kwargs.get("agent_override", {})
 
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
@@ -543,7 +547,7 @@ class GridWorldEnv(Env):
         self.battery_levels_during_episode = []
 
         # place agent
-        if self.agent_override != {}:
+        if agent_override:
             self.agent_pos = np.array(self.agent_override)
         else:
             while True:
@@ -561,6 +565,7 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
+        '''
         obs_tensor = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
         # Channel 0: Agent presence
@@ -583,6 +588,8 @@ class GridWorldEnv(Env):
             obs_tensor[3, r, c] = 1.0
 
         return obs_tensor, {}
+        '''
+        return self.get_observation(), {}
 
 
     def can_move_to(self, pos):
@@ -612,7 +619,7 @@ class GridWorldEnv(Env):
         self._update_sensor_batteries()
         self._move_miners_and_update_sensors()
 
-        terminated = self.agent_reached_exit() or self.current_battery_level <= 10
+        terminated = self.agent_reached_exit() # or self.current_battery_level <= 10
         truncated = self.episode_steps >= self.max_steps
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
