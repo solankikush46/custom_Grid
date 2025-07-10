@@ -20,8 +20,7 @@ def main():
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
     #test_20x20_battery_override(1_000_000, 1)
     #evaluate_all_models()
-    #train_all_halfsplit_models(500_000)
-    simulate_battery_depletion()
+    train_all_halfsplit_models(1_000_000)
     
 if __name__ == "__main__":
     ensure_directories_exist()
