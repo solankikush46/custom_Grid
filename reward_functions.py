@@ -6,61 +6,69 @@ from utils import *
 ##==============================================================
 ## Reward functions agent in GridWorldEnv may use
 ##==============================================================
-# simple reward
-#-----------------------
-# add real_world time per episode to test data (graph it)
+# === Constants ===
+LOWER_BOUND = -1
+UPPER_BOUND = 10.0
+BATTERY_THRESHOLD = 10
+BASE_GOAL_REWARD = 100.0  # Reference reward for a 20x20 grid
+
+# === Base subreward values ===
+base_invalid_penalty = -1.0
+base_battery_penalty = -100.0
+base_revisit_penalty = -0.25
+base_time_penalty = -0.05
+min_progress_penalty = -1
+base_progress_weight = 1.0
+
 def get_reward_a(env, new_pos):
     subrewards = {}
 
-    # Reaching the goal
+    # === Grid-based scaling ===
+    goal_reward = env.n_rows * env.n_cols
+    scale = goal_reward / BASE_GOAL_REWARD
+
+    # === Initialize subrewards ===
     if new_pos in env.goal_positions:
-        subrewards["goal_reward"] = env.n_rows * env.n_cols
+        subrewards["goal_reward"] = goal_reward
         subrewards["invalid_penalty"] = 0
         subrewards["battery_penalty"] = 0
         subrewards["progress_shaping"] = 0
         subrewards["revisit_penalty"] = 0
         subrewards["time_penalty"] = 0
-        return subrewards["goal_reward"], subrewards
+    else:
+        subrewards["goal_reward"] = 0
+        subrewards["invalid_penalty"] = scale * (base_invalid_penalty if not env.can_move_to(new_pos) else 0)
+        subrewards["battery_penalty"] = scale * (base_battery_penalty if env.current_battery_level <= BATTERY_THRESHOLD else 0)
 
-    # Invalid move (obstacle)
-    subrewards["invalid_penalty"] = -1.0 if not env.can_move_to(new_pos) else 0
+        prev_pos = env.agent_pos
+        prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
+        new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
+        progress = prev_dist - new_dist
+        subrewards["progress_shaping"] = scale * base_progress_weight * progress
 
-    # Battery penalty if critically low
-    subrewards["battery_penalty"] = -100 if env.current_battery_level <= 10 else 0
+        subrewards["revisit_penalty"] = scale * (base_revisit_penalty if new_pos in env.visited else 0)
+        subrewards["time_penalty"] = scale * base_time_penalty
 
-    # Progress shaping using Chebyshev distance
-    '''
-    prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = progress # 10 * progress
-    '''
-    '''
-    # Distance-based shaping similar to get_reward_b
-    # Use Euclidean distance like in get_reward_b (or keep Chebyshev if preferred)
-    min_dist = min(euclidean_distance(new_pos, goal_pos) for goal_pos in env.goal_positions)
+    # === Compute raw and normalized reward ===
+    raw_reward = sum(subrewards.values())
+    min_reward = scale * (
+        base_invalid_penalty +
+        base_battery_penalty +
+        base_revisit_penalty +
+        base_time_penalty +
+        min_progress_penalty
+    )
+    max_reward = goal_reward
 
-    # Scale the distance penalty (negative, so closer = less penalty)
-    subrewards["progress_shaping"] = -0.35 * min_dist
-    '''
-    prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    progress = prev_dist - new_dist
+    # normalize total reward and subrewards
+    def normalize(val):
+        norm = ((val - min_reward) / (max_reward - min_reward)) * (UPPER_BOUND - LOWER_BOUND) + LOWER_BOUND
+        return np.clip(norm, LOWER_BOUND, UPPER_BOUND)
+
+    norm_reward = normalize(raw_reward)
+    norm_subrewards = {k: normalize(v) for k, v in subrewards.items()}
     
-    subrewards["progress_shaping"] = progress # 10 * progress
-    # note that agent is rewarded for taking a move that would make it closer
-    # to goal, even if that move hits a wall
-    
-    # Revisit penalty
-    subrewards["revisit_penalty"] = -0.25 if new_pos in env.visited else 0
-
-    # Small time penalty to encourage efficiency
-    subrewards["time_penalty"] = -0.05
-
-    reward = sum(subrewards.values())
-    return reward, subrewards
+    return norm_reward, subrewards
 
 def get_reward_b(env, new_pos):
     subrewards = {}
@@ -146,4 +154,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_b(env, new_pos)
+    return get_reward_a(env, new_pos)

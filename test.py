@@ -6,6 +6,7 @@ from grid_env import GridWorldEnv
 from constants import *
 import train
 import grid_gen
+import matplotlib.pyplot as plt
 from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 
 def test_manual_control(grid_file: str = "mine_20x20.txt"):
@@ -409,6 +410,7 @@ def evaluate_all_models():
         # Infer grid filename
         if "100x100" in model_name:
             grid_filename = "mine_100x100.txt"
+            continue
         elif "20x20" in model_name:
             grid_filename = "mine_20x20.txt"
         else:
@@ -459,8 +461,8 @@ def train_all_halfsplit_models(timesteps: int = 500_000):
     Trains all 4 halfsplit PPO models: MLP and CNN versions on 20x20 and 100x100 grids.
     """
     models_to_train = [
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20"},
-        {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100"},
+        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20"},
+        #{"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100"},
         {"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100"},
         {"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20"},
     ]
