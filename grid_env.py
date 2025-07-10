@@ -512,10 +512,7 @@ class GridWorldEnv(Env):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
-        """
-        battery_overrides = self.battery_overrides
-        agent_override = self.agent_override
-        
+        """    
         # register seed
         super().reset(seed=seed)
 
