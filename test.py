@@ -454,3 +454,30 @@ def test_render_junk_model(is_cnn=False):
     # Evaluate with rendering enabled to watch agent behavior
     train.evaluate_model(env, model, n_eval_episodes=3, render=True, verbose=True)
 
+def train_all_halfsplit_models(timesteps: int = 500_000):
+    """
+    Trains all 4 halfsplit PPO models: MLP and CNN versions on 20x20 and 100x100 grids.
+    """
+    models_to_train = [
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20"},
+        {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100"},
+        {"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100"},
+        {"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20"},
+    ]
+
+    for config in models_to_train:
+        print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (CNN={config['is_cnn']})")
+
+        grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
+        battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+
+        # Call your train_halfsplit_model function (make sure it saves with correct model_name)
+        model_name, model = train.train_halfsplit_model(
+            grid_file=config["grid_file"],
+            timesteps=timesteps,
+            battery_overrides=battery_overrides,
+            is_cnn=config["is_cnn"],
+            model_name=config["model_name"]
+        )
+
+        print(f"Finished training {model_name}\n")

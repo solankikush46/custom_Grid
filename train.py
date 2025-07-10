@@ -58,7 +58,7 @@ def train_PPO_model(grid_file: str,
         gae_lambda=0.95,
         clip_range=0.2,
         clip_range_vf=0.5,
-        ent_coef=0.01,
+        ent_coef=0.5,
         tensorboard_log=log_path,
         verbose=1,
         policy_kwargs=policy_kwargs

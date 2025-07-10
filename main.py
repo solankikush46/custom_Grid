@@ -19,9 +19,8 @@ def main():
     #test_PPO(300_000, 100, 100)
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
     #test_20x20_battery_override(1_000_000, 1)
-    test_render_junk_model(True)
     #evaluate_all_models()
-    #evaluate_all_week8_wed_models()
+    train_all_halfsplit_models(500_000)
     
 if __name__ == "__main__":
     ensure_directories_exist()
