@@ -288,34 +288,51 @@ def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overri
         verbose=verbose
     )
 
-def create_and_train_cnn_halfsplit_model(grid_filename: str, total_timesteps: int = 500_000, features_dim: int = 128):
+def create_and_train_cnn_halfsplit_model(
+    grid_filename: str,
+    total_timesteps: int = 500_000,
+    features_dim: int = 128,
+):
     """
     Trains a CNN PPO model using the half-split battery override setup.
+
+    Args:
+        grid_filename (str): Name of the grid file to load.
+        total_timesteps (int): Number of training timesteps.
+        features_dim (int): Feature dimension for the CNN extractor.
+
+    Returns:
+        Tuple[str, PPO]: Model name and trained PPO model instance.
     """
     model_name = f"cnn_battery_halfsplit_{grid_filename.replace('.txt','')}"
     grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
+
+    # Generate half-split battery overrides from the grid file
     battery_overrides = get_halfsplit_battery_overrides(grid_path)
 
-    # Create env with overrides
-    base_env = GridWorldEnv(grid_file=grid_filename)
-    base_env.reset(battery_overrides=battery_overrides)
+    # Create base environment with reset_kwargs to inject battery overrides on reset
+    base_env = GridWorldEnv(grid_file=grid_filename, reset_kwargs={"battery_overrides": battery_overrides})
+
+    # Wrap the base env with your CNN wrapper
     wrapped_env = CustomGridCNNWrapper(base_env)
+
+    # Vectorize environment for stable-baselines3
     vec_env = DummyVecEnv([lambda: wrapped_env])
 
-    # Define CNN extractor and policy
+    # Define PPO policy kwargs to use your CNN feature extractor
     policy_kwargs = {
         "features_extractor_class": GridCNNExtractor,
         "features_extractor_kwargs": {"features_dim": features_dim},
-        "net_arch": dict(pi=[64, 64], vf=[64, 64])
+        "net_arch": dict(pi=[64, 64], vf=[64, 64]),
     }
 
     log_path = os.path.join(LOGS["ppo"], model_name)
     model_save_path = os.path.join(MODELS["ppo"], model_name)
 
-    # Initialize PPO
+    # Initialize PPO with your CNN policy
     model = PPO(
-        "MlpPolicy",
-        vec_env,
+        policy="MlpPolicy",
+        env=vec_env,
         policy_kwargs=policy_kwargs,
         learning_rate=3e-4,
         n_steps=2048,
@@ -327,19 +344,22 @@ def create_and_train_cnn_halfsplit_model(grid_filename: str, total_timesteps: in
         ent_coef=0.01,
         verbose=1,
         tensorboard_log=log_path,
-        device="cuda"
+        device="cuda",
     )
 
-    print(f"Starting CNN PPO training on {grid_filename}...")
+    print(f"Starting CNN PPO training on {grid_filename} with half-split battery overrides...")
     callback = CustomTensorboardCallback()
+
+    # Train the model
     model.learn(total_timesteps=total_timesteps, callback=callback)
 
+    # Save the trained model
     model.save(model_save_path)
     print(f"Saved CNN PPO model to: {model_save_path}")
 
-    # Plot metrics if logged
+    # Optional: plot training metrics from logs
     grid_area = base_env.n_rows * base_env.n_cols
-    num_points = int(max(20, grid_area // 10))
+    num_points = max(20, grid_area // 10)
     plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
 
     print("\n=== CNN Metrics Plots Generated ===")
