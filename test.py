@@ -378,16 +378,14 @@ def render_halfsplit_models():
         verbose=True
     )
 
-    '''
     train.evaluate_halfsplit_model(
         model_name="battery_halfsplit_mine_100x100",
         grid_filename=grid_100,
         battery_overrides=overrides_100,
-        episodes=5,
+        episodes=100,
         render=True,
         verbose=True
     )
-    '''
 
 def evaluate_all_models():
     """

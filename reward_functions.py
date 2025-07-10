@@ -30,13 +30,6 @@ def get_reward_a(env, new_pos):
 
     # Progress shaping using Chebyshev distance
     '''
-    prev_pos = env.agent_pos
-    prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
-    progress = prev_dist - new_dist
-    subrewards["progress_shaping"] = progress # 10 * progress
-    '''
-    '''
     # Distance-based shaping similar to get_reward_b
     # Use Euclidean distance like in get_reward_b (or keep Chebyshev if preferred)
     min_dist = min(euclidean_distance(new_pos, goal_pos) for goal_pos in env.goal_positions)
@@ -146,4 +139,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_b(env, new_pos)
+    return get_reward_a(env, new_pos)
