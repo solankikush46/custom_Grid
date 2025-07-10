@@ -452,7 +452,6 @@ class GridWorldEnv(Env):
         norm_row = r / (self.n_rows - 1)
         norm_col = c / (self.n_cols - 1)
 
-        '''
         # normalize last action
         norm_last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
 
@@ -461,7 +460,6 @@ class GridWorldEnv(Env):
                 [self.sensor_batteries.get(pos, 0.0) / 100.0 for pos in self.sensor_batteries],
                 dtype=np.float32
         )
-        '''
 
         distances = chebyshev_distances(
                 self.agent_pos,
@@ -509,7 +507,6 @@ class GridWorldEnv(Env):
             obs[3, r, c] = 1.0
 
         return obs
-        '''
 
     def reset(self, seed=None, options = None):
         """
@@ -565,7 +562,6 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
-        '''
         obs_tensor = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
         # Channel 0: Agent presence
@@ -588,9 +584,7 @@ class GridWorldEnv(Env):
             obs_tensor[3, r, c] = 1.0
 
         return obs_tensor, {}
-        '''
-        return self.get_observation(), {}
-
+        #return self.get_observation(), {}
 
     def can_move_to(self, pos):
         '''
