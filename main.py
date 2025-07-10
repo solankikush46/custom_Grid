@@ -2,13 +2,13 @@
 
 from test import *
 from plot_metrics import generate_all_plots
+from train import *
 
 def ensure_directories_exist():
     directories = [
         LOGS["ppo"],
         MODELS["ppo"],
-        FIXED_GRID_DIR,
-        RANDOM_GRID_DIR,
+        FIXED_GRID_DIR
     ]
     for d in directories:
         os.makedirs(d, exist_ok=True)
@@ -18,12 +18,16 @@ def main():
     #test_PPO(10_000, 20, 20)
     #test_PPO(300_000, 100, 100)
     #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
-    test_20x20_battery_override(1_000_000, 1)
-    #load_and_evaluate_battery_override_model(episodes=20, render=True, verbose=True)
+    #test_20x20_battery_override(1_000_000, 1)
+    #evaluate_all_models()
+    train_all_halfsplit_models(500_000)
     
 if __name__ == "__main__":
     ensure_directories_exist()
     main()
+
+
+
 
     
 

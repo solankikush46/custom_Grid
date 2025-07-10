@@ -32,7 +32,7 @@ def compute_sensor_energy_loss (sensor_pos, miners, base_stations):
         dist =  euclidean_distance(sensor_pos, miner_pos)
         
         if dist <= MAX_COMM_RANGE:
-            total_energy +=  transmission_energy(K_TO_MINER, dist)
+            total_energy += transmission_energy(K_TO_MINER, dist)
             total_energy += reception_energy(K_TO_MINER)
 
     if base_stations:

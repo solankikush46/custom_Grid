@@ -1,7 +1,7 @@
 # grid_env.py
-
-from gymnasium import Env
-from gymnasium.spaces import Discrete, Box, Dict
+import gym
+from gym import Env
+from gym.spaces import Discrete, Box, Dict
 import numpy as np
 import random 
 import os
@@ -176,7 +176,8 @@ class GridWorldEnv(Env):
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
-                 n_sensors=None,
+                 n_sensors=None, reset_kwargs={},
+                 is_cnn=False
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -188,6 +189,8 @@ class GridWorldEnv(Env):
                                obstacle_percentage,
                                n_sensors)
         self.max_steps = 500
+        self.reset_kwargs = reset_kwargs
+        self.is_cnn = is_cnn
 
         # pygame rendering
         self.pygame_initialized = False
@@ -196,7 +199,7 @@ class GridWorldEnv(Env):
         self.screen = None
         self.font = None
         self.clock = None
-        self.render_fps = 160
+        self.render_fps = 5
 
         # environment state variables
         self.grid = self.static_grid.copy()
@@ -209,7 +212,7 @@ class GridWorldEnv(Env):
         self.obstacle_hits = 0
         self.last_action = -1
         self.miners = []
-        self.n_miners = 1
+        self.n_miners = 12
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -239,13 +242,14 @@ class GridWorldEnv(Env):
             self.n_cols = grid_width
             save_path = os.path.join(RANDOM_GRID_DIR, f"grid_{self.n_rows}x{self.n_cols}{obstacle_percentage*100}p.txt")
             
-            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries, self.base_station_positions = grid_gen.gen_and_save_grid(
+            self.static_grid, self.agent_pos, self.goal_positions, self.sensor_batteries = grid_gen.gen_and_save_grid(
                 self.n_rows, self.n_cols,
                 obstacle_percentage=obstacle_percentage,
                 n_sensors=n_sensors,
                 place_agent=False,
                 save_path=save_path
             )
+            self.base_station_positions = []
             self.n_sensors = n_sensors
             
         self.original_sensor_batteries = self.sensor_batteries
@@ -253,19 +257,28 @@ class GridWorldEnv(Env):
     def _init_spaces(self):
         # 4 cardinals dirs + 4 diagonals
         self.action_space = Discrete(8)
-        # [0, 7] - space around agent
-        # [8, 9] - agent r, c
-        # [10] - last action
-        # [11] - distance to closest goal
-        # [12, n_sensors-1] - battery levels of all sensors
-        obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
-
-        self.observation_space = Box(
-            low=0.0,
+        if self.is_cnn:
+            self.observation_space = Box(
+            low=-1.0,
             high=1.0,
-            shape=(obs_dim, ),
+            shape=(4, self.n_rows, self.n_cols),
             dtype=np.float32
-        )
+            )
+        else:
+            # [0, 7] - space around agent
+            # [8, 9] - agent r, c
+            # [10] - last action
+            # [11] - distance to closest goal
+            # [12, n_sensors-1] - battery levels of all sensors
+            obs_dim = 8 + 2 + 1 + 1 + self.n_sensors
+
+            # cnn observation space is set in wrapper
+            self.observation_space = Box(
+                low=0.0,
+                high=1.0,
+                shape=(obs_dim, ),
+                dtype=np.float32
+            )
         
     def _get_goal_exclusion_zone(self):
         # goal is not placed in sensor radar range???
@@ -422,81 +435,64 @@ class GridWorldEnv(Env):
         return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
 
     def get_observation(self):
-        r, c = self.agent_pos
+        if self.is_cnn:
+            obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
-        # 8 neighbors around agent
-        neighbors = [
-        (r - 1, c),     # N
-            (r - 1, c + 1), # NE
-            (r, c + 1),     # E
-            (r + 1, c + 1), # SE
-            (r + 1, c),     # S
-            (r + 1, c - 1), # SW
-            (r, c - 1),     # W
-            (r - 1, c - 1)  # NW
-        ]
+            r, c = self.agent_pos
+            obs[0, r, c] = 1.0  # Agent
 
-        def is_blocked(pos):
-            if self.can_move_to(pos):
-                return 0
-            else:
-                return 1
-        
-        blocked_flags = np.array([is_blocked(pos) for pos in neighbors], dtype=np.float32)
+            for r in range(self.n_rows):
+                for c in range(self.n_cols):
+                    if self.static_grid[r, c] in ('#', 'S', 'B'):
+                        obs[1, r, c] = 1.0  # Blocked
 
-        # normalize agent position
-        norm_row = r / (self.n_rows - 1)
-        norm_col = c / (self.n_cols - 1)
+            obs[2, :, :] = -1.0
+            for (r, c), battery in self.sensor_batteries.items():
+                obs[2, r, c] = battery / 100.0  # Battery
 
-        # normalize last action
-        norm_last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
+            for r, c in self.goal_positions:
+                obs[3, r, c] = 1.0  # Goal
 
-        # battery levels of all sensors, normalized to [0, 1]
-        battery_levels = np.array(
+            return obs
+        else:
+            # Flat vector
+            r, c = self.agent_pos
+            neighbors = [
+            (r - 1, c), (r - 1, c + 1), (r, c + 1), (r + 1, c + 1),
+            (r + 1, c), (r + 1, c - 1), (r, c - 1), (r - 1, c - 1)
+            ]
+
+            def is_blocked(pos):
+                return 1.0 if not self.can_move_to(pos) else 0.0
+
+            blocked_flags = np.array([is_blocked(p) for p in neighbors], dtype=np.float32)
+            norm_pos = np.array([r / (self.n_rows - 1), c / (self.n_cols - 1)], dtype=np.float32)
+            last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
+
+            dist_to_goal = self._compute_min_distance_to_goal()
+
+            battery_levels = np.array(
                 [self.sensor_batteries.get(pos, 0.0) / 100.0 for pos in self.sensor_batteries],
-                dtype=np.float32
-        )
+            dtype=np.float32
+            )
 
-        distances = chebyshev_distances(
-                self.agent_pos,
-                self.goal_positions,
-                self.n_cols,
-                self.n_rows,
-                normalize=True
-        )
-        min_dist = min(distances) if distances is not None else 1.0
+            return np.concatenate([blocked_flags, norm_pos, [last_action], [dist_to_goal], battery_levels])
 
-        obs = np.concatenate([
-                blocked_flags,
-                [norm_row, norm_col],
-                [norm_last_action],
-                battery_levels,
-                [min_dist]
-        ])
-
-        return obs
-
-    def reset(self, seed=None, battery_overrides=None, agent_override=None):
+    def reset(self, seed=None, options = None):
         """
         Resets the environment to the starting state for a new episode.
         Returns the initial observation and an empty info dict.
-        """
-        # manually overwrite bats for 100x100 test
-        battery_overrides = {}
-        battery_overrides[(16, 4)] = 0.0
-        battery_overrides[(11, 17)] = 0.0
-        battery_overrides[(5, 4)] = 100.0
-        battery_overrides[(1, 14)] = 100.0
-        
+        """    
         # register seed
         super().reset(seed=seed)
+
+        battery_overrides = self.reset_kwargs.get("battery_overrides", {})
+        agent_override = self.reset_kwargs.get("agent_override", {})
 
         # restore static grid layout
         self.grid = np.copy(self.static_grid)
 
-        # reset state trackers
-        # self.battery_values_in_radar = []
-        #self.sensor_batteries = dict(self.original_sensor_batteries)
+        # reset sensor battery levels
         self.sensor_batteries = {
             pos: random.uniform(0.0, 100.0)
             for pos in self.original_sensor_batteries
@@ -507,14 +503,13 @@ class GridWorldEnv(Env):
             for pos, value in battery_overrides.items():
                 if pos in self.sensor_batteries:
                     self.sensor_batteries[pos] = value
-
+                    
+        # reset counters
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
-
-        # reset graph trackers
         self.battery_levels_during_episode = []
-    
+
         # place agent
         if agent_override:
             self.agent_pos = np.array(agent_override)
@@ -527,22 +522,14 @@ class GridWorldEnv(Env):
 
         self.visited = {tuple(self.agent_pos)}
 
-        # recompute radar zone
-        '''
-        self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(self.sensor_batteries.keys(), self.n_rows, self.n_cols)
-        '''
-
         # === Spawn miners === #
         self.miners = []
-
         while len(self.miners) < self.n_miners:
             r, c = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
-            
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
-
-        obs = self.get_observation()
-        return obs, {}
+                
+        return self.get_observation(), {}
 
     def can_move_to(self, pos):
         '''
@@ -571,7 +558,7 @@ class GridWorldEnv(Env):
         self._update_sensor_batteries()
         self._move_miners_and_update_sensors()
 
-        terminated = self.agent_reached_exit() or self.current_battery_level <= 10
+        terminated = self.agent_reached_exit() # or self.current_battery_level <= 10
         truncated = self.episode_steps >= self.max_steps
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
@@ -694,6 +681,7 @@ class GridWorldEnv(Env):
         last_move_time = 0
         move_delay = 80 # milliseconds between moves
 
+        step_count = 1
         while not done:
             self.render_pygame(uncap_fps=True)
 
@@ -713,12 +701,18 @@ class GridWorldEnv(Env):
                 keys = pygame.key.get_pressed()
                 for key, action in key_to_action.items():
                     if keys[key]:
+                        step_count += 1
                         obs, reward, terminated, truncated, info = self.step(action)
-                        print(f"Action: {action}, Reward: {reward:.3f}, Pos: {info['agent_pos']}")
+                        subrew_str = ', '.join([f"{k}:{v:.2f}" for k, v in info['subrewards'].items()])
+                        print(
+                            f"Step {step_count} | Pos: {info['agent_pos'].tolist()} | "
+                            f"Reward: {reward:.2f} | Battery: {info['current_battery']:.2f} | "
+                            f"Dist: {info['distance_to_goal']:.3f} | Subrewards: [{subrew_str}]"
+                        )
+
                         done = terminated or truncated
                         last_move_time = current_time
                         break # only process one direction at a time
-
         self.close()
 
     def _get_closest_sensor(self, pos):
@@ -753,4 +747,16 @@ class GridWorldEnv(Env):
             normalize=True
         )
         return min(distances)
+    
+    def update_observation_agent(self):
+        if hasattr(self, "prev_agent_pos"):
+            prev_r, prev_c = self.prev_agent_pos
+            prev_idx = prev_r * self.n_cols + prev_c
+            self.obs[prev_idx] = 4.0  # EMPTY
+
+        curr_r, curr_c = self.agent_pos
+        curr_idx = curr_r * self.n_cols + curr_c
+        self.obs[curr_idx] = 2.0
+
+        self.prev_agent_pos = (curr_r, curr_c)
 

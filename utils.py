@@ -72,3 +72,6 @@ def load_sensors_with_batteries(filename="sensor_coords.txt"):
     except FileNotFoundError:
         print(f"[WARNING] Sensor file '{filename}' not found.")
     return sensors
+
+
+
