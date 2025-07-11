@@ -10,11 +10,11 @@ from utils import *
 LOWER_BOUND = -1
 UPPER_BOUND = 10.0
 BATTERY_THRESHOLD = 10
-BASE_GOAL_REWARD = 100.0  # Reference reward for a 20x20 grid
+BASE_GOAL_REWARD = 400.0  # Reference reward for a 20x20 grid
 
 # === Base subreward values ===
 base_invalid_penalty = -1.0
-base_battery_penalty = -25.0
+base_battery_penalty = -100
 base_revisit_penalty = -0.25
 base_time_penalty = -0.05
 min_progress_penalty = -1
