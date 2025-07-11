@@ -607,7 +607,7 @@ class GridWorldEnv(Env):
     def _build_info_dict(self, terminated, truncated, reward, subrewards):
         info = {
             "agent_pos": self.agent_pos,
-            "reward": reward,
+            "current_reward": reward,
             "cumulative_reward": self.total_reward,
             "obstacle_hits": self.obstacle_hits,
             "current_battery": self.current_battery_level,

@@ -402,15 +402,15 @@ def evaluate_all_models():
     ]
 
     for model_file in model_files:
+        print("processing", model_file)
         model_name = model_file.replace(".zip", "")
-
+    
         # Determine CNN or MLP
         is_cnn = "cnn" in model_name
 
         # Infer grid filename
         if "100x100" in model_name:
             grid_filename = "mine_100x100.txt"
-            continue
         elif "20x20" in model_name:
             grid_filename = "mine_20x20.txt"
         else:
