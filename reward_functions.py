@@ -91,7 +91,7 @@ def get_reward_b(env, new_pos):
         t_pen = b_t_pen
         bat_pen = b_bat_pen if env.current_battery <= 10 else 0
         subrewards = {
-            "goal_reward": 0
+            "goal_reward": 0,
             "invalid_penalty": inval_pen,
             "revisit_penalty": rev_pen,
             "time_penalty": t_pen,
