@@ -71,31 +71,32 @@ def get_reward_a(env, new_pos):
     return norm_reward, subrewards
 
 def get_reward_b(env, new_pos):
+    b_inval_pen = -0.75
+    b_rev_pen = -0.21
+    b_t_pen = -0.04
+    b_bat_pen = -50
     subrewards = {}
 
-    # Goal reward
     if new_pos in env.goal_positions:
-        subrewards["goal_reward"] = 1.0
-        subrewards["distance_penalty"] = 0
-        subrewards["invalid_penalty"] = 0
-        return subrewards["goal_reward"], subrewards
-
-    # Obstacle penalty
-    if not env.can_move_to(new_pos):
-        subrewards["invalid_penalty"] = -1.0
-        subrewards["distance_penalty"] = 0
-        subrewards["goal_reward"] = 0
-        return subrewards["invalid_penalty"], subrewards
-
-    # Otherwise, distance penalty to closest goal
-    min_dist = min(
-        euclidean_distance(new_pos, goal_pos)
-        for goal_pos in env.goal_positions
-    )
-
-    subrewards["distance_penalty"] = -0.35 * min_dist
-    subrewards["goal_reward"] = 0
-    subrewards["invalid_penalty"] = 0
+        subrewards = {
+            "goal_reward": env.n_rows * env.n_cols,
+            "invalid_penalty": 0,
+            "revisit_penalty": 0,
+            "time_penalty": 0,
+            "battery_penalty": 0
+        }
+    else:
+        inval_pen = b_inval_pen if not env.can_move_to(new_pos) else 0
+        rev_pen = b_rev_pen if new_pos in env.visited else 0
+        t_pen = b_t_pen
+        bat_pen = b_bat_pen if env.current_battery <= 10 else 0
+        subrewards = {
+            "goal_reward": 0
+            "invalid_penalty": inval_pen,
+            "revisit_penalty": rev_pen,
+            "time_penalty": t_pen,
+            "battery_penalty": bat_pen
+            }
 
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
@@ -154,4 +155,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_a(env, new_pos)
+    return get_reward_b(env, new_pos)
