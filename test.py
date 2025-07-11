@@ -393,7 +393,7 @@ def render_halfsplit_models():
 def evaluate_all_models():
     """
     Automatically evaluates and renders all PPO models in SavedModels/PPO_custom_grid.
-    Infers CNN/MLP, grid file, and battery override from filename.
+    Infers CNN, grid file, and battery override from filename.
     """
     model_dir = MODELS["ppo"]
     model_files = [
@@ -432,7 +432,7 @@ def evaluate_all_models():
             grid_file=grid_filename,
             is_cnn=is_cnn,
             reset_kwargs=reset_kwargs,
-            n_eval_episodes=3,
+            n_eval_episodes=20,
             sleep_time=0.1,
             render=True,
             verbose=True
