@@ -89,7 +89,7 @@ def get_reward_b(env, new_pos):
         inval_pen = b_inval_pen if not env.can_move_to(new_pos) else 0
         rev_pen = b_rev_pen if new_pos in env.visited else 0
         t_pen = b_t_pen
-        bat_pen = b_bat_pen if env.current_battery <= 10 else 0
+        bat_pen = b_bat_pen if env.current_battery_level <= 10 else 0
         subrewards = {
             "goal_reward": 0,
             "invalid_penalty": inval_pen,
