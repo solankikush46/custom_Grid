@@ -14,7 +14,7 @@ BASE_GOAL_REWARD = 100.0  # Reference reward for a 20x20 grid
 
 # === Base subreward values ===
 base_invalid_penalty = -1.0
-base_battery_penalty = -100.0
+base_battery_penalty = -25.0
 base_revisit_penalty = -0.25
 base_time_penalty = -0.05
 min_progress_penalty = -1
@@ -66,7 +66,7 @@ def get_reward_a(env, new_pos):
         return np.clip(norm, LOWER_BOUND, UPPER_BOUND)
 
     norm_reward = normalize(raw_reward)
-    norm_subrewards = {k: normalize(v) for k, v in subrewards.items()}
+    #norm_subrewards = {k: normalize(v) for k, v in subrewards.items()}
     
     return norm_reward, subrewards
 
