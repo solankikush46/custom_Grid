@@ -461,10 +461,11 @@ def train_all_halfsplit_models(timesteps: int = 500_000):
     Trains all 4 halfsplit PPO models: MLP and CNN versions on 20x20 and 100x100 grids.
     """
     models_to_train = [
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20"},
-        {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100"},
-        {"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100"},
-        {"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20"},
+        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20"},
+        #{"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100"},
+        #{"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100"},
+        #{"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20"},
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b"},
     ]
 
     for config in models_to_train:
