@@ -2,6 +2,7 @@
 # Logs directory
 logs/
 saved_logs/
+saved_experiments/
 
 # Saved models
 SavedModels/

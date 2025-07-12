@@ -63,6 +63,8 @@ LOGS = {
     "dqn": os.path.join(LOG_DIR, "DQN_custom_grid"),
 }
 
+SAVE_DIR = os.path.join(BASE_DIR, "saved_experiments")
+
 # directory for storing generated ASCII grids
 GRID_DIR = os.path.join(BASE_DIR, "saved_grids")
 RANDOM_GRID_DIR = os.path.join(GRID_DIR, "random")
