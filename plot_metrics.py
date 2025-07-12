@@ -5,6 +5,7 @@ from constants import *
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import datemine
 
 def get_latest_run_dir(base_dir):
     """
@@ -53,7 +54,8 @@ def plot_csv(csv_path, output_dir, num_points=40):
     base_name = os.path.splitext(os.path.basename(csv_path))[0]
     numeric_cols = df.select_dtypes(include='number').columns
     plots = []
-
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
     if "sensor_battery_levels" in base_name:
         plt.figure(figsize=(12, 6))
         for col in numeric_cols:
@@ -66,7 +68,7 @@ def plot_csv(csv_path, output_dir, num_points=40):
         plt.grid(True)
         plt.legend(loc="upper right", ncol=3, fontsize="small")
 
-        out_path = os.path.join(output_dir, f"{base_name}_all_sensors.png")
+        out_path = os.path.join(output_dir, f"{base_name}_all_sensors_{timestamp}.png")
         plt.tight_layout()
         plt.savefig(out_path)
         plt.close()
@@ -100,7 +102,7 @@ def plot_csv(csv_path, output_dir, num_points=40):
             plt.legend()
 
             safe_col_name = col.replace("/", "_").replace(" ", "_")
-            filename = f"{base_name}_{safe_col_name}.png"
+            filename = f"{base_name}_{safe_col_name}_{timestamp}.png"
             out_path = os.path.join(output_dir, filename)
 
             plt.tight_layout()

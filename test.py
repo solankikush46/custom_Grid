@@ -408,6 +408,9 @@ def evaluate_all_models():
         # Determine CNN or MLP
         is_cnn = "cnn" in model_name
 
+        if "mine_20x20_reward_function_b" != model_name:
+            continue
+
         # Infer grid filename
         if "100x100" in model_name:
             grid_filename = "mine_100x100.txt"
@@ -474,7 +477,7 @@ def train_all_halfsplit_models(timesteps: int = 500_000):
         grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
         battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-        # Call your train_halfsplit_model function (make sure it saves with correct model_name)
+        # save and train model with `model_name`
         model_name, model = train.train_halfsplit_model(
             grid_filename=config["grid_file"],
             timesteps=timesteps,

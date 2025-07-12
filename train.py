@@ -126,8 +126,8 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     """
     total_rewards = []
     total_steps = 0
-    success_count = 0  # Track number of episodes where agent reached the goal
-
+    success_count = 0
+    
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
         done = False
@@ -144,7 +144,8 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
 
-            reached_exit = bool(info.get("reward") == 400)
+            reached_exit = bool(info.get("current_reward") == env.n_rows * env.n_cols)
+            success_count += int(reached_exit)
 
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
@@ -161,8 +162,6 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
         total_steps += step_num
         total_rewards.append(ep_reward)
-        if reached_exit:
-            success_count += 1
 
         if verbose:
             print(f"Episode {ep + 1} complete: Total Reward = {ep_reward:.2f}")
