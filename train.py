@@ -11,23 +11,21 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from Qlearning import QLearningAgent
 from torch.utils.tensorboard import SummaryWriter
 import time
+import datetime
 from constants import *
-from plot_metrics import plot_all_metrics
+from plot_metrics import *
 from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 
 ##==============================================================
-## Unified PPO Training Function (MLP or CNN)
+## Unified PPO Training Function
 ##==============================================================
 def train_PPO_model(grid_file: str,
                     timesteps: int,
-                    model_name: str,
-                    log_name: str = None,
+                    folder_name: str,
                     reset_kwargs: dict = {},
                     is_cnn: bool = False,
                     features_dim: int = 128):
-    if log_name is None:
-        log_name = model_name
-
+    
     # Initialize environment (wrapped if CNN)
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
@@ -35,8 +33,7 @@ def train_PPO_model(grid_file: str,
 
     vec_env = DummyVecEnv([lambda: env])
 
-    log_path = os.path.join(LOGS["ppo"], log_name)
-    model_save_path = os.path.join(MODELS["ppo"], model_name)
+    base_log_path = os.path.join(SAVE_DIR, folder_name)
 
     # Setup CNN policy kwargs if needed
     policy_kwargs = None
@@ -59,7 +56,7 @@ def train_PPO_model(grid_file: str,
         #gamma=0.99,
         #clip_range=0.2,
         #clip_range_vf=0.5,
-        tensorboard_log=log_path,
+        tensorboard_log=base_log_path,
         verbose=1,
         policy_kwargs=policy_kwargs
     )
@@ -81,13 +78,16 @@ def train_PPO_model(grid_file: str,
 
     model.learn(total_timesteps=timesteps, callback=callback)
 
+    log_dir = get_latest_run_dir(base_log_path)
+    model_save_path = os.path.join(log_dir, "model.zip")
+    
     model.save(model_save_path)
-    print(f"\nPPO training complete. Model saved to {model_save_path} and logs to {log_path}")
+    print("\nPPO training complete. Logs and model stored to %s" % log_dir)
 
     # generate graphs from csvs using chunked smoothing
     grid_area = env.n_rows * env.n_cols
     num_points = int(max(20, grid_area // 10))
-    plots = plot_all_metrics(log_dir=log_path, num_points=num_points)
+    plots = plot_all_metrics(log_dir=log_dir, num_points=num_points)
 
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
@@ -99,15 +99,19 @@ def train_PPO_model(grid_file: str,
 
 # training utils
 #-------------------------------------------------
-def load_model(model_path: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
+def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
     """
     Load a PPO model with environment matching the training setup.
     Args:
-        model_path: full path to the saved model (without .zip)
+        experiment_folder: full path to the experiment folder containing model.zip and logs
         grid_file: grid text filename used for environment construction
         is_cnn: whether to wrap env for CNN input
         reset_kwargs: optional reset keyword args (e.g., battery overrides)
     """
+    print("experiment_folder", experiment_folder)
+    model_path = os.path.join(experiment_folder, "model.zip")
+    print("model_path", model_path)
+    
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
@@ -118,6 +122,7 @@ def load_model(model_path: str, grid_file: str, is_cnn: bool = False, reset_kwar
 
     model = PPO.load(model_path, env=vec_env)
     return model
+
 
 def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
@@ -176,20 +181,14 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Reward: {mean_reward:.2f}")
     print(f"Average Steps per Episode: {avg_steps:.1f}")
 
-def load_model_and_evaluate(model_filename: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
+def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
-    Load a model by filename and evaluate it in the matching environment.
+    Load a model by experiment folder and evaluate it in the matching environment.
     """
-    model_path = os.path.join(MODELS["ppo"], model_filename)
-    model = load_model(model_path, grid_file, is_cnn, reset_kwargs)
+    model = load_model(model_folder, grid_file, is_cnn, reset_kwargs)
     evaluate_model(env=model.get_env().envs[0], model=model, n_eval_episodes=n_eval_episodes,
                    sleep_time=sleep_time, render=render, verbose=verbose)
-
-def list_models():
-    for f in os.listdir(MODELS["ppo"]):
-        if f.endswith(".zip"):
-            print(f)
 
 ##==============================================================
 ## Utilities for Half-Split Battery Scenarios
@@ -222,25 +221,25 @@ def get_halfsplit_battery_overrides(grid_path: str) -> dict:
 
     return battery_overrides
 
-def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False, model_name=None):
+def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False, folder_name=None):
     """
     Trains a PPO model using the half-split battery override.
     """
-    if not model_name:
-        model_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
+    if not folder_name:
+        folder_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
     reset_kwargs = {"battery_overrides": battery_overrides}
 
     model = train_PPO_model(
         grid_file=grid_filename,
         timesteps=timesteps,
-        model_name=model_name,
+        folder_name=folder_name,
         reset_kwargs=reset_kwargs,
         is_cnn=is_cnn
     )
 
-    return model_name, model
+    return folder_name, model
 
-def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overrides: dict,
+def evaluate_halfsplit_model(folder_name: str, grid_filename: str, battery_overrides: dict,
                              episodes: int = 3, render: bool = True, verbose: bool = True):
     """
     Evaluates a trained PPO model on a half-split battery scenario.
@@ -250,12 +249,12 @@ def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overri
     env = GridWorldEnv(grid_file=grid_filename, reset_kwargs=reset_kwargs)
 
     if verbose:
-        print(f"Evaluating model '{model_name}' on grid '{grid_filename}' with battery overrides:")
+        print(f"Evaluating model in '{folder_name}' on grid '{grid_filename}' with battery overrides:")
         for sensor_pos, battery_level in battery_overrides.items():
             print(f"  Sensor at {sensor_pos}: battery = {battery_level}")
 
     load_model_and_evaluate(
-        model_filename=model_name,
+        model_filename=folder_name,
         grid_file=grid_filename,
         reset_kwargs=reset_kwargs,
         n_eval_episodes=episodes,
@@ -265,16 +264,18 @@ def evaluate_halfsplit_model(model_name: str, grid_filename: str, battery_overri
     )
 
 def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
-    # Very small training for quick testing
-    junk_model_name = f"junk_{'cnn_' if is_cnn else ''}{grid_file.replace('.txt','')}"
-    timesteps = 500  # super low for quick test
+    '''
+    Very small training for quick testing
+    '''
+    junk_folder_name = f"junk_{'cnn_' if is_cnn else ''}{grid_file.replace('.txt','')}"
+    timesteps = 500 
     
     model = train_PPO_model(
         grid_file=grid_file,
         timesteps=timesteps,
-        model_name=junk_model_name,
+        folder_name=junk_folder_name,
         is_cnn=is_cnn
     )
     
-    print(f"Trained junk model '{junk_model_name}' for {timesteps} timesteps.")
-    return junk_model_name
+    print(f"Trained junk model '{junk_folder_name}' for {timesteps} timesteps.")
+    return junk_folder_name

@@ -34,7 +34,7 @@ clean_logs cl:
 tensorboard tb:
 	pkill tensorboard || true
 	source venv/bin/activate && \
-	tensorboard --logdir logs --port 6006 & \
+	tensorboard --logdir saved_experiments --port 6006 & \
 	sleep 2 && \
 	xdg-open http://localhost:6006/
 
