@@ -74,8 +74,7 @@ def get_reward_b(env, new_pos):
     b_inval_pen = -0.75
     b_rev_pen = -0.21
     b_t_pen = -0.04
-    b_bat_pen = 0 # -50
-    subrewards = {}
+    b_bat_pen = -50
 
     if new_pos in env.goal_positions:
         subrewards = {
