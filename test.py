@@ -9,6 +9,7 @@ import grid_gen
 import matplotlib.pyplot as plt
 from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 from plot_metrics import *
+import re
 
 def test_manual_control(grid_file: str = "mine_20x20.txt"):
     """
@@ -417,67 +418,65 @@ def render_halfsplit_models():
     )
     '''
 
-def evaluate_all_models():
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
     """
-    Automatically evaluates and renders all PPO models in SavedModels/PPO_custom_grid.
-    Infers CNN, grid file, and battery override from filename.
+    Evaluates all PPO models under each experiment in `base_dir`.
     """
-    model_dir = MODELS["ppo"]
-    model_files = [
-        f for f in os.listdir(model_dir)
-        if f.endswith(".zip") and os.path.isfile(os.path.join(model_dir, f))
-    ]
 
-    for model_file in model_files:
-        print("processing", model_file)
-        model_name = model_file.replace(".zip", "")
-    
-        # Determine CNN or MLP
-        is_cnn = "cnn" in model_name
+    def extract_ppo_number(name):
+        match = re.match(r"PPO_(\d+)", name)
+        return int(match.group(1)) if match else -1
 
-        if "mine_20x20_reward_function_b" != model_name:
+    if not os.path.exists(base_dir):
+        raise FileNotFoundError(f"Directory {base_dir} not found")
+
+    for experiment_name in os.listdir(base_dir):
+        print("Processsing", experiment_name)
+        experiment_path = os.path.join(base_dir, experiment_name)
+        if not os.path.isdir(experiment_path):
             continue
 
-        # Infer grid filename
-        if "100x100" in model_name:
-            grid_filename = "mine_100x100.txt"
-        elif "20x20" in model_name:
-            grid_filename = "mine_20x20.txt"
-        else:
-            print(f"Skipping {model_name}: cannot infer grid file.")
-            continue
+        for ppo_run in sorted(os.listdir(experiment_path),
+                              key=extract_ppo_number, reverse=True):
+            print("    Processsing", ppo_run)
+            ppo_path = os.path.join(experiment_path, ppo_run)
+            model_path = os.path.join(ppo_path, "model.zip")
 
-        # Infer battery overrides
-        reset_kwargs = {}
-        if "halfsplit" in model_name:
-            grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
-            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
-            reset_kwargs["battery_overrides"] = battery_overrides
+            if not os.path.isfile(model_path):
+                continue
 
-        print(f"\n=== Evaluating {model_name} ===")
-        print(f"Grid: {grid_filename} | CNN: {is_cnn} | Halfsplit: {'halfsplit' in model_name}")
+            # infer grid filename
+            inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt"
+            grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
 
-        train.load_model_and_evaluate(
-            model_filename=model_name,
-            grid_file=grid_filename,
-            is_cnn=is_cnn,
-            reset_kwargs=reset_kwargs,
-            n_eval_episodes=20,
-            sleep_time=0.1,
-            render=True,
-            verbose=True
-        )
+            if not os.path.exists(grid_file_path):
+                print(f"Warning: Grid file {grid_file_path} not found. Skipping {ppo_path}")
+                continue
 
-def train_all_models(timesteps: int = 500_000):
+            is_cnn = "cnn" in experiment_name.lower()
+
+            try:
+                print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn})...")
+                model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn)
+                env = GridWorldEnv(grid_file=inferred_grid, is_cnn=is_cnn)
+                if is_cnn:
+                    env = CustomGridCNNWrapper(env)
+                train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render)
+            except Exception as e:
+                print(f"Failed to evaluate {ppo_path}: {e}")
+
+def train_all_models(timesteps: int = 1_000_000):
     """
-    Trains PPO models with support for halfsplit battery overrides when specified.
+    Trains PPO models with support for halfsplit battery overrides when
+    specified
     """
     models_to_train = [
         # {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20", "halfsplit": True},
         # {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100", "halfsplit": True},
         # {"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100", "halfsplit": True},
         # {"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20", "halfsplit": True},
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_no_battery", "halfsplit": False},
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent", "halfsplit": False},
+         {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_halfsplit", "halfsplit": True}
     ]
 
     for config in models_to_train:
@@ -485,7 +484,7 @@ def train_all_models(timesteps: int = 500_000):
 
         grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
 
-        # Compute battery overrides only if halfsplit flag is True
+        # compute battery overrides only if halfsplit flag is True
         battery_overrides = {}
         if config.get("halfsplit", False):
             battery_overrides = train.get_halfsplit_battery_overrides(grid_path)

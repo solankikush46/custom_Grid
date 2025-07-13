@@ -47,15 +47,15 @@ def train_PPO_model(grid_file: str,
     model = PPO(
         policy="MlpPolicy",
         env=vec_env,
-        ent_coef=0.5,
+        ent_coef=0.1#0.5,
         gae_lambda=0.90,
         learning_rate=3e-4,
         n_steps=2048,
         batch_size=64,
         n_epochs=10,
-        #gamma=0.99,
-        #clip_range=0.2,
-        #clip_range_vf=0.5,
+        gamma=0.99,
+        clip_range=0.2,
+        clip_range_vf=0.5,
         tensorboard_log=base_log_path,
         verbose=1,
         policy_kwargs=policy_kwargs
@@ -132,6 +132,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     total_rewards = []
     total_steps = 0
     success_count = 0
+    total_collisions = 0
     
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
@@ -165,6 +166,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             step_num += 1
 
+        total_collisions += info.get("obstacle_hits")
         total_steps += step_num
         total_rewards.append(ep_reward)
 
@@ -173,12 +175,14 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
     mean_reward = sum(total_rewards) / n_eval_episodes
     success_rate = success_count / n_eval_episodes
+    mean_col = total_collisions / n_eval_episodes
     avg_steps = total_steps / n_eval_episodes
 
     print("\n=== Evaluation Summary ===")
     print(f"Total Episodes: {n_eval_episodes}")
     print(f"Reached Exit: {success_count}/{n_eval_episodes} ({success_rate:.1%})")
     print(f"Mean Reward: {mean_reward:.2f}")
+    print(f"Mean Obstacle Hits: {mean_col:.2f}")
     print(f"Average Steps per Episode: {avg_steps:.1f}")
 
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
