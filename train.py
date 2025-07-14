@@ -40,7 +40,10 @@ def train_PPO_model(grid_file: str,
     if is_cnn:
         policy_kwargs = {
             "features_extractor_class": GridCNNExtractor,
-            "features_extractor_kwargs": {"features_dim": features_dim},
+            "features_extractor_kwargs": {
+                "features_dim": features_dim,
+                "grid_file" : grid_file
+            },
             "net_arch": dict(pi=[64, 64], vf=[64, 64]),
         }
 

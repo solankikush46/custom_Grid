@@ -32,32 +32,47 @@ class CustomGridCNNWrapper(ObservationWrapper):
 CNN Feature Extractor for Stable-Baselines3
 """
 
-import torch
 import torch.nn as nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 class GridCNNExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128):
+    def __init__(self, observation_space, features_dim=128, grid_file=None):
         super().__init__(observation_space, features_dim)
+        self.grid_file = grid_file
         n_input_channels, height, width = observation_space.shape
+        if grid_file and "20x20" in grid_file:
+            self.mode = "small"
 
-        self.cnn = nn.Sequential(
-            nn.Conv2d(n_input_channels, 4, kernel_size=3, stride=2, padding=1),
+            self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 8, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(4, 4, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(4, 4, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(4, 4, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
-        )
+            )
+            
+        elif grid_file and "100x100" in grid_file:
+            self.mode = "large"
+            # Define layers for 100x100
+            self.cnn = nn.Sequential(
+                nn.Conv2d(...), # custom for large
+                nn.ReLU(),
+                # ...
+            )
+            # Define linear layer etc. for large
+        else:
+            raise ValueError("Unknown grid size in filename!")
 
-        # Automatically determine flattened size
+        # Calculate flattened size
         with torch.no_grad():
             dummy_input = torch.zeros(1, n_input_channels, height, width)
             out = self.cnn(dummy_input)
             self.flattened_size = out.view(1, -1).shape[1]
-
         self.linear = nn.Sequential(
             nn.Flatten(),
             nn.Linear(self.flattened_size, features_dim),
@@ -68,4 +83,3 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         x = self.cnn(obs)
         x = self.linear(x)
         return x
-
