@@ -60,19 +60,6 @@ def train_PPO_model(grid_file: str,
         verbose=1,
         policy_kwargs=policy_kwargs
     )
-    '''
-    model = PPO(
-        policy="MlpPolicy",
-        env=vec_env,
-        ent_coef=0.5,
-        gae_lambda=0.90,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        verbose=1
-    )
-    '''
 
     callback = CustomTensorboardCallback()
 
@@ -100,7 +87,7 @@ def train_PPO_model(grid_file: str,
 # training utils
 #-------------------------------------------------
 def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
-     """
+    """
     Load a PPO model with environment matching the training setup.
     Args:
         experiment_folder: full path to the experiment folder containing model.zip and logs
@@ -124,7 +111,7 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
 
 def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True,
                    halfsplit=False):
-     """
+    """
     Evaluate the model in the given environment for a number of episodes,
     printing agent's position, reward, and action at every timestep, and summarizing performance.
     """
@@ -181,55 +168,6 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Obstacle Hits: {mean_col:.2f}")
     print(f"Average Steps per Episode: {avg_steps:.1f}")
 
-def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
-    def extract_ppo_number(name):
-        try:
-            return int(name.split('_')[-1])
-        except ValueError:
-            return -1
-
-    if not os.path.exists(base_dir):
-        raise FileNotFoundError(f"Directory {base_dir} not found")
-
-    for experiment_name in os.listdir(base_dir):
-        experiment_path = os.path.join(base_dir, experiment_name)
-        if not os.path.isdir(experiment_path):
-            continue
-
-        print("Processing", experiment_name)
-
-        for ppo_run in sorted(os.listdir(experiment_path), key=extract_ppo_number, reverse=True):
-            ppo_path = os.path.join(experiment_path, ppo_run)
-            model_path = os.path.join(ppo_path, "model.zip")
-
-            if not os.path.isfile(model_path):
-                continue
-
-            inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt"
-            grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
-
-            if not os.path.exists(grid_file_path):
-                print(f"Warning: Grid file {grid_file_path} not found. Skipping {ppo_path}")
-                continue
-
-            is_cnn = "cnn" in experiment_name.lower()
-            is_halfsplit = "halfsplit" in experiment_name.lower()
-
-            try:
-                print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn}, Halfsplit={is_halfsplit})...")
-
-                reset_kwargs = {}
-                if is_halfsplit:
-                    battery_overrides = get_halfsplit_battery_overrides(grid_file_path)
-                    reset_kwargs["battery_overrides"] = battery_overrides
-
-                model = load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
-                env = model.get_env().envs[0]
-
-                evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit)
-            except Exception as e:
-                print(f"Failed to evaluate {ppo_path}: {e}")
-
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
     """
@@ -238,10 +176,6 @@ def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = Fa
     model = load_model(model_folder, grid_file, is_cnn, reset_kwargs)
     evaluate_model(env=model.get_env().envs[0], model=model, n_eval_episodes=n_eval_episodes,
                    sleep_time=sleep_time, render=render, verbose=verbose)
-
-##==============================================================
-## Utilities for Half-Split Battery Scenarios
-##==============================================================
 
 def get_halfsplit_battery_overrides(grid_path: str) -> dict:
     """
@@ -269,48 +203,6 @@ def get_halfsplit_battery_overrides(grid_path: str) -> dict:
     }
 
     return battery_overrides
-
-def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False, folder_name=None):
-    """
-    Trains a PPO model using the half-split battery override.
-    """
-    if not folder_name:
-        folder_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
-    reset_kwargs = {"battery_overrides": battery_overrides}
-
-    model = train_PPO_model(
-        grid_file=grid_filename,
-        timesteps=timesteps,
-        folder_name=folder_name,
-        reset_kwargs=reset_kwargs,
-        is_cnn=is_cnn
-    )
-
-    return folder_name, model
-
-def evaluate_halfsplit_model(folder_name: str, grid_filename: str, battery_overrides: dict,
-                             episodes: int = 3, render: bool = True, verbose: bool = True):
-    """
-    Evaluates a trained PPO model on a half-split battery scenario.
-    Battery overrides must be passed explicitly.
-    """
-    reset_kwargs = {"battery_overrides": battery_overrides}
-    env = GridWorldEnv(grid_file=grid_filename, reset_kwargs=reset_kwargs)
-
-    if verbose:
-        print(f"Evaluating model in '{folder_name}' on grid '{grid_filename}' with battery overrides:")
-        for sensor_pos, battery_level in battery_overrides.items():
-            print(f"  Sensor at {sensor_pos}: battery = {battery_level}")
-
-    load_model_and_evaluate(
-        model_filename=folder_name,
-        grid_file=grid_filename,
-        reset_kwargs=reset_kwargs,
-        n_eval_episodes=episodes,
-        sleep_time=0.1,
-        render=render,
-        verbose=verbose
-    )
 
 def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
     '''
