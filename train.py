@@ -100,7 +100,7 @@ def train_PPO_model(grid_file: str,
 # training utils
 #-------------------------------------------------
 def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
-    """
+     """
     Load a PPO model with environment matching the training setup.
     Args:
         experiment_folder: full path to the experiment folder containing model.zip and logs
@@ -111,22 +111,20 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     print("experiment_folder", experiment_folder)
     model_path = os.path.join(experiment_folder, "model")
     print("model_path", model_path)
-    
+
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 
     print("Loading env observation space:", env.observation_space)
-
     vec_env = DummyVecEnv([lambda: env])
 
     model = PPO.load(model_path, env=vec_env)
     return model
 
-
 def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True,
                    halfsplit=False):
-    """
+     """
     Evaluate the model in the given environment for a number of episodes,
     printing agent's position, reward, and action at every timestep, and summarizing performance.
     """
@@ -134,13 +132,12 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     total_steps = 0
     success_count = 0
     total_collisions = 0
-    
+
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
         done = False
         ep_reward = 0.0
         step_num = 0
-        reached_exit = False
 
         while not done:
             action, _ = model.predict(obs)
@@ -150,16 +147,14 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
-
             reached_exit = bool(info.get("current_reward") == env.n_rows * env.n_cols)
             success_count += int(reached_exit)
 
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
                 print(f"Episode {ep + 1} Step {step_num}: Pos={agent_pos}, Action={action} ({action_dir}), Reward={reward:.2f}")
-                if subrewards:
-                    for name, val in subrewards.items():
-                        print(f"  └─ {name}: {val:.2f}")
+                for name, val in subrewards.items():
+                    print(f"  └─ {name}: {val:.2f}")
 
             if render:
                 env.render_pygame()
@@ -167,7 +162,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             step_num += 1
 
-        total_collisions += info.get("obstacle_hits")
+        total_collisions += info.get("obstacle_hits", 0)
         total_steps += step_num
         total_rewards.append(ep_reward)
 
@@ -185,6 +180,55 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Reward: {mean_reward:.2f}")
     print(f"Mean Obstacle Hits: {mean_col:.2f}")
     print(f"Average Steps per Episode: {avg_steps:.1f}")
+
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
+    def extract_ppo_number(name):
+        try:
+            return int(name.split('_')[-1])
+        except ValueError:
+            return -1
+
+    if not os.path.exists(base_dir):
+        raise FileNotFoundError(f"Directory {base_dir} not found")
+
+    for experiment_name in os.listdir(base_dir):
+        experiment_path = os.path.join(base_dir, experiment_name)
+        if not os.path.isdir(experiment_path):
+            continue
+
+        print("Processing", experiment_name)
+
+        for ppo_run in sorted(os.listdir(experiment_path), key=extract_ppo_number, reverse=True):
+            ppo_path = os.path.join(experiment_path, ppo_run)
+            model_path = os.path.join(ppo_path, "model.zip")
+
+            if not os.path.isfile(model_path):
+                continue
+
+            inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt"
+            grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
+
+            if not os.path.exists(grid_file_path):
+                print(f"Warning: Grid file {grid_file_path} not found. Skipping {ppo_path}")
+                continue
+
+            is_cnn = "cnn" in experiment_name.lower()
+            is_halfsplit = "halfsplit" in experiment_name.lower()
+
+            try:
+                print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn}, Halfsplit={is_halfsplit})...")
+
+                reset_kwargs = {}
+                if is_halfsplit:
+                    battery_overrides = get_halfsplit_battery_overrides(grid_file_path)
+                    reset_kwargs["battery_overrides"] = battery_overrides
+
+                model = load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+                env = model.get_env().envs[0]
+
+                evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit)
+            except Exception as e:
+                print(f"Failed to evaluate {ppo_path}: {e}")
 
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
