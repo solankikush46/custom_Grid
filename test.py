@@ -413,8 +413,7 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
     """
 
     def extract_ppo_number(name):
-        parts = name.split('_')
-        return parts[1]
+        return int(name.split('_')[-1])
     
     if not os.path.exists(base_dir):
         raise FileNotFoundError(f"Directory {base_dir} not found")
@@ -450,14 +449,17 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
 
                 reset_kwargs = {}
                 if is_halfsplit:
-                    grid_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
                     battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
                     reset_kwargs["battery_overrides"] = battery_overrides
         
                 model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn)
+                env = model.get_env().envs[0]
+
+                '''
                 env = GridWorldEnv(grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
                 if is_cnn:
                     env = CustomGridCNNWrapper(env)
+                '''
                 train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit)
             except Exception as e:
                 print(f"Failed to evaluate {ppo_path}: {e}")
