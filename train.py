@@ -124,7 +124,8 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     return model
 
 
-def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
+def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True,
+                   halfsplit=False):
     """
     Evaluate the model in the given environment for a number of episodes,
     printing agent's position, reward, and action at every timestep, and summarizing performance.
