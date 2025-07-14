@@ -407,17 +407,6 @@ def render_halfsplit_models():
         verbose=True
     )
 
-    '''
-    train.evaluate_halfsplit_model(
-        folder_name="battery_halfsplit_mine_100x100",
-        grid_filename=grid_100,
-        battery_overrides=overrides_100,
-        episodes=5,
-        render=True,
-        verbose=True
-    )
-    '''
-
 def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
@@ -454,14 +443,22 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
                 continue
 
             is_cnn = "cnn" in experiment_name.lower()
-
+            is_halfsplit = "halfsplit" in experiment_name.lower()
+            
             try:
-                print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn})...")
+                print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn}, Halfsplit={is_halfsplit})...")
+
+                reset_kwargs = {}
+                if is_halfsplit:
+                    grid_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
+                    battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+                    reset_kwargs["battery_overrides"] = battery_overrides
+        
                 model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn)
-                env = GridWorldEnv(grid_file=inferred_grid, is_cnn=is_cnn)
+                env = GridWorldEnv(grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
                 if is_cnn:
                     env = CustomGridCNNWrapper(env)
-                train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render)
+                train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit)
             except Exception as e:
                 print(f"Failed to evaluate {ppo_path}: {e}")
 
