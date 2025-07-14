@@ -445,9 +445,6 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
             if not os.path.isfile(model_path):
                 continue
 
-            if "mine_20x20_reward_function_b_lower_ent" not in experiment_name or "halfsplit" in experiment_name:
-                continue
-
             # infer grid filename
             inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt" # need better way of inferring grid
             grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
@@ -477,10 +474,11 @@ def train_all_models(timesteps: int = 1_000_000):
         # {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20", "halfsplit": True},
         # {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100", "halfsplit": True},
         # {"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100", "halfsplit": True},
-        # {"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20", "halfsplit": True},
+        #{"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20", "halfsplit": True},
         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent", "halfsplit": False},
-         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit", "halfsplit": True}
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery", "halfsplit": False}
+        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit", "halfsplit": True}
+        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery", "halfsplit": False}
+        {"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit_cnn", "halfsplit": False}
     ]
 
     for config in models_to_train:
