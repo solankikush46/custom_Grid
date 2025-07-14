@@ -22,18 +22,6 @@ reset_venv rv:
 copy_all cpa:
 	scp -r cs3f7@mill.mst.edu:~/custom_Grid/saved_experiments /home/student/REU/custom_Grid/
 
-copy_logs cpl:
-	scp -r cs3f7@mill.mst.edu:~/custom_Grid/logs /home/student/REU/custom_Grid/
-
-copy_models cpm:
-	scp -r cs3f7@mill.mst.edu:~/custom_Grid/SavedModels /home/student/REU/custom_Grid/
-
-clean_logs cl:
-	@echo "Cleaning contents of logs/..."
-	rm -rf logs/*
-	rm -rf logs/.*
-	@echo "Finished cleaning logs"
-
 tensorboard tb:
 	pkill tensorboard || true
 	source venv/bin/activate && \
@@ -41,12 +29,25 @@ tensorboard tb:
 	sleep 2 && \
 	xdg-open http://localhost:6006/
 
-tb_saved:
+tensorboard tb_old:
 	pkill tensorboard || true
 	source venv/bin/activate && \
-	tensorboard --logdir saved_logs --port 6006 & \
+	tensorboard --logdir old_experiments --port 6006 & \
 	sleep 2 && \
 	xdg-open http://localhost:6006/
+
+archive_experiments ae:
+	@echo "Archiving experiments to old_experiments/..."
+	TIMESTAMP=$$(date +%Y%m%d_%H%M%S) ; \
+	mkdir -p old_experiments/$$TIMESTAMP ; \
+	mv saved_experiments/* old_experiments/$$TIMESTAMP/ ; \
+	echo "Moved to old_experiments/$$TIMESTAMP"
+
+clean_experiments ce:
+	@echo "Cleaning contents of saved_experiments/..."
+	rm -rf saved_experiments/*
+	rm -rf saved_experiments/.*
+	@echo "Finished cleaning saved_experiments"
 
 mill m:
 	srun -p gpu --gres gpu:V100-SXM2-32GB:1 -n 8 -N 1 --mem=64G --time=48:00:00 --pty bash
