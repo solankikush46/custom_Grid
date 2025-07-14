@@ -166,7 +166,7 @@ def train_all_models(timesteps: int = 1_000_000):
         if config.get("halfsplit", False):
             battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-        model_name, model = train_PPO_model(
+        model_name, model = train.train_PPO_model(
             grid_file=config["grid_file"],
             timesteps=timesteps,
             reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
