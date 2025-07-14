@@ -60,9 +60,20 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             self.mode = "large"
             # Define layers for 100x100
             self.cnn = nn.Sequential(
-                nn.Conv2d(...), # custom for large
+                nn.Conv2d(4, 8, kernel_size=3, stride=2, padding=1),     # 4 × 100 × 100 → 8 × 50 × 50
                 nn.ReLU(),
-                # ...
+                nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),    # 8 × 50 × 50 → 16 × 25 × 25
+                nn.ReLU(),
+                nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),   # 16 × 25 × 25 → 32 × 13 × 13
+                nn.ReLU(),
+                nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),   # 32 × 13 × 13 → 64 × 7 × 7
+                nn.ReLU(),
+                nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # 64 × 7 × 7 → 128 × 4 × 4
+                nn.ReLU(),
+                nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # 128 × 4 × 4 → 256 × 2 × 2
+                nn.ReLU(),
+                nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1), # 256 × 2 × 2 → 512 × 1 × 1
+                nn.ReLU()
             )
             # Define linear layer etc. for large
         else:

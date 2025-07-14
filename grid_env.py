@@ -188,7 +188,7 @@ class GridWorldEnv(Env):
                                grid_height, grid_width,
                                obstacle_percentage,
                                n_sensors)
-        self.max_steps = 500
+        self.max_steps = 2000
         self.reset_kwargs = reset_kwargs
         self.is_cnn = is_cnn
 

@@ -8,7 +8,7 @@ from utils import *
 ##==============================================================
 # === Constants ===
 LOWER_BOUND = -1
-UPPER_BOUND = 10.0
+UPPER_BOUND = 9.0
 BATTERY_THRESHOLD = 10
 BASE_GOAL_REWARD = 400.0  # Reference reward for a 20x20 grid
 
@@ -32,7 +32,7 @@ def get_reward_a(env, new_pos):
         subrewards["goal_reward"] = goal_reward
         subrewards["invalid_penalty"] = 0
         subrewards["battery_penalty"] = 0
-        subrewards["progress_shaping"] = 0
+        #subrewards["progress_shaping"] = 0
         subrewards["revisit_penalty"] = 0
         subrewards["time_penalty"] = 0
     else:
@@ -40,11 +40,13 @@ def get_reward_a(env, new_pos):
         subrewards["invalid_penalty"] = scale * (base_invalid_penalty if not env.can_move_to(new_pos) else 0)
         subrewards["battery_penalty"] = scale * (base_battery_penalty if env.current_battery_level <= BATTERY_THRESHOLD else 0)
 
+        '''
         prev_pos = env.agent_pos
         prev_dist = min(chebyshev_distances(prev_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
         new_dist = min(chebyshev_distances(new_pos, env.goal_positions, env.n_cols, env.n_rows, normalize=False))
         progress = prev_dist - new_dist
         subrewards["progress_shaping"] = scale * base_progress_weight * progress
+        '''
 
         subrewards["revisit_penalty"] = scale * (base_revisit_penalty if new_pos in env.visited else 0)
         subrewards["time_penalty"] = scale * base_time_penalty
@@ -154,4 +156,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_b(env, new_pos)
+    return get_reward_a(env, new_pos)
