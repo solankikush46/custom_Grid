@@ -166,7 +166,7 @@ def train_all_models(timesteps: int = 1_000_000):
         if config.get("halfsplit", False):
             battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-        model_name, model = train.train_PPO_model(
+        model = train.train_PPO_model(
             grid_file=config["grid_file"],
             timesteps=timesteps,
             reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
@@ -174,7 +174,7 @@ def train_all_models(timesteps: int = 1_000_000):
             folder_name=config["model_name"]
         )
         
-        print(f"Finished training {model_name}\n")
+        print(f"Finished training")
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """
