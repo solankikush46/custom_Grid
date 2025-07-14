@@ -47,7 +47,7 @@ def train_PPO_model(grid_file: str,
     model = PPO(
         policy="MlpPolicy",
         env=vec_env,
-        ent_coef=0.5, #0.5,
+        ent_coef=0.1, #0.5,
         gae_lambda=0.90,
         learning_rate=3e-4,
         n_steps=2048,
