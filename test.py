@@ -237,7 +237,7 @@ def load_and_evaluate_battery_override_model(
     filename = "mine_20x20.txt"
     filepath = os.path.join(FIXED_GRID_DIR, filename)
 
-    # --- Parse sensor positions from file (same as in test_20x20_battery_override)
+    # --- Parse sensor positions from file
     sensor_positions = []
     with open(filepath, "r") as f:
         for r, line in enumerate(f):
@@ -424,9 +424,9 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
     """
 
     def extract_ppo_number(name):
-        match = re.match(r"PPO_(\d+)", name)
-        return int(match.group(1)) if match else -1
-
+        parts = name.split('_')
+        return parts[1]
+    
     if not os.path.exists(base_dir):
         raise FileNotFoundError(f"Directory {base_dir} not found")
 
@@ -445,8 +445,11 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
             if not os.path.isfile(model_path):
                 continue
 
+            if "mine_20x20_reward_function_b_lower_ent" not in experiment_name or "halfsplit" in experiment_name:
+                continue
+
             # infer grid filename
-            inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt"
+            inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt" # need better way of inferring grid
             grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
 
             if not os.path.exists(grid_file_path):
@@ -475,8 +478,9 @@ def train_all_models(timesteps: int = 1_000_000):
         # {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100", "halfsplit": True},
         # {"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_100x100", "halfsplit": True},
         # {"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20", "halfsplit": True},
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent", "halfsplit": False},
-         {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit", "halfsplit": True}
+        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent", "halfsplit": False},
+         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit", "halfsplit": True}
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery", "halfsplit": False}
     ]
 
     for config in models_to_train:

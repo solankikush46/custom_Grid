@@ -13,10 +13,10 @@ BATTERY_THRESHOLD = 10
 BASE_GOAL_REWARD = 400.0  # Reference reward for a 20x20 grid
 
 # === Base subreward values ===
-base_invalid_penalty = -1.0
+base_invalid_penalty = -0.75
 base_battery_penalty = -100
 base_revisit_penalty = -0.25
-base_time_penalty = -0.05
+base_time_penalty = -0.04
 min_progress_penalty = -1
 base_progress_weight = 1.0
 
@@ -74,7 +74,7 @@ def get_reward_b(env, new_pos):
     b_inval_pen = -0.75
     b_rev_pen = -0.21
     b_t_pen = -0.04
-    b_bat_pen = -50
+    b_bat_pen = -100
 
     if new_pos in env.goal_positions:
         subrewards = {

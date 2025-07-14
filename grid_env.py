@@ -342,7 +342,7 @@ class GridWorldEnv(Env):
             self.clock = pygame.time.Clock()
             self.pygame_initialized = True
     
-    def render_pygame(self, uncap_fps=False, show_miners=True):
+    def render_pygame(self, uncap_fps=False, show_miners=False):
         if not self.pygame_initialized:
             self.init_pygame()
 
