@@ -171,7 +171,8 @@ def train_all_models(timesteps: int = 1_000_000):
             timesteps=timesteps,
             reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
             is_cnn=config["is_cnn"],
-            folder_name=config["model_name"]
+            folder_name=config["model_name"],
+            battery_truncation=True
         )
         
         print(f"Finished training")
