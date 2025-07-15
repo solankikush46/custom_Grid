@@ -16,13 +16,17 @@ class CustomGridCNNWrapper(ObservationWrapper):
         self.n_rows = env.n_rows
         self.n_cols = env.n_cols
 
+        '''
         # 4 channels : agent_presence, blocked, sensor_battery, goal
-        low = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
-        high = np.ones((4, self.n_rows, self.n_cols), dtype=np.float32)
-
-        # Adjust sensor battery channel to allow -1.0
-        low[2, :, :] = -1.0  # Channel 2 (sensor battery)
+        low = np.zeros((2, self.n_rows, self.n_cols), dtype=np.float32)
+        high = np.array([4.0, 1.0]).reshape(2, 1, 1) * np.ones((2, self.n_rows, self.n_cols), dtype=np.float32)
         self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
+        '''
+
+        low = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
+        high = np.ones((5, self.n_rows, self.n_cols), dtype=np.float32)
+        self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
+
 
     def observation(self, obs):
         return obs
@@ -42,18 +46,29 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         n_input_channels, height, width = observation_space.shape
         if grid_file and "20x20" in grid_file:
             self.mode = "small"
-
+            
             self.cnn = nn.Sequential(
-            nn.Conv2d(n_input_channels, 8, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(10, 20, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(20, 40, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(40, 80, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),
+            nn.ReLU()
+            '''
+            self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 4, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(4, 8, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
+            '''
             )
             
         elif grid_file and "100x100" in grid_file:

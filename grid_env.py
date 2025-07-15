@@ -260,9 +260,15 @@ class GridWorldEnv(Env):
         self.action_space = Discrete(8)
         if self.is_cnn:
             self.observation_space = Box(
-            low=-1.0,
+            '''
+            low=0.0,
+            high=5.0,
+            shape=(2, self.n_rows, self.n_cols),
+            dtype=np.float32
+            '''
+            low=0.0,
             high=1.0,
-            shape=(4, self.n_rows, self.n_cols),
+            shape=(5, self.n_rows, self.n_cols),
             dtype=np.float32
             )
         else:
@@ -443,24 +449,54 @@ class GridWorldEnv(Env):
 
     def get_observation(self):
         if self.is_cnn:
-            obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
+            '''
+            obs = np.zeros((2, self.n_rows, self.n_cols), dtype=np.float32)
 
-            r, c = self.agent_pos
-            obs[0, r, c] = 1.0  # Agent
-
+            # Channel 0: what is in the cell
             for r in range(self.n_rows):
                 for c in range(self.n_cols):
-                    if self.static_grid[r, c] in ('#', 'S', 'B'):
-                        obs[1, r, c] = 1.0  # Blocked
+                    if (r, c) == tuple(self.agent_pos):
+                        obs[0, r, c] = 2  # Agent
+                    elif self.static_grid[r, c] == OBSTACLE:
+                        obs[0, r, c] = 1  # Obstacle
+                    elif self.static_grid[r, c] == GOAL:
+                        obs[0, r, c] = 3  # Goal
+                    elif self.static_grid[r, c] == SENSOR:
+                        obs[0, r, c] = 4  # Sensor
+                    elif self.static_grid[r,c] == BASE_STATION:
+                        obs[0, r, c] = 5 # Base station
+                    else:
+                        obs[0, r, c] = 0  # Empty
 
-            obs[2, :, :] = -1.0
+            # Channel 1: battery level (only for sensors)
             for (r, c), battery in self.sensor_batteries.items():
-                obs[2, r, c] = battery / 100.0  # Battery
-
-            for r, c in self.goal_positions:
-                obs[3, r, c] = 1.0  # Goal
+                obs[1, r, c] = battery / 100.0  # Normalize 0-1
 
             return obs
+            '''
+            obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
+
+            # Channel 0: agent
+            r, c = self.agent_pos
+            obs[0, r, c] = 1.0
+
+            # Channel 1: blocked (obstacle, base station, etc.)
+            for r in range(self.n_rows):
+                for c in range(self.n_cols):
+                    if self.static_grid[r, c] in (OBSTACLE, BASE_STATION):  # add others if needed
+                        obs[1, r, c] = 1.0
+
+            # Channel 2: sensor presence, Channel 3: sensor battery
+            for (r, c), battery in self.sensor_batteries.items():
+                obs[2, r, c] = 1.0
+                obs[3, r, c] = battery / 100.0  # normalized battery
+
+            # Channel 4: goal
+            for r, c in self.goal_positions:
+                obs[4, r, c] = 1.0
+
+            return obs
+
         else:
             # Flat vector
             r, c = self.agent_pos

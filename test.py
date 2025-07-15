@@ -162,7 +162,8 @@ def train_all_models(timesteps: int = 1_000_000):
         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery", "halfsplit": False}
         #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery_cnn", "halfsplit": False}
         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_c", "halfsplit": False}
-        {"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn", "halfsplit": False}
+        #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn_2_channels", "halfsplit": False}
+        {"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn_5_channels", "halfsplit": False}
     ]
 
     for config in models_to_train:
