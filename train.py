@@ -24,10 +24,11 @@ def train_PPO_model(grid_file: str,
                     folder_name: str,
                     reset_kwargs: dict = {},
                     is_cnn: bool = False,
-                    features_dim: int = 128):
+                    features_dim: int = 128,
+                    battery_truncation=False):
     
     # Initialize environment (wrapped if CNN)
-    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 
@@ -208,7 +209,9 @@ def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
     '''
     Very small training for quick testing
     '''
-    junk_folder_name = f"junk_{'cnn_' if is_cnn else ''}{grid_file.replace('.txt','')}"
+    junk_folder_name = grid_file + "__" + "junk"
+    if is_cnn:
+        junk_folder_name += "_cnn"
     timesteps = 500 
     
     model = train_PPO_model(

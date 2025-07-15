@@ -3,6 +3,7 @@
 logs/
 saved_logs/
 saved_experiments/
+old_experiments/
 
 # Saved models
 SavedModels/
@@ -15,6 +16,8 @@ app/utils/__pycache__/
 
 **/User.sql
 **.webp
+
+*.csv
 
 # Ignore virtual environment directories
 /venv
