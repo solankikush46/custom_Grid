@@ -259,13 +259,15 @@ class GridWorldEnv(Env):
         # 4 cardinals dirs + 4 diagonals
         self.action_space = Discrete(8)
         if self.is_cnn:
-            self.observation_space = Box(
             '''
+            self.observation_space = Box(
             low=0.0,
             high=5.0,
             shape=(2, self.n_rows, self.n_cols),
             dtype=np.float32
+            )
             '''
+            self.observation_space = Box(
             low=0.0,
             high=1.0,
             shape=(5, self.n_rows, self.n_cols),
