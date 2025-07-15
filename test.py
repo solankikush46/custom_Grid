@@ -153,7 +153,7 @@ def train_all_models(timesteps: int = 1_000_000):
     specified
     """
     models_to_train = [
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_c", "halfsplit": False}
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_c_3_mill", "halfsplit": False}
     ]
 
     for config in models_to_train:
@@ -171,7 +171,8 @@ def train_all_models(timesteps: int = 1_000_000):
             timesteps=timesteps,
             reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
             is_cnn=config["is_cnn"],
-            folder_name=config["model_name"]
+            folder_name=config["model_name"],
+            battery_truncation=True
         )
         
         print(f"Finished training")
