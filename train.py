@@ -209,7 +209,7 @@ def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
     '''
     Very small training for quick testing
     '''
-    junk_folder_name = grid_file + "__" + "junk"
+    junk_folder_name = grid_file[0:len(grid_file) - 3] + "__" + "junk"
     if is_cnn:
         junk_folder_name += "_cnn"
     timesteps = 500 

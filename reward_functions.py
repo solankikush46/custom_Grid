@@ -101,6 +101,9 @@ def get_reward_b(env, new_pos):
     return total_reward, subrewards
 
 def get_reward_c(env, new_pos):
+    '''
+    smaller reward scale
+    '''
     if new_pos in env.goal_positions:
         subrewards = {
             "goal_reward": 1.0,
@@ -121,6 +124,38 @@ def get_reward_c(env, new_pos):
             "revisit_penalty": rev_pen,
             "time_penalty": t_pen,
             "battery_penalty": bat_pen
+        }
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+def get_reward_d(env, new_pos):
+    '''
+    reward c but with distance penalty
+    '''
+    if new_pos in env.goal_positions:
+        subrewards = {
+            "goal_reward": 1.0,
+            "invalid_penalty": 0.0,
+            "revisit_penalty": 0.0,
+            "time_penalty": 0.0,
+            "battery_penalty": 0.0,
+            "distance_penalty": 0.0
+        }
+    else:
+        inval_pen = -0.75 if not env.can_move_to(new_pos) else 0.0
+        rev_pen = -0.25 if new_pos in env.visited else 0.0
+        t_pen = -0.04
+        bat_pen = -1.0 if env.current_battery_level <= 10 else 0.0
+        dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclid distance to closest goal
+
+        subrewards = {
+            "goal_reward": 0.0,
+            "invalid_penalty": inval_pen,
+            "revisit_penalty": rev_pen,
+            "time_penalty": t_pen,
+            "battery_penalty": bat_pen,
+            "distance_penalty": dist_pen
         }
 
     total_reward = sum(subrewards.values())
@@ -180,4 +215,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_c(env, new_pos)
+    return get_reward_d(env, new_pos)
