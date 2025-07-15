@@ -561,7 +561,7 @@ class GridWorldEnv(Env):
 
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps or \
-            (self.battery_termination and self.current_battery_level <= 10)
+            (self.battery_truncation and self.current_battery_level <= 10)
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
 
