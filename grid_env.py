@@ -177,7 +177,7 @@ class GridWorldEnv(Env):
                  grid_width: int = None,
                  obstacle_percentage=None,
                  n_sensors=None, reset_kwargs={},
-                 is_cnn=False
+                 is_cnn=False, battery_truncation=False
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -191,6 +191,7 @@ class GridWorldEnv(Env):
         self.max_steps = 2000
         self.reset_kwargs = reset_kwargs
         self.is_cnn = is_cnn
+        self.battery_truncation = battery_truncation
 
         # pygame rendering
         self.pygame_initialized = False
@@ -429,10 +430,16 @@ class GridWorldEnv(Env):
             self.clock.tick(self.render_fps) # use default render_fps
        
     def get_sensor_distances(self, pos, normalize=True):
-        return chebyshev_distances(pos, list(self.sensor_batteries.keys()), self.n_cols, self.n_rows, normalize)
+        if normalize:
+            return euclidean_distances(pos, list(self.sensor_batteries.keys()), self.n_cols, self.n_rows)
+        else:
+            return euclidean_distances(pos, list(self.sensor_batteries.keys()))
 
     def get_exit_distances(self, normalize=True):
-        return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
+        if normalize:
+            return euclidean_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows)
+        else:
+            return euclidean_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows)
 
     def get_observation(self):
         if self.is_cnn:
@@ -558,8 +565,9 @@ class GridWorldEnv(Env):
         self._update_sensor_batteries()
         self._move_miners_and_update_sensors()
 
-        terminated = self.agent_reached_exit() or self.current_battery_level <= 10
-        truncated = self.episode_steps >= self.max_steps
+        terminated = self.agent_reached_exit()
+        truncated = self.episode_steps >= self.max_steps or \
+            (self.battery_truncation and self.current_battery_level <= 10)
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
 
@@ -739,12 +747,11 @@ class GridWorldEnv(Env):
     def _compute_min_distance_to_goal(self):
         if not self.goal_positions:
             return 0
-        distances = chebyshev_distances(
+        distances = euclidean_distances(
             self.agent_pos,
             self.goal_positions,
             self.n_cols,
-            self.n_rows,
-            normalize=True
+            self.n_rows
         )
         return min(distances)
     

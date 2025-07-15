@@ -24,10 +24,11 @@ def train_PPO_model(grid_file: str,
                     folder_name: str,
                     reset_kwargs: dict = {},
                     is_cnn: bool = False,
-                    features_dim: int = 128):
+                    features_dim: int = 128,
+                    battery_truncation=False):
     
     # Initialize environment (wrapped if CNN)
-    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 
@@ -63,19 +64,6 @@ def train_PPO_model(grid_file: str,
         verbose=1,
         policy_kwargs=policy_kwargs
     )
-    '''
-    model = PPO(
-        policy="MlpPolicy",
-        env=vec_env,
-        ent_coef=0.5,
-        gae_lambda=0.90,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        verbose=1
-    )
-    '''
 
     callback = CustomTensorboardCallback()
 
@@ -114,20 +102,19 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     print("experiment_folder", experiment_folder)
     model_path = os.path.join(experiment_folder, "model")
     print("model_path", model_path)
-    
+
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 
     print("Loading env observation space:", env.observation_space)
-
     vec_env = DummyVecEnv([lambda: env])
 
     model = PPO.load(model_path, env=vec_env)
     return model
 
-
-def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
+def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True,
+                   halfsplit=False):
     """
     Evaluate the model in the given environment for a number of episodes,
     printing agent's position, reward, and action at every timestep, and summarizing performance.
@@ -136,13 +123,12 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     total_steps = 0
     success_count = 0
     total_collisions = 0
-    
+
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
         done = False
         ep_reward = 0.0
         step_num = 0
-        reached_exit = False
 
         while not done:
             action, _ = model.predict(obs)
@@ -152,16 +138,14 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
-
-            reached_exit = bool(info.get("current_reward") == env.n_rows * env.n_cols)
+            reached_exit = env.agent_reached_exit()
             success_count += int(reached_exit)
 
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
                 print(f"Episode {ep + 1} Step {step_num}: Pos={agent_pos}, Action={action} ({action_dir}), Reward={reward:.2f}")
-                if subrewards:
-                    for name, val in subrewards.items():
-                        print(f"  └─ {name}: {val:.2f}")
+                for name, val in subrewards.items():
+                    print(f"  └─ {name}: {val:.2f}")
 
             if render:
                 env.render_pygame()
@@ -169,7 +153,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             step_num += 1
 
-        total_collisions += info.get("obstacle_hits")
+        total_collisions += info.get("obstacle_hits", 0)
         total_steps += step_num
         total_rewards.append(ep_reward)
 
@@ -196,10 +180,6 @@ def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = Fa
     model = load_model(model_folder, grid_file, is_cnn, reset_kwargs)
     evaluate_model(env=model.get_env().envs[0], model=model, n_eval_episodes=n_eval_episodes,
                    sleep_time=sleep_time, render=render, verbose=verbose)
-
-##==============================================================
-## Utilities for Half-Split Battery Scenarios
-##==============================================================
 
 def get_halfsplit_battery_overrides(grid_path: str) -> dict:
     """
@@ -228,53 +208,13 @@ def get_halfsplit_battery_overrides(grid_path: str) -> dict:
 
     return battery_overrides
 
-def train_halfsplit_model(grid_filename: str, timesteps: int, battery_overrides: dict, is_cnn: bool = False, folder_name=None):
-    """
-    Trains a PPO model using the half-split battery override.
-    """
-    if not folder_name:
-        folder_name = f"{'cnn_' if is_cnn else ''}battery_halfsplit_{grid_filename.replace('.txt','')}"
-    reset_kwargs = {"battery_overrides": battery_overrides}
-
-    model = train_PPO_model(
-        grid_file=grid_filename,
-        timesteps=timesteps,
-        folder_name=folder_name,
-        reset_kwargs=reset_kwargs,
-        is_cnn=is_cnn
-    )
-
-    return folder_name, model
-
-def evaluate_halfsplit_model(folder_name: str, grid_filename: str, battery_overrides: dict,
-                             episodes: int = 3, render: bool = True, verbose: bool = True):
-    """
-    Evaluates a trained PPO model on a half-split battery scenario.
-    Battery overrides must be passed explicitly.
-    """
-    reset_kwargs = {"battery_overrides": battery_overrides}
-    env = GridWorldEnv(grid_file=grid_filename, reset_kwargs=reset_kwargs)
-
-    if verbose:
-        print(f"Evaluating model in '{folder_name}' on grid '{grid_filename}' with battery overrides:")
-        for sensor_pos, battery_level in battery_overrides.items():
-            print(f"  Sensor at {sensor_pos}: battery = {battery_level}")
-
-    load_model_and_evaluate(
-        model_filename=folder_name,
-        grid_file=grid_filename,
-        reset_kwargs=reset_kwargs,
-        n_eval_episodes=episodes,
-        sleep_time=0.1,
-        render=render,
-        verbose=verbose
-    )
-
 def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
     '''
     Very small training for quick testing
     '''
-    junk_folder_name = f"junk_{'cnn_' if is_cnn else ''}{grid_file.replace('.txt','')}"
+    junk_folder_name = grid_file + "__" + "junk"
+    if is_cnn:
+        junk_folder_name += "_cnn"
     timesteps = 500 
     
     model = train_PPO_model(

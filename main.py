@@ -6,8 +6,7 @@ from train import *
 
 def ensure_directories_exist():
     directories = [
-        LOGS["ppo"],
-        MODELS["ppo"],
+        SAVE_DIR,
         FIXED_GRID_DIR
     ]
     for d in directories:
@@ -26,16 +25,11 @@ def main():
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
     train_all_models(1_000_000)
-    #evaluate_all_models(n_eval_episodes=20, render=True)
+    #evaluate_all_models(n_eval_episodes=10000, render=True, verbose=True)
     
 if __name__ == "__main__":
     ensure_directories_exist()
     main()
-
-# talk about setup for tests A-D, including observation space
-# show few graphs from tests, showing how they were a catastrophic failure
-# maybe show vid of crap model?
-# joke about Kush and I putting a shoe on Ademola's daughter
 
     
 

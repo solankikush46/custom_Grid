@@ -39,245 +39,6 @@ def generate_grid(rows: int, cols: int, obstacle_percentage: float,
 
     return filename
 
-def train_model(filename: str, timesteps: int):
-    model_name = os.path.splitext(filename)[0]
-    model = train.train_PPO_model(grid_file=filename,
-                                  timesteps=timesteps,
-                                  folder_name=model_name)
-    eval_env = GridWorldEnv(grid_file=filename)
-    return model, model_name, eval_env
-
-def test_PPO(timesteps: int, rows: int, cols: int):
-    scenarios = [
-        "grid_{rows}x{cols}_15p.txt",
-        "grid_{rows}x{cols}_30p.txt",
-        "mine_{rows}x{cols}.txt",
-    ]
-
-    for template in scenarios:
-        filename = template.format(rows=rows, cols=cols)
-        label = filename.rsplit(".", 1)[0]  # remove .txt (1 means max of 1 split)
-        train.train_PPO_model(filename, timesteps, label)
-
-def train_for_test_battery(timesteps: int):
-    """
-    Train PPO on the battery test grid using train_model helper
-    """
-    grid_filename = "battery_15x8.txt"
-
-    env = GridWorldEnv(grid_file=grid_filename)
-
-    obs, _ = env.reset(battery_overrides={
-        (3, 0): 100.0,   # left sensor full
-        (3, 11): 0.0     # right sensor empty
-    })
-
-    model_name = "battery_test"
-    model = train.train_PPO_model(env, timesteps=timesteps, folder_name=model_name)
-
-    print("\nBattery test training complete.")
-    return model, model_name, env
-
-def test_fixed(filename: str, episodes: int = 10, render: bool = True, verbose: bool = False):
-    """
-    Load a trained model for the specified grid file and evaluate it.
-    If no trained model exists, run evaluation with random actions.
-    """
-    model_name = os.path.splitext(filename)[0]
-    env = GridWorldEnv(grid_file=filename)
-
-    model_path = os.path.join(train.MODELS["ppo"], model_name + ".zip")
-
-    if os.path.exists(model_path):
-        if verbose:
-            print(f"Loading model '{model_name}' for evaluation.")
-        model = PPO.load(model_path, env=DummyVecEnv([lambda: env]))
-        # Evaluate the model
-        train.evaluate_model(env, model, n_eval_episodes=episodes, sleep_time=0.1, render=render, verbose=verbose)
-    else:
-        if verbose:
-            print(f"No trained model found for '{model_name}'. Running random policy evaluation.")
-        # Evaluate random policy
-        total_rewards = []
-        for ep in range(episodes):
-            obs, _ = env.reset()
-            done = False
-            ep_reward = 0.0
-            while not done:
-                action = env.action_space.sample()
-                obs, reward, terminated, truncated, info = env.step(action)
-                ep_reward += reward
-                done = terminated or truncated
-                if render:
-                    env.render_pygame()
-                    time.sleep(0.1)
-            total_rewards.append(ep_reward)
-
-        mean_reward = sum(total_rewards) / episodes
-        std_reward = (sum((r - mean_reward) ** 2 for r in total_rewards) / episodes) ** 0.5
-        print(f"\nRandom policy evaluation over {episodes} episodes:")
-        print(f"Mean reward: {mean_reward:.2f} ± {std_reward:.2f}")
-
-def test_battery():
-    """
-    Load the battery test model and evaluate using helper
-    """
-    grid_filename = "battery_15x8.txt"
-    model_name = "battery_test"
-
-    env = GridWorldEnv(grid_file=grid_filename)
-
-    # override sensor batteries
-    obs, _ = env.reset(battery_overrides={
-        (3, 0): 100.0,   # left sensor full
-        (3, 11): 0.0     # right sensor empty
-    }, agent_override=[6, 7])
-
-    train.load_model_and_evaluate(
-        model_filename=model_name,
-        env=env,
-        n_eval_episodes=1,
-        sleep_time=0.1,
-        render=True,
-        verbose=False
-    )
-
-def test_100x100_no_obstacles(timesteps: int = 5000, episodes: int = 5, render: bool = True, verbose: bool = True):
-    """
-    Generates a 100x100 grid with 0% obstacles, trains PPO, and evaluates it.
-    """
-    # generate grid filename
-    filename = generate_grid(rows=100, cols=100, obstacle_percentage=0.0)
-
-    # train the model
-    if verbose:
-        print(f"\nTraining PPO model on '{filename}' for {timesteps} timesteps...")
-    model, model_name, eval_env = train_model(filename=filename, timesteps=timesteps)
-
-    # evaluate the trained model
-    if verbose:
-        print(f"\nEvaluating trained model '{model_name}' for {episodes} episodes...")
-    train.evaluate_model(
-        env=eval_env,
-        model=model,
-        n_eval_episodes=episodes,
-        sleep_time=0.1,
-        render=render,
-        verbose=verbose
-    )
-
-def test_20x20_battery_override(timesteps: int, episodes: int = 3, render: bool = True, verbose: bool = True):
-    """
-    Loads a fixed 20x20 map, overrides bottom 2 sensor batteries to 0.0, others to 100.0,
-    then trains and evaluates PPO on this scenario.
-    """
-    filename = "mine_20x20.txt"
-    filepath = os.path.join(FIXED_GRID_DIR, filename)
-
-    # --- Step 1: Parse sensor positions from file
-    sensor_positions = []
-    with open(filepath, "r") as f:
-        for r, line in enumerate(f):
-            for c, char in enumerate(line.strip()):
-                if char == "S":
-                    sensor_positions.append((r, c))
-
-    if len(sensor_positions) < 2:
-        raise ValueError("Not enough sensors in the grid to run this test.")
-
-    # Sort by row descending (bottom sensors last)
-    sensor_positions_sorted = sorted(sensor_positions, key=lambda x: x[0], reverse=True)
-
-    # --- Step 2: Build battery override dictionary
-    battery_overrides = {}
-    bottom_two = sensor_positions_sorted[:2]
-    rest = sensor_positions_sorted[2:]
-
-    for pos in bottom_two:
-        battery_overrides[pos] = 0.0
-    for pos in rest:
-        battery_overrides[pos] = 100.0
-
-    if verbose:
-        print("Battery overrides:")
-        for k, v in battery_overrides.items():
-            print(f"  Sensor at {k}: battery = {v}")
-
-    # --- Step 3: Create environment and train
-    env = GridWorldEnv(grid_file=filename)
-    obs, _ = env.reset(battery_overrides=battery_overrides)
-
-    model_name = "battery_override_20x20"
-    model = train.train_PPO_model(grid_file=filename, timesteps=timesteps, folder_name=model_name)
-
-    # --- Step 4: Evaluate using overrides
-    reset_kwargs = {"battery_overrides": battery_overrides}
-
-    train.load_model_and_evaluate(
-        model_filename=model_name,
-        env=env,
-        n_eval_episodes=episodes,
-        sleep_time=0.1,
-        render=render,
-        verbose=verbose,
-        reset_kwargs=reset_kwargs
-    )
-
-def load_and_evaluate_battery_override_model(
-    episodes: int = 3,
-    render: bool = True,
-    verbose: bool = True,
-    sleep_time: float = 0.1
-):
-    """
-    Loads the battery override PPO model created by test_20x20_battery_override,
-    recreates the environment with the same battery overrides, and evaluates the model.
-    """
-
-    filename = "mine_20x20.txt"
-    filepath = os.path.join(FIXED_GRID_DIR, filename)
-
-    # --- Parse sensor positions from file
-    sensor_positions = []
-    with open(filepath, "r") as f:
-        for r, line in enumerate(f):
-            for c, char in enumerate(line.strip()):
-                if char == "S":
-                    sensor_positions.append((r, c))
-
-    if len(sensor_positions) < 2:
-        raise ValueError("Not enough sensors in the grid to run this test.")
-
-    # Sort by row descending (bottom sensors last)
-    sensor_positions_sorted = sorted(sensor_positions, key=lambda x: x[0], reverse=True)
-
-    # Build battery overrides dict
-    battery_overrides = {}
-    bottom_two = sensor_positions_sorted[:2]
-    rest = sensor_positions_sorted[2:]
-
-    for pos in bottom_two:
-        battery_overrides[pos] = 0.0
-    for pos in rest:
-        battery_overrides[pos] = 100.0
-
-    # Create environment
-    env = GridWorldEnv(grid_file=filename)
-
-    # Model name used during training
-    model_name = "battery_override_20x20"
-
-    # Evaluate using train.py helper
-    train.load_model_and_evaluate(
-        model_filename=model_name,
-        env=env,
-        n_eval_episodes=episodes,
-        sleep_time=sleep_time,
-        render=render,
-        verbose=verbose,
-        reset_kwargs={"battery_overrides": battery_overrides}
-    )
-
 def simulate_battery_depletion(grid_file="mine_20x20.txt", max_steps=100_000):
     """
     Simulates environment until all sensor batteries deplete or max_steps is reached.
@@ -328,140 +89,61 @@ def test_observation_space():
     for val, cnt in zip(unique, counts):
         print(f"Value {val:.2f}: {cnt} times")
 
-def test_battery_half_split(grid_filename: str, timesteps: int,
-                            episodes: int = 3, render: bool = True, verbose: bool = True):
-    """
-    Full pipeline: generate battery overrides, train model, and evaluate on the battery half-split scenario.
-    Battery overrides are generated once and passed through.
-    """
-    grid_path = os.path.join(FIXED_GRID_DIR, grid_filename)
-    battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
+    grid_name = experiment_name.split("__")[0] + ".txt"
+    grid_file_path = os.path.join(grid_dir, grid_name)
+    if not os.path.exists(grid_file_path):
+        raise FileNotFoundError(f"Grid file not found: {grid_file_path}")
+    return grid_name
 
-    if verbose:
-        print("Battery overrides for training and evaluation:")
-        for k, v in battery_overrides.items():
-            print(f"  Sensor at {k}: battery = {v}")
+def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose):
+    inferred_grid = best_matching_grid(experiment_name, FIXED_GRID_DIR)
+    grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
 
-    model_name, _ = train.train_halfsplit_model(grid_filename, timesteps, battery_overrides)
-    train.evaluate_halfsplit_model(model_name, grid_filename, battery_overrides,
-                            episodes=episodes, render=render, verbose=verbose)
+    is_cnn = "cnn" in experiment_name.lower()
+    is_halfsplit = "halfsplit" in experiment_name.lower()
 
-def evaluate_halfsplit_model(folder_name: str, grid_filename: str, battery_overrides: dict,
-                            episodes: int = 3, render: bool = True, verbose: bool = True):
-    """
-    Evaluates a trained PPO model on a half-split battery scenario.
-    Battery overrides must be passed explicitly.
-    """
-    reset_kwargs = {"battery_overrides": battery_overrides}
+    print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn}, Halfsplit={is_halfsplit})...")
 
-    if verbose:
-        print(f"Evaluating model '{folder_name}' on grid '{grid_filename}' with battery overrides:")
-        for sensor_pos, battery_level in battery_overrides.items():
-            print(f"  Sensor at {sensor_pos}: battery = {battery_level}")
+    reset_kwargs = {}
+    if is_halfsplit:
+        battery_overrides = get_halfsplit_battery_overrides(grid_file_path)
+        reset_kwargs["battery_overrides"] = battery_overrides
 
-    # The environment will be created internally in load_model (called in load_model_and_evaluate),
-    # so we don't necessarily need to create one here, unless for debug.
-    
-    train.load_model_and_evaluate(
-        model_filename=folder_name,
-        grid_file=grid_filename,
-        reset_kwargs=reset_kwargs,
-        n_eval_episodes=episodes,
-        sleep_time=0.1,
-        render=render,
-        verbose=verbose
-    )
+    model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    env = model.get_env().envs[0]
 
-def test_halfsplit_model(grid_file, episodes):
-    model_name = f"battery_halfsplit_{grid_file.replace('.txt','')}" + "1"
-    grid_path = os.path.join(FIXED_GRID_DIR, grid_file)
-    battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
 
-    train.evaluate_halfsplit_model(
-        folder_name=model_name,
-        grid_filename=grid_file,
-        battery_overrides=battery_overrides,
-        episodes=20,
-        render=True,
-        verbose=True
-    )
-
-def render_halfsplit_models():
-    # Reconstruct battery overrides
-    grid_20 = "mine_20x20.txt"
-    grid_100 = "mine_100x100.txt"
-
-    path_20 = os.path.join(FIXED_GRID_DIR, grid_20)
-    path_100 = os.path.join(FIXED_GRID_DIR, grid_100)
-
-    overrides_20 = train.get_halfsplit_battery_overrides(path_20)
-    overrides_100 = train.get_halfsplit_battery_overrides(path_100)
-
-    # Evaluate the previously saved models
-    train.evaluate_halfsplit_model(
-        folder_name="battery_halfsplit_mine_20x201",
-        grid_filename=grid_20,
-        battery_overrides=overrides_20,
-        episodes=100,
-        render=True,
-        verbose=True
-    )
-
-    '''
-    train.evaluate_halfsplit_model(
-        folder_name="battery_halfsplit_mine_100x100",
-        grid_filename=grid_100,
-        battery_overrides=overrides_100,
-        episodes=5,
-        render=True,
-        verbose=True
-    )
-    '''
-
-def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=20, render=True):
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
     """
-
     def extract_ppo_number(name):
-        parts = name.split('_')
-        return parts[1]
-    
+        try:
+            return int(name.split('_')[-1])
+        except ValueError:
+            return -1
+
     if not os.path.exists(base_dir):
         raise FileNotFoundError(f"Directory {base_dir} not found")
 
     for experiment_name in os.listdir(base_dir):
-        print("Processsing", experiment_name)
         experiment_path = os.path.join(base_dir, experiment_name)
         if not os.path.isdir(experiment_path):
             continue
 
-        for ppo_run in sorted(os.listdir(experiment_path),
-                              key=extract_ppo_number, reverse=True):
-            print("    Processsing", ppo_run)
+        print("Processing", experiment_name)
+
+        for ppo_run in sorted(os.listdir(experiment_path), key=extract_ppo_number, reverse=True):
             ppo_path = os.path.join(experiment_path, ppo_run)
             model_path = os.path.join(ppo_path, "model.zip")
 
             if not os.path.isfile(model_path):
                 continue
 
-            # infer grid filename
-            inferred_grid = experiment_name.split("reward_function")[0].rstrip("_") + ".txt" # need better way of inferring grid
-            grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
-
-            if not os.path.exists(grid_file_path):
-                print(f"Warning: Grid file {grid_file_path} not found. Skipping {ppo_path}")
-                continue
-
-            is_cnn = "cnn" in experiment_name.lower()
-
             try:
-                print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn})...")
-                model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn)
-                env = GridWorldEnv(grid_file=inferred_grid, is_cnn=is_cnn)
-                if is_cnn:
-                    env = CustomGridCNNWrapper(env)
-                train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render)
+                evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
             except Exception as e:
                 print(f"Failed to evaluate {ppo_path}: {e}")
 
@@ -479,6 +161,7 @@ def train_all_models(timesteps: int = 1_000_000):
          #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit", "halfsplit": True},
         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery", "halfsplit": False}
         #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery_cnn", "halfsplit": False}
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_c", "halfsplit": False}
     ]
 
     for config in models_to_train:
@@ -491,15 +174,15 @@ def train_all_models(timesteps: int = 1_000_000):
         if config.get("halfsplit", False):
             battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-        model_name, model = train.train_halfsplit_model(
-            grid_filename=config["grid_file"],
+        model = train.train_PPO_model(
+            grid_file=config["grid_file"],
             timesteps=timesteps,
-            battery_overrides=battery_overrides,
+            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
             is_cnn=config["is_cnn"],
             folder_name=config["model_name"]
         )
-
-        print(f"Finished training {model_name}\n")
+        
+        print(f"Finished training")
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """
