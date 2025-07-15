@@ -24,29 +24,26 @@ def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
                 chebyshev_distance(x0, tx, y0, ty) for tx, ty in targets
             ], dtype=np.float32)
 
-def euclidean_distance(x0, x1, y0, y1):
-    dx = x0 - x1
-    dy = y0 - y1
+def euclidean_distance(x0, x1, y0=None, y1=None):
+    if y0 is None and y1 is None:
+        # Assume (x0, x1) and (y0, y1) are 2D tuples
+        dx = x0[0] - x1[0]
+        dy = x0[1] - x1[1]
+    else:
+        dx = x0 - x1
+        dy = y0 - y1
     return math.sqrt(dx * dx + dy * dy)
 
-def euclidean_distance(pos1, pos2):
-    dx = pos1[0] - pos2[0]
-    dy = pos1[1] - pos2[1]
-    return math.sqrt(dx * dx + dy * dy)
-
-# i should make it so normalize is not passed in,
-# but w and h are set to none by default, and if they are both none
-# then you aren't supposed to normalize, otherwise normalize
-def euclidean_distances(pos, targets, grid_width, grid_height, normalize=True):
-    x0, y0 = pos
+def euclidean_distances(pos, targets, grid_width=None, grid_height=None):
+    normalize = grid_width is not None and grid_height is not None
     if normalize:
-        norm = euclidean_distance(0, grid_width - 1, 0, grid_height - 1)
+        norm = euclidean_distance((0, 0), (grid_width - 1, grid_height - 1))
         return np.array([
-            euclidean_distance(x0, tx, y0, ty) / norm for tx, ty in targets
+            euclidean_distance(pos, target) / norm for target in targets
         ], dtype=np.float32)
     else:
         return np.array([
-            euclidean_distance(x0, tx, y0, ty) for tx, ty in targets
+            euclidean_distance(pos, target) for target in targets
         ], dtype=np.float32)
 
 def load_obstacles_from_file(filename="obstacle_coords.txt"):

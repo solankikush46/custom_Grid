@@ -25,7 +25,7 @@ def main():
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
     train_all_models(1_000_000)
-    #evaluate_all_models(n_eval_episodes=1000, render=False)
+    #evaluate_all_models(n_eval_episodes=10000, render=True, verbose=True)
     
 if __name__ == "__main__":
     ensure_directories_exist()
