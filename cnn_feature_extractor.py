@@ -58,6 +58,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.ReLU(),
             nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
+            )
             '''
             self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 4, kernel_size=3, stride=2, padding=1),
@@ -68,8 +69,8 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.ReLU(),
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
-            '''
             )
+            '''
             
         elif grid_file and "100x100" in grid_file:
             self.mode = "large"
