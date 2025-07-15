@@ -135,7 +135,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             agent_pos = info.get('agent_pos', None)
             subrewards = info.get('subrewards', {})
-            reached_exit = bool(info.get("current_reward") == env.n_rows * env.n_cols)
+            reached_exit = env.agent_reached_exit()
             success_count += int(reached_exit)
 
             if verbose:

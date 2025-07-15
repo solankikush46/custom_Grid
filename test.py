@@ -96,7 +96,7 @@ def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
         raise FileNotFoundError(f"Grid file not found: {grid_file_path}")
     return grid_name
 
-def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render):
+def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose):
     inferred_grid = best_matching_grid(experiment_name, FIXED_GRID_DIR)
     grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
 
@@ -113,9 +113,9 @@ def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render):
     model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     env = model.get_env().envs[0]
 
-    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit)
+    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
 
-def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
     """
@@ -143,7 +143,7 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True):
                 continue
 
             try:
-                evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render)
+                evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
             except Exception as e:
                 print(f"Failed to evaluate {ppo_path}: {e}")
 

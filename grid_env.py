@@ -430,10 +430,16 @@ class GridWorldEnv(Env):
             self.clock.tick(self.render_fps) # use default render_fps
        
     def get_sensor_distances(self, pos, normalize=True):
-        return chebyshev_distances(pos, list(self.sensor_batteries.keys()), self.n_cols, self.n_rows, normalize)
+        if normalize:
+            return euclidean_distances(pos, list(self.sensor_batteries.keys()), self.n_cols, self.n_rows)
+        else:
+            return euclidean_distances(pos, list(self.sensor_batteries.keys()))
 
     def get_exit_distances(self, normalize=True):
-        return chebyshev_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows, normalize)
+        if normalize:
+            return euclidean_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows)
+        else:
+            return euclidean_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows)
 
     def get_observation(self):
         if self.is_cnn:
@@ -741,12 +747,11 @@ class GridWorldEnv(Env):
     def _compute_min_distance_to_goal(self):
         if not self.goal_positions:
             return 0
-        distances = chebyshev_distances(
+        distances = euclidean_distances(
             self.agent_pos,
             self.goal_positions,
             self.n_cols,
-            self.n_rows,
-            normalize=True
+            self.n_rows
         )
         return min(distances)
     
