@@ -177,7 +177,7 @@ class GridWorldEnv(Env):
                  grid_width: int = None,
                  obstacle_percentage=None,
                  n_sensors=None, reset_kwargs={},
-                 is_cnn=False
+                 is_cnn=False, battery_truncation=False
                  ):
         super(GridWorldEnv, self).__init__()
         print("Created GridWorldEnv instance")
@@ -191,6 +191,7 @@ class GridWorldEnv(Env):
         self.max_steps = 500
         self.reset_kwargs = reset_kwargs
         self.is_cnn = is_cnn
+        self.battery_truncation = battery_truncation
 
         # pygame rendering
         self.pygame_initialized = False
@@ -558,8 +559,9 @@ class GridWorldEnv(Env):
         self._update_sensor_batteries()
         self._move_miners_and_update_sensors()
 
-        terminated = self.agent_reached_exit() or self.current_battery_level <= 10
-        truncated = self.episode_steps >= self.max_steps
+        terminated = self.agent_reached_exit()
+        truncated = self.episode_steps >= self.max_steps or \
+            (self.battery_termination and self.current_battery_level <= 10)
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
 
