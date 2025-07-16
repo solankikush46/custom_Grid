@@ -201,7 +201,6 @@ class GridWorldEnv(Env):
                  is_cnn=False, battery_truncation=False
                  ):
         super(GridWorldEnv, self).__init__()
-        print("Created GridWorldEnv instance")
 
         ##=============== member variables ===============##
         # grid config

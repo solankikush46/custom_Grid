@@ -98,7 +98,6 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     """
     print("experiment_folder", experiment_folder)
     model_path = os.path.join(experiment_folder, "model")
-    print("model_path", model_path)
 
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
