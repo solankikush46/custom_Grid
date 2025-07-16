@@ -44,7 +44,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim)
         self.grid_file = grid_file
         n_input_channels, height, width = observation_space.shape
-        if grid_file and "20x20" in grid_file or "30x30" in grid_file:
+        if grid_file and "20x20" in grid_file:
             self.mode = "small"
             
             self.cnn = nn.Sequential(
@@ -76,24 +76,35 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             self.mode = "large"
             # Define layers for 100x100
             self.cnn = nn.Sequential(
-                nn.Conv2d(4, 8, kernel_size=3, stride=2, padding=1),     # 4 × 100 × 100 → 8 × 50 × 50
+                nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1),     # 4 × 100 × 100 → 8 × 50 × 50
                 nn.ReLU(),
-                nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),    # 8 × 50 × 50 → 16 × 25 × 25
+                nn.Conv2d(10, 20, kernel_size=3, stride=2, padding=1),    # 8 × 50 × 50 → 16 × 25 × 25
                 nn.ReLU(),
-                nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),   # 16 × 25 × 25 → 32 × 13 × 13
+                nn.Conv2d(20, 40, kernel_size=3, stride=2, padding=1),   # 16 × 25 × 25 → 32 × 13 × 13
                 nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),   # 32 × 13 × 13 → 64 × 7 × 7
+                nn.Conv2d(40, 80, kernel_size=3, stride=2, padding=1),   # 32 × 13 × 13 → 64 × 7 × 7
                 nn.ReLU(),
-                nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # 64 × 7 × 7 → 128 × 4 × 4
-                nn.ReLU(),
-                nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # 128 × 4 × 4 → 256 × 2 × 2
-                nn.ReLU(),
-                nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1), # 256 × 2 × 2 → 512 × 1 × 1
+                nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),  # 64 × 7 × 7 → 128 × 4 × 4
                 nn.ReLU()
             )
-            # Define linear layer etc. for large
-        
-        
+        elif grid_file and "50x50" in grid_file:
+            self.mode = "custom-50x50"
+            self.cnn = nn.Sequential(
+                nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),    # (16, 25, 25) ≈ 80%
+                nn.ReLU(),
+                nn.Conv2d(16, 12, kernel_size=3, stride=1, padding=1),   # (12, 25, 25) ≈ 60%
+                nn.ReLU(),
+                nn.Conv2d(12, 38, kernel_size=3, stride=2, padding=1),   # (38, 13, 13) ≈ 50%
+                nn.ReLU(),
+                nn.Conv2d(38, 30, kernel_size=3, stride=1, padding=1),   # (30, 13, 13) ≈ 40%
+                nn.ReLU(),
+                nn.Conv2d(30, 77, kernel_size=3, stride=2, padding=1),   # (77, 7, 7) ≈ 30%
+                nn.ReLU(),
+                nn.Conv2d(77, 117, kernel_size=3, stride=2, padding=1),  # (117, 4, 4) ≈ 15%
+                nn.ReLU(),
+                nn.Conv2d(117, 313, kernel_size=3, stride=2, padding=1), # (313, 2, 2) ≈ 10%
+                nn.ReLU()
+            )
         
         else:
             raise ValueError("Unknown grid size in filename!")
