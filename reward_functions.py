@@ -168,8 +168,8 @@ def get_reward_e(env, new_pos):
     w_invalid = 0.75
     w_revisit = 0.25
     w_dist = 2.0
-    w_battery = 1.0
-    k_soft = 5.0  # sigmoid sharpness
+    w_battery = 10
+    k_soft = 6.0  # sigmoid sharpness
     battery_threshold = 10
 
     def sigmoid(x):
@@ -184,11 +184,11 @@ def get_reward_e(env, new_pos):
             "distance_penalty": 0.0
         }
     else:
-        # Distance shaping (0–1 normalized)
+        # distance penalty (0–1 normalized)
         dist = env._compute_min_distance_to_goal()
-        dist_pen = -w_dist * sigmoid(dist)
+        dist_pen = -w_dist * dist
 
-        # Battery shaping
+        # sigmoid battery_penalty
         b = env.current_battery_level
         bat_pen = -w_battery * sigmoid((battery_threshold - b) / battery_threshold)
 
@@ -260,4 +260,4 @@ def f_exit(agent_pos, goal_positions, battery_values_in_radar):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_d(env, new_pos)
+    return get_reward_e(env, new_pos)
