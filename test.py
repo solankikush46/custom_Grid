@@ -142,9 +142,6 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
             if not os.path.isfile(model_path):
                 continue
 
-            if not "reward_d" in ppo_path:
-                continue
-
             evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
 
 def train_all_models(timesteps: int = 1_000_000):
