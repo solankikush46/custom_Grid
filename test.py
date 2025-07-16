@@ -152,30 +152,34 @@ def train_all_models(timesteps: int = 1_000_000):
     models_to_train = [
          #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_d", "halfsplit": False},
         #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_d", "halfsplit": False},
-        {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_d", "halfsplit": False},
+        # {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_d", "halfsplit": False},
          {"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "c_30x30__reward_d", "halfsplit": False},
     ]
 
     for config in models_to_train:
-        print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (CNN={config['is_cnn']})")
+        try:
+            print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (CNN={config['is_cnn']})")
 
-        grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
+            grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
 
-        # compute battery overrides only if halfsplit flag is True
-        battery_overrides = {}
-        if config.get("halfsplit", False):
-            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+            # compute battery overrides only if halfsplit flag is True
+            battery_overrides = {}
+            if config.get("halfsplit", False):
+                battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-        model = train.train_PPO_model(
-            grid_file=config["grid_file"],
-            timesteps=timesteps,
-            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-            is_cnn=config["is_cnn"],
-            folder_name=config["model_name"],
-            battery_truncation=True
-        )
+            model = train.train_PPO_model(
+                grid_file=config["grid_file"],
+                timesteps=timesteps,
+                reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
+                is_cnn=config["is_cnn"],
+                folder_name=config["model_name"],
+                battery_truncation=True
+            )
         
-        print(f"Finished training")
+            print(f"Finished training")
+            
+        except Exception as e:
+            print(f"Failed to train {config['model_name']} on {config['grid_file']}: {e}")
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """
