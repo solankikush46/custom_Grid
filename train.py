@@ -120,6 +120,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     total_steps = 0
     success_count = 0
     total_collisions = 0
+    total_revisits = 0
 
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
@@ -151,6 +152,9 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
             step_num += 1
 
         total_collisions += info.get("obstacle_hits", 0)
+        total_revisits += info.get("revisit_count", 0)
+        avg_bat = info.get("average_battery_level")
+        
         total_steps += step_num
         total_rewards.append(ep_reward)
 
@@ -161,13 +165,16 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     success_rate = success_count / n_eval_episodes
     mean_col = total_collisions / n_eval_episodes
     avg_steps = total_steps / n_eval_episodes
+    avg_rev = total_revisits / n_eval_episodes
 
     print("\n=== Evaluation Summary ===")
     print(f"Total Episodes: {n_eval_episodes}")
     print(f"Reached Exit: {success_count}/{n_eval_episodes} ({success_rate:.1%})")
-    print(f"Mean Reward: {mean_reward:.2f}")
-    print(f"Mean Obstacle Hits: {mean_col:.2f}")
-    print(f"Average Steps per Episode: {avg_steps:.1f}")
+    print(f"Mean Reward per Episode: {mean_reward:.2f}")
+    print(f"Mean Obstacle Hits per Episode: {mean_col:.2f}")
+    print(f"Mean Steps per Episode: {avg_steps:.1f}")
+    print(f"Mean Revisits per Episode: {avg_rev:.1f}")
+    print(f"Mean Battery Level per Episode: {avg_bat:.1f}")
 
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):

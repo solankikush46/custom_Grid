@@ -26,14 +26,14 @@ tensorboard tb:
 	pkill tensorboard || true
 	source venv/bin/activate && \
 	tensorboard --logdir saved_experiments --port 6006 & \
-	sleep 2 && \
+	sleep 4 && \
 	xdg-open http://localhost:6006/
 
 tensorboard tb_old:
 	pkill tensorboard || true
 	source venv/bin/activate && \
 	tensorboard --logdir old_experiments --port 6006 & \
-	sleep 2 && \
+	sleep 4 && \
 	xdg-open http://localhost:6006/
 
 archive_experiments ae:

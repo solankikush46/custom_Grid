@@ -100,7 +100,7 @@ class CustomTensorboardCallback(BaseCallback):
             episode_keys = [
                 "cumulative_reward", "obstacle_hits",
                 "visited_count", "average_battery_level",
-                "episode_length"
+                "episode_length", "revisit_count"
             ]
 
             timestep_data = {k: flat_info.get(k) for k in timestep_keys if k in flat_info}
@@ -514,6 +514,7 @@ class GridWorldEnv(Env):
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
+        self.episode_revisits = 0
         self.battery_levels_during_episode = []
 
         # place agent
@@ -575,7 +576,10 @@ class GridWorldEnv(Env):
     def _compute_reward_and_update(self, new_pos):
         reward, subrewards = compute_reward(self, new_pos)
         self.total_reward += reward
-        self.visited.add(tuple(new_pos))
+        new_pos = tuple(new_pos)
+        if new_pos in self.visited:
+            self.episode_revisits += 1
+        self.visited.add(new_pos)
         return reward, subrewards
 
     def _update_agent_position(self, new_pos):
@@ -623,7 +627,8 @@ class GridWorldEnv(Env):
             "terminated": terminated,
             "truncated": truncated,
             "subrewards": subrewards,
-            "sensor_batteries": dict(self.sensor_batteries)
+            "sensor_batteries": dict(self.sensor_batteries),
+            "revisit_count": self.episode_revisits
         }
         if terminated or truncated:
             avg_battery = (

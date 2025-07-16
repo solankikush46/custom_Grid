@@ -131,21 +131,19 @@ def get_reward_c(env, new_pos):
 
 def get_reward_d(env, new_pos):
     '''
-    reward c but with distance penalty
+    reward c but with distance penalty, and no time penalty
     '''
     if new_pos in env.goal_positions:
         subrewards = {
             "goal_reward": 1.0,
             "invalid_penalty": 0.0,
             "revisit_penalty": 0.0,
-            "time_penalty": 0.0,
             "battery_penalty": 0.0,
             "distance_penalty": 0.0
         }
     else:
         inval_pen = -0.75 if not env.can_move_to(new_pos) else 0.0
         rev_pen = -0.25 if new_pos in env.visited else 0.0
-        t_pen = -0.04
         bat_pen = -1.0 if env.current_battery_level <= 10 else 0.0
         dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclid distance to closest goal
 
@@ -153,7 +151,6 @@ def get_reward_d(env, new_pos):
             "goal_reward": 0.0,
             "invalid_penalty": inval_pen,
             "revisit_penalty": rev_pen,
-            "time_penalty": t_pen,
             "battery_penalty": bat_pen,
             "distance_penalty": dist_pen
         }
