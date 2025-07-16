@@ -44,7 +44,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim)
         self.grid_file = grid_file
         n_input_channels, height, width = observation_space.shape
-        if grid_file and "20x20" in grid_file:
+        if grid_file and "20x20" in grid_file or "30x30" in grid_file:
             self.mode = "small"
             
             self.cnn = nn.Sequential(
@@ -92,6 +92,9 @@ class GridCNNExtractor(BaseFeaturesExtractor):
                 nn.ReLU()
             )
             # Define linear layer etc. for large
+        
+        
+        
         else:
             raise ValueError("Unknown grid size in filename!")
 

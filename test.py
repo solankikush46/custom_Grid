@@ -91,6 +91,7 @@ def test_observation_space():
 
 def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
     grid_name = experiment_name.split("__")[0] + ".txt"
+    print(grid_name)
     grid_file_path = os.path.join(grid_dir, grid_name)
     if not os.path.exists(grid_file_path):
         raise FileNotFoundError(f"Grid file not found: {grid_file_path}")
@@ -150,24 +151,10 @@ def train_all_models(timesteps: int = 1_000_000):
     specified
     """
     models_to_train = [
-<<<<<<< HEAD
-        # {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20", "halfsplit": True},
-        # {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100", "halfsplit": True},
-        #{"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "mine_100x100_battery_cnn", "halfsplit": False},
-        #{"grid_file": "mine_20x20.txt", "is_cnn": True,  "model_name": "cnn_battery_halfsplit_mine_20x20", "halfsplit": True},
-        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent", "halfsplit": False},
-         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_higher_ent_halfsplit", "halfsplit": True},
-        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery", "halfsplit": False}
-        #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20_reward_function_b_lower_ent_large_battery_cnn", "halfsplit": False}
-        #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_c", "halfsplit": False}
-        #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn_2_channels", "halfsplit": False}
-        {"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn_5_channels", "halfsplit": False}
-=======
-         #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_d", "halfsplit": False},
-        #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_d", "halfsplit": False},
-        # {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_d", "halfsplit": False},
-         {"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
->>>>>>> origin/main
+        #{"grid_file": "a_30x30.txt", "is_cnn": True, "model_name": "a_30x30__reward_d_cnn", "halfsplit": False},
+        {"grid_file": "b_30x30.txt", "is_cnn": True, "model_name": "b_30x30__reward_d_cnn", "halfsplit": False},
+        {"grid_file": "c_30x30.txt", "is_cnn": True, "model_name": "c_30x30__reward_d_cnn", "halfsplit": False},
+         #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
     ]
 
     for config in models_to_train:
