@@ -142,10 +142,7 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
             if not os.path.isfile(model_path):
                 continue
 
-            try:
-                evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
-            except Exception as e:
-                print(f"Failed to evaluate {ppo_path}: {e}")
+            evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
 
 def train_all_models(timesteps: int = 1_000_000):
     """
@@ -153,6 +150,7 @@ def train_all_models(timesteps: int = 1_000_000):
     specified
     """
     models_to_train = [
+<<<<<<< HEAD
         # {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_20x20", "halfsplit": True},
         # {"grid_file": "mine_100x100.txt", "is_cnn": False, "model_name": "battery_halfsplit_mine_100x100", "halfsplit": True},
         #{"grid_file": "mine_100x100.txt", "is_cnn": True,  "model_name": "mine_100x100_battery_cnn", "halfsplit": False},
@@ -164,27 +162,38 @@ def train_all_models(timesteps: int = 1_000_000):
         #{"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_c", "halfsplit": False}
         #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn_2_channels", "halfsplit": False}
         {"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_c_cnn_5_channels", "halfsplit": False}
+=======
+         #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_d", "halfsplit": False},
+        #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_d", "halfsplit": False},
+        # {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_d", "halfsplit": False},
+         {"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
+>>>>>>> origin/main
     ]
 
     for config in models_to_train:
-        print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (CNN={config['is_cnn']})")
+        try:
+            print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (CNN={config['is_cnn']})")
 
-        grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
+            grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
 
-        # compute battery overrides only if halfsplit flag is True
-        battery_overrides = {}
-        if config.get("halfsplit", False):
-            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+            # compute battery overrides only if halfsplit flag is True
+            battery_overrides = {}
+            if config.get("halfsplit", False):
+                battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-        model = train.train_PPO_model(
-            grid_file=config["grid_file"],
-            timesteps=timesteps,
-            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-            is_cnn=config["is_cnn"],
-            folder_name=config["model_name"]
-        )
+            model = train.train_PPO_model(
+                grid_file=config["grid_file"],
+                timesteps=timesteps,
+                reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
+                is_cnn=config["is_cnn"],
+                folder_name=config["model_name"],
+                battery_truncation=True
+            )
         
-        print(f"Finished training")
+            print(f"Finished training")
+            
+        except Exception as e:
+            print(f"Failed to train {config['model_name']} on {config['grid_file']}: {e}")
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """

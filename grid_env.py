@@ -42,6 +42,9 @@ class CustomTensorboardCallback(BaseCallback):
         self.sensor_battery_csv_file = None
         self.sensor_battery_csv_writer = None
         self.sensor_battery_fieldnames = []
+
+        # file to save non-line graph data
+        self.txt = None
         
         self.verbose = verbose
 
@@ -58,6 +61,10 @@ class CustomTensorboardCallback(BaseCallback):
         self.episode_csv_file = open(self.episode_csv_path, "w", newline="")
         self.subrewards_csv_file = open(self.subrewards_csv_path, "w", newline="")
         self.sensor_battery_csv_file = open(self.sensor_battery_csv_path, "w", newline="")
+
+        self.txt_path = os.path.join(log_dir, "log.txt")
+        self.txt_file = open(self.txt_path, "w")
+        self.success_count = 0
 
         if self.verbose > 0:
             print(f"Timestep CSV logging to: {self.timestep_csv_path}")
@@ -93,7 +100,7 @@ class CustomTensorboardCallback(BaseCallback):
             episode_keys = [
                 "cumulative_reward", "obstacle_hits",
                 "visited_count", "average_battery_level",
-                "episode_length"
+                "episode_length", "revisit_count"
             ]
 
             timestep_data = {k: flat_info.get(k) for k in timestep_keys if k in flat_info}
@@ -139,6 +146,15 @@ class CustomTensorboardCallback(BaseCallback):
                     
                 self.episode_csv_writer.writerow(episode_row)
 
+                reached_exit = flat_info.get("terminated")
+                self.success_count += int(reached_exit)
+
+                # log to txt
+                success_ratio = self.success_count / self.episode_count
+                if self.txt_file:
+                    self.txt_file.write(f"Episode {self.episode_count}: Success Ratio = {success_ratio:.2%}\n")
+                    self.txt_file.flush()
+
             sensor_battery_snapshot = info.get("sensor_batteries")
             if sensor_battery_snapshot:
                 if not self.sensor_battery_fieldnames:
@@ -152,7 +168,7 @@ class CustomTensorboardCallback(BaseCallback):
                 # Write battery values in sorted sensor position order
                 row = {str(k): sensor_battery_snapshot[k] for k in sorted(sensor_battery_snapshot.keys())}
                 self.sensor_battery_csv_writer.writerow(row)
-
+            
         return True
 
     def _on_training_end(self) -> None:
@@ -167,6 +183,11 @@ class CustomTensorboardCallback(BaseCallback):
                 if self.verbose > 0:
                     print(f"Closed CSV: {f[1]}")
 
+        if self.txt_file:
+            self.txt_file.close()
+            if self.verbose > 0:
+                print(f"Closed TXT: {self.txt_path}")
+
 ##==============================================================
 ## GridWorldEnv Class
 ##==============================================================
@@ -180,7 +201,6 @@ class GridWorldEnv(Env):
                  is_cnn=False, battery_truncation=False
                  ):
         super(GridWorldEnv, self).__init__()
-        print("Created GridWorldEnv instance")
 
         ##=============== member variables ===============##
         # grid config
@@ -296,15 +316,6 @@ class GridWorldEnv(Env):
                                              self.n_rows,
                                              self.n_cols,
                                              radius=2)
-
-    '''
-    def _init_radar_zone(self):
-        self.sensor_radar_zone = grid_gen.compute_sensor_radar_zone(
-            self.sensor_batteries.keys(),
-            self.n_rows,
-            self.n_cols
-        )
-    '''
         
     def is_empty(self, pos):
         return self.static_grid[pos[0], pos[1]] == EMPTY
@@ -370,15 +381,6 @@ class GridWorldEnv(Env):
                 if self.can_move_to((row, col)):
                     grid_copy[row, col] = TRAIL_OUTSIDE  # trail outside radar (yellow)
 
-        '''
-        # Update agent position
-        row, col = self.agent_pos
-        if tuple(self.agent_pos) in self.goal_positions:
-            grid_copy[row, col] = FINISHED
-        else:
-            grid_copy[row, col] = AGENT
-        '''
-
         # Draw each cell
         for row in range(self.n_rows):
             for col in range(self.n_cols):
@@ -387,11 +389,7 @@ class GridWorldEnv(Env):
                 # Always start by painting the cell white
                 pygame.draw.rect(screen, colors[EMPTY], (col * cell_size, row * cell_size, cell_size, cell_size))
 
-                '''
-                # Then radar zone (orange) if applicable (and not obstacle)
-                if (row, col) in self.sensor_radar_zone and self.static_grid[row, col] != '#':
-                    pygame.draw.rect(screen, colors[RADAR_BG], (col * cell_size, row * cell_size, cell_size, cell_size))
-                '''
+    
                 
                 # Then foreground item (trail, agent, goal, etc.)
                 if val != EMPTY:
@@ -579,6 +577,7 @@ class GridWorldEnv(Env):
         self.episode_steps = 0
         self.total_reward = 0
         self.obstacle_hits = 0
+        self.episode_revisits = 0
         self.battery_levels_during_episode = []
 
         # place agent
@@ -624,10 +623,10 @@ class GridWorldEnv(Env):
         new_pos = self.agent_pos + move
         self.episode_steps += 1
 
-        reward, subrewards = self._compute_reward_and_update(new_pos)
-        self._update_agent_position(new_pos)
         self._update_sensor_batteries()
+        self._update_agent_position(new_pos)
         self._move_miners_and_update_sensors()
+        reward, subrewards = self._compute_reward_and_update(new_pos)
 
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps or \
@@ -640,7 +639,10 @@ class GridWorldEnv(Env):
     def _compute_reward_and_update(self, new_pos):
         reward, subrewards = compute_reward(self, new_pos)
         self.total_reward += reward
-        self.visited.add(tuple(new_pos))
+        new_pos = tuple(new_pos)
+        if new_pos in self.visited:
+            self.episode_revisits += 1
+        self.visited.add(new_pos)
         return reward, subrewards
 
     def _update_agent_position(self, new_pos):
@@ -688,7 +690,8 @@ class GridWorldEnv(Env):
             "terminated": terminated,
             "truncated": truncated,
             "subrewards": subrewards,
-            "sensor_batteries": dict(self.sensor_batteries)
+            "sensor_batteries": dict(self.sensor_batteries),
+            "revisit_count": self.episode_revisits
         }
         if terminated or truncated:
             avg_battery = (

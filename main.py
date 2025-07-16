@@ -24,8 +24,13 @@ def main():
     #train_quick_junk_model("mine_20x20.txt")
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
+<<<<<<< HEAD
     #train_all_models(1_000_000)
     evaluate_all_models(n_eval_episodes=10000, render=False, verbose=False)
+=======
+    #train_all_models(2_000_000)
+    evaluate_all_models(n_eval_episodes=100_000, render=False, verbose=False)
+>>>>>>> origin/main
     
 if __name__ == "__main__":
     ensure_directories_exist()
