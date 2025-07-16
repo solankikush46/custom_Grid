@@ -13,7 +13,7 @@ def ensure_directories_exist():
         os.makedirs(d, exist_ok=True)
 
 def main():
-    test_manual_control("a_50x50.txt")
+    #test_manual_control("a_50x50.txt")
     #generate_all_plots(rolling_window=50_000)
     #test_PPO(10_000, 20, 20)
     #test_PPO(300_000, 100, 100)
