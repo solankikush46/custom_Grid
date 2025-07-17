@@ -63,6 +63,7 @@ def train_PPO_model(grid_file: str,
         tensorboard_log=base_log_path,
         verbose=1,
         policy_kwargs= policy_kwargs
+    )
 
     callback = CustomTensorboardCallback()
 
