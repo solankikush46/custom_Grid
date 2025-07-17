@@ -295,6 +295,7 @@ class GridWorldEnv(Env):
             )
             
         else:
+            
             # [0, 7] - space around agent
             # [8, 9] - agent r, c
             # [10] - last action
@@ -309,7 +310,7 @@ class GridWorldEnv(Env):
                 shape=(obs_dim, ),
                 dtype=np.float32
             )
-        
+            
     def _get_goal_exclusion_zone(self):
         # goal is not placed in sensor radar range???
         return grid_gen.get_safe_zone_around(self.goal_positions,
@@ -546,6 +547,7 @@ class GridWorldEnv(Env):
             )
 
             return np.concatenate([blocked_flags, norm_pos, [last_action], [dist_to_goal], battery_levels])
+
 
     def reset(self, seed=None, options = None):
         """

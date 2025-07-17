@@ -49,7 +49,7 @@ def train_PPO_model(grid_file: str,
         }
 
     model = PPO(
-        policy="MlpPolicy",
+        policy="CnnPolicy",
         env=vec_env,
         ent_coef=0.1, #0.5,
         gae_lambda=0.90,
@@ -62,8 +62,7 @@ def train_PPO_model(grid_file: str,
         clip_range_vf=0.5,
         tensorboard_log=base_log_path,
         verbose=1,
-        policy_kwargs=policy_kwargs
-    )
+        policy_kwargs= policy_kwargs
 
     callback = CustomTensorboardCallback()
 
