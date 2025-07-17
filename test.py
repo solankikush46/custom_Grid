@@ -159,7 +159,7 @@ def train_all_models(timesteps: int = 1_000_000):
     specified
     """
     models_to_train = [
-        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "a_30x30__reward_e", "halfsplit": False},
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "mine_20x20__reward_e", "halfsplit": False},
          {"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_e", "halfsplit": False},
         {"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_e", "halfsplit": False},
         {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_e", "halfsplit": False},

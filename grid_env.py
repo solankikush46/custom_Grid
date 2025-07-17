@@ -222,7 +222,7 @@ class GridWorldEnv(Env):
         self.screen = None
         self.font = None
         self.clock = None
-        self.render_fps = 5
+        self.render_fps = 30
 
         # environment state variables
         self.grid = self.static_grid.copy()
@@ -425,7 +425,7 @@ class GridWorldEnv(Env):
                     exit()
 
         if uncap_fps:
-            self.clock.tick(15)
+            self.clock.tick(60)
         else:
             self.clock.tick(self.render_fps) # use default render_fps
        
