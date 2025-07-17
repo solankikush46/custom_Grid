@@ -168,7 +168,7 @@ def get_reward_e(env, new_pos):
     w_invalid = 0.75
     w_revisit = 0.25
     w_dist = 2.0
-    w_battery = 10
+    w_battery = 5 # was 10
     k_soft = 6.0  # sigmoid sharpness
     battery_threshold = 10
 
@@ -205,58 +205,6 @@ def get_reward_e(env, new_pos):
 
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
-
-# composite reward
-#-----------------------
-def f_distance(agent_pos, goal_positions, n_rows, n_cols):
-    '''
-    Reward based on distance from agent to closest exit
-    '''
-    distances = chebyshev_distances(agent_pos, goal_positions, n_cols, n_rows, normalize=False)
-    d_min = min(distances)
-    norm = max(n_rows - 1, n_cols - 1)
-    return np.exp(-d_min / norm)
-
-
-def f_wall(n_collisions, n_steps):
-    '''
-    Reward that penalizes agent for colliding with walls
-    '''
-    if n_steps == 0:
-        return 1.0
-    return np.exp(-n_collisions / n_steps)
-
-
-def f_battery(agent_pos, sensor_batteries, n_cols, n_rows):
-    '''
-    Reward that is based off the battery level of the nearest sensor
-    (motivates agent to go along high-battery level paths)
-    '''
-    sensor_coords = list(sensor_batteries.keys())
-    if not sensor_coords:
-        return 0.0
-
-    distances = chebyshev_distances(agent_pos, sensor_coords, n_cols, n_rows, normalize=False)
-    nearest_index = int(np.argmin(distances))
-    nearest_sensor = sensor_coords[nearest_index]
-    battery_level = sensor_batteries.get(nearest_sensor, 0.0)
-    return battery_level / 100
-
-
-def f_exit(agent_pos, goal_positions, battery_values_in_radar):
-    '''
-    Hard positive reward for when the agent reaches an exit
-    (influenced by avg battery level along path travelled by agent
-    to reach the exit)
-    '''
-    if tuple(agent_pos) in goal_positions:
-        if battery_values_in_radar:
-            average_battery = sum(battery_values_in_radar) / len(battery_values_in_radar)
-            return average_battery
-        else:
-            return 0.0
-    else:
-        return 0.0
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
