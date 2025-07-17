@@ -308,3 +308,32 @@ def load_grid(filename):
                 base_station_positions.append((r, c))
 
     return grid, agent_pos, goal_positions, sensor_batteries, base_station_positions
+
+def generate_random_grid(n_rows=20, n_cols=20, obstacle_pct=0.15, seed=None):
+    """
+    Generates a random grid with the specified number of rows and columns,
+    and randomly places obstacles (#) to match the given obstacle percentage.
+
+    Returns a list of strings, each representing a row.
+    """
+    if seed is not None:
+        random.seed(seed)
+
+    total_cells = n_rows * n_cols
+    num_obstacles = int(total_cells * obstacle_pct)
+
+    # Start with all empty cells
+    grid = [['.' for _ in range(n_cols)] for _ in range(n_rows)]
+
+    # Randomly place obstacles
+    available_positions = [(r, c) for r in range(n_rows) for c in range(n_cols)]
+    obstacle_positions = random.sample(available_positions, num_obstacles)
+    for r, c in obstacle_positions:
+        grid[r][c] = '#'
+
+    # Convert each row to a string
+    return [''.join(row) for row in grid]
+
+random_grid = generate_random_grid(100, 100, obstacle_pct=0.10)
+for row in random_grid:
+    print(row)
