@@ -46,7 +46,26 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         n_input_channels, height, width = observation_space.shape
         if grid_file and "20x20" in grid_file:
             self.mode = "small"
+
+            self.cnn = nn.Sequential(
+            # Input: (5, 20, 20)
+            nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),   # (16, 10, 10) ~80%
+            nn.ReLU(),
+            nn.Conv2d(16, 12, kernel_size=3, stride=1, padding=1),  # (12, 10, 10) ~60%
+            nn.ReLU(),
+            nn.Conv2d(12, 24, kernel_size=3, stride=2, padding=1),  # (24, 5, 5)  ~50%
+            nn.ReLU(),
+            nn.Conv2d(24, 18, kernel_size=3, stride=1, padding=1),  # (18, 5, 5)  ~40%
+            nn.ReLU(),
+            nn.Conv2d(18, 36, kernel_size=3, stride=2, padding=1),  # (36, 3, 3)  ~30%
+            nn.ReLU(),
+            nn.Conv2d(36, 60, kernel_size=3, stride=1, padding=1),  # (60, 3, 3)  ~15%
+            nn.ReLU(),
+            nn.Conv2d(60, 100, kernel_size=3, stride=2, padding=1), # (100, 2, 2) ~10%
+            nn.ReLU()
+            )
             
+            '''
             self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
@@ -59,6 +78,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
             )
+            '''
             '''
             self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 4, kernel_size=3, stride=2, padding=1),
@@ -89,6 +109,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             )
         elif grid_file and "50x50" in grid_file:
             self.mode = "custom-50x50"
+            '''
             self.cnn = nn.Sequential(
                 nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),    # (16, 25, 25) ≈ 80%
                 nn.ReLU(),
@@ -103,6 +124,19 @@ class GridCNNExtractor(BaseFeaturesExtractor):
                 nn.Conv2d(77, 117, kernel_size=3, stride=2, padding=1),  # (117, 4, 4) ≈ 15%
                 nn.ReLU(),
                 nn.Conv2d(117, 313, kernel_size=3, stride=2, padding=1), # (313, 2, 2) ≈ 10%
+                nn.ReLU()
+            )
+            '''
+            self.cnn = nn.Sequential(
+                nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1), 
+                nn.ReLU(),
+                nn.Conv2d(10, 20, kernel_size=3, stride=2, padding=1),    
+                nn.ReLU(),
+                nn.Conv2d(20, 40, kernel_size=3, stride=2, padding=1),   
+                nn.ReLU(),
+                nn.Conv2d(40, 80, kernel_size=3, stride=2, padding=1),  
+                nn.ReLU(),
+                nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),  
                 nn.ReLU()
             )
         
