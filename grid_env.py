@@ -152,7 +152,9 @@ class CustomTensorboardCallback(BaseCallback):
                 # log to txt
                 success_ratio = self.success_count / self.episode_count
                 if self.txt_file:
-                    self.txt_file.write(f"Episode {self.episode_count}: Success Ratio = {success_ratio:.2%}\n")
+                    self.txt_file.write(
+                        f"Episode {self.episode_count}: Success Ratio = {self.success_count}/{self.episode_count} ({success_ratio:.1%})\n"
+                    )
                     self.txt_file.flush()
 
             sensor_battery_snapshot = info.get("sensor_batteries")

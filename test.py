@@ -115,7 +115,7 @@ def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose
 
     train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
 
-def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True):
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True, ignores=[]):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
     """
@@ -142,6 +142,15 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
             if not os.path.isfile(model_path):
                 continue
 
+            flag = False
+            for ignore in ignores:
+                if ignore in ppo_path:
+                    print("ignoring", ppo_path)
+                    flag = True
+                    break
+            if flag:
+                continue
+
             evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
 
 def train_all_models(timesteps: int = 1_000_000):
@@ -150,10 +159,11 @@ def train_all_models(timesteps: int = 1_000_000):
     specified
     """
     models_to_train = [
-         #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_d", "halfsplit": False},
-        #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_d", "halfsplit": False},
-        # {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_d", "halfsplit": False},
-         {"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
+        {"grid_file": "mine_20x20.txt", "is_cnn": False, "model_name": "a_30x30__reward_e", "halfsplit": False},
+         {"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_e", "halfsplit": False},
+        {"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_e", "halfsplit": False},
+        {"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_e", "halfsplit": False},
+         {"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_e", "halfsplit": False},
     ]
 
     for config in models_to_train:

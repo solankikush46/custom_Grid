@@ -115,16 +115,18 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     Evaluate the model in the given environment for a number of episodes,
     printing agent's position, reward, and action at every timestep, and summarizing performance.
     """
-    total_rewards = []
+    total_reward_sum = 0.0
     total_steps = 0
     success_count = 0
     total_collisions = 0
     total_revisits = 0
+    total_battery_sum = 0.0
 
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
         done = False
         ep_reward = 0.0
+        ep_battery_sum = 0.0
         step_num = 0
 
         while not done:
@@ -138,6 +140,9 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
             reached_exit = env.agent_reached_exit()
             success_count += int(reached_exit)
 
+            # Track battery level at each step
+            ep_battery_sum += info.get("current_battery", 0)
+
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
                 print(f"Episode {ep + 1} Step {step_num}: Pos={agent_pos}, Action={action} ({action_dir}), Reward={reward:.2f}")
@@ -150,21 +155,23 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
 
             step_num += 1
 
+        # Episode-level stats
         total_collisions += info.get("obstacle_hits", 0)
         total_revisits += info.get("revisit_count", 0)
-        avg_bat = info.get("average_battery_level")
-        
         total_steps += step_num
-        total_rewards.append(ep_reward)
+        total_reward_sum += ep_reward
+        total_battery_sum += (ep_battery_sum / step_num) if step_num > 0 else 0
 
         if verbose:
             print(f"Episode {ep + 1} complete: Total Reward = {ep_reward:.2f}")
 
-    mean_reward = sum(total_rewards) / n_eval_episodes
+    # Aggregate stats
+    mean_reward = total_reward_sum / n_eval_episodes
     success_rate = success_count / n_eval_episodes
     mean_col = total_collisions / n_eval_episodes
     avg_steps = total_steps / n_eval_episodes
     avg_rev = total_revisits / n_eval_episodes
+    mean_battery = total_battery_sum / n_eval_episodes
 
     print("\n=== Evaluation Summary ===")
     print(f"Total Episodes: {n_eval_episodes}")
@@ -173,7 +180,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Obstacle Hits per Episode: {mean_col:.2f}")
     print(f"Mean Steps per Episode: {avg_steps:.1f}")
     print(f"Mean Revisits per Episode: {avg_rev:.1f}")
-    print(f"Mean Battery Level per Episode: {avg_bat:.1f}")
+    print(f"Mean Battery Level per Episode: {mean_battery:.1f}")
 
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
