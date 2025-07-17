@@ -162,6 +162,53 @@ def get_reward_e(env, new_pos):
     """
     sigmoid battery penalty
     """
+    # Tunable weights
+    w_goal = 1.0
+    w_invalid = 0.75
+    w_revisit = 0.25
+    w_dist = 2.0
+    w_battery = 10
+    k_soft = 6.0  # sigmoid sharpness
+    battery_threshold = 10
+
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-k_soft * x))
+
+    if new_pos in env.goal_positions:
+        subrewards = {
+            "goal_reward": w_goal,
+            "invalid_penalty": 0.0,
+            "revisit_penalty": 0.0,
+            "battery_penalty": 0.0,
+            "distance_penalty": 0.0
+        }
+    else:
+        # distance penalty (0–1 normalized)
+        dist = env._compute_min_distance_to_goal()
+        dist_pen = -w_dist * dist
+
+        # sigmoid battery_penalty
+        b = env.current_battery_level
+        bat_pen = -w_battery * sigmoid((battery_threshold - b) / battery_threshold)
+
+        inval_pen = -w_invalid if not env.can_move_to(new_pos) else 0.0
+        rev_pen = -w_revisit if new_pos in env.visited else 0.0
+
+        subrewards = {
+            "goal_reward": 0.0,
+            "invalid_penalty": inval_pen,
+            "revisit_penalty": rev_pen,
+            "battery_penalty": bat_pen,
+            "distance_penalty": dist_pen
+        }
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+def get_reward_e2(env, new_pos):
+    """
+    sigmoid battery penalty
+    """
 
     # Tunable weights
     w_goal = 1.0
@@ -208,4 +255,4 @@ def get_reward_e(env, new_pos):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_e(env, new_pos)
+    return get_reward_d(env, new_pos)

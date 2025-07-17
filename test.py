@@ -115,7 +115,7 @@ def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose
 
     train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
 
-def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True, ignores=[]):
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True, dos=[]):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
     """
@@ -143,8 +143,8 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
                 continue
 
             flag = False
-            for ignore in ignores:
-                if ignore in ppo_path:
+            for do in dos:
+                if not do in ppo_path:
                     print("ignoring", ppo_path)
                     flag = True
                     break

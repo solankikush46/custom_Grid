@@ -200,7 +200,8 @@ class GridWorldEnv(Env):
                  grid_width: int = None,
                  obstacle_percentage=None,
                  n_sensors=None, reset_kwargs={},
-                 is_cnn=False, battery_truncation=False
+                 is_cnn=False, battery_truncation=False,
+                 n_miners=12
                  ):
         super(GridWorldEnv, self).__init__()
 
@@ -235,7 +236,7 @@ class GridWorldEnv(Env):
         self.obstacle_hits = 0
         self.last_action = -1
         self.miners = []
-        self.n_miners = 12
+        self.n_miners = n_miners
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
