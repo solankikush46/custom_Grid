@@ -10,6 +10,22 @@ import torch.nn.functional as F
 """
 Observation Wrappers : Outputs 4 channel grid for CNN
 """
+
+class CustomGridCNNWrapper(ObservationWrapper):
+    """
+    Ensures observations are numpy arrays with dtype float32
+    and are channel-first (C, H, W) for CNN feature extractors.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = env.observation_space  # Already set properly in your env
+
+    def observation(self, observation):
+        # If it's not already a numpy array, make it one
+        obs = np.array(observation, dtype=np.float32)
+        # If needed, add further checks for channel order here
+        return obs
+
 class UNetPathfinder(nn.Module):
     def __init__(self, input_channels=5, base_filters=32):
         super().__init__()
@@ -74,13 +90,26 @@ class UNetPathfinder(nn.Module):
 
         # Decoder
         d3 = self.dec3(F.interpolate(b, scale_factor=2, mode='nearest'))
-        d3 = torch.cat([d3, e3], dim=1)  # Skip connection
+        # Align shapes for skip connection
+        if d3.shape[2:] != e3.shape[2:]:
+            e3_resized = F.interpolate(e3, size=d3.shape[2:], mode='nearest')
+        else:
+            e3_resized = e3
+        d3 = torch.cat([d3, e3_resized], dim=1)  # Skip connection
 
         d2 = self.dec2(F.interpolate(d3, scale_factor=2, mode='nearest'))
-        d2 = torch.cat([d2, e2], dim=1)
+        if d2.shape[2:] != e2.shape[2:]:
+            e2_resized = F.interpolate(e2, size=d2.shape[2:], mode='nearest')
+        else:
+            e2_resized = e2
+        d2 = torch.cat([d2, e2_resized], dim=1)
 
         d1 = self.dec1(F.interpolate(d2, scale_factor=2, mode='nearest'))
-        d1 = torch.cat([d1, e1], dim=1)
+        if d1.shape[2:] != e1.shape[2:]:
+            e1_resized = F.interpolate(e1, size=d1.shape[2:], mode='nearest')
+        else:
+            e1_resized = e1
+        d1 = torch.cat([d1, e1_resized], dim=1)
 
         out = self.final_conv(d1)
         return torch.sigmoid(out)
