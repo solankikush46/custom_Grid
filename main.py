@@ -1,4 +1,3 @@
-ls
 # main.py
 
 from test import *
