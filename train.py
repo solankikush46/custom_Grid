@@ -14,7 +14,7 @@ import time
 import datetime
 from constants import *
 from plot_metrics import *
-from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
+from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
 
 ##==============================================================
 ## Unified PPO Training Function
@@ -27,6 +27,7 @@ def train_PPO_model(grid_file: str,
                     features_dim: int = 128,
                     battery_truncation=False):
     
+    max_sensors = 9
     # Initialize environment (wrapped if CNN)
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
@@ -41,8 +42,12 @@ def train_PPO_model(grid_file: str,
     if is_cnn:
         policy_kwargs = {
             "features_extractor_class": GridCNNExtractor,
-            "features_extractor_kwargs": {"features_dim": features_dim},
-            "net_arch": dict(pi=[64, 64], vf=[64, 64]),
+            "features_extractor_kwargs": {
+                "features_dim": features_dim,
+                "grid_file" : grid_file
+
+            },
+            "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }
 
     model = PPO(
@@ -59,7 +64,7 @@ def train_PPO_model(grid_file: str,
         clip_range_vf=0.5,
         tensorboard_log=base_log_path,
         verbose=1,
-        policy_kwargs=policy_kwargs
+        policy_kwargs= policy_kwargs
     )
 
     callback = CustomTensorboardCallback()

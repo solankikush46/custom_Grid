@@ -211,7 +211,7 @@ class GridWorldEnv(Env):
                                grid_height, grid_width,
                                obstacle_percentage,
                                n_sensors)
-        self.max_steps = 500
+        self.max_steps = 2000
         self.reset_kwargs = reset_kwargs
         self.is_cnn = is_cnn
         self.battery_truncation = battery_truncation
@@ -236,6 +236,8 @@ class GridWorldEnv(Env):
         self.obstacle_hits = 0
         self.last_action = -1
         self.miners = []
+        self.n_miners = 12
+        self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION
         self.n_miners = n_miners
         
         # exclusively for graphing
@@ -282,13 +284,23 @@ class GridWorldEnv(Env):
         # 4 cardinals dirs + 4 diagonals
         self.action_space = Discrete(8)
         if self.is_cnn:
+            '''
             self.observation_space = Box(
-            low=-1.0,
-            high=1.0,
-            shape=(4, self.n_rows, self.n_cols),
+            low=0.0,
+            high=5.0,
+            shape=(2, self.n_rows, self.n_cols),
             dtype=np.float32
             )
+            '''
+            self.observation_space = Box(
+            low=0.0,
+            high=1.0,
+            shape=(5, self.n_rows, self.n_cols),
+            dtype=np.float32
+            )
+            
         else:
+            
             # [0, 7] - space around agent
             # [8, 9] - agent r, c
             # [10] - last action
@@ -303,7 +315,7 @@ class GridWorldEnv(Env):
                 shape=(obs_dim, ),
                 dtype=np.float32
             )
-        
+            
     def _get_goal_exclusion_zone(self):
         # goal is not placed in sensor radar range???
         return grid_gen.get_safe_zone_around(self.goal_positions,
@@ -444,6 +456,59 @@ class GridWorldEnv(Env):
 
     def get_observation(self):
         if self.is_cnn:
+            # 2 channels
+            '''
+            obs = np.zeros((2, self.n_rows, self.n_cols), dtype=np.float32)
+
+            # Channel 0: what is in the cell
+            for r in range(self.n_rows):
+                for c in range(self.n_cols):
+                    if (r, c) == tuple(self.agent_pos):
+                        obs[0, r, c] = 2  # Agent
+                    elif self.static_grid[r, c] == OBSTACLE:
+                        obs[0, r, c] = 1  # Obstacle
+                    elif self.static_grid[r, c] == GOAL:
+                        obs[0, r, c] = 3  # Goal
+                    elif self.static_grid[r, c] == SENSOR:
+                        obs[0, r, c] = 4  # Sensor
+                    elif self.static_grid[r,c] == BASE_STATION:
+                        obs[0, r, c] = 5 # Base station
+                    else:
+                        obs[0, r, c] = 0  # Empty
+
+            # Channel 1: battery level (only for sensors)
+            for (r, c), battery in self.sensor_batteries.items():
+                obs[1, r, c] = battery / 100.0  # Normalize 0-1
+
+            return obs
+            '''
+            # 5 channels
+            
+            obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
+
+            # Channel 0: agent
+            r, c = self.agent_pos
+            obs[0, r, c] = 1.0
+
+            # Channel 1: blocked (obstacle, base station, etc.)
+            for r in range(self.n_rows):
+                for c in range(self.n_cols):
+                    if self.static_grid[r, c] in (OBSTACLE, BASE_STATION):  # add others if needed
+                        obs[1, r, c] = 1.0
+
+            # Channel 2: sensor presence, Channel 3: sensor battery
+            for (r, c), battery in self.sensor_batteries.items():
+                obs[2, r, c] = 1.0
+                obs[3, r, c] = battery / 100.0  # normalized battery
+
+            # Channel 4: goal
+            for r, c in self.goal_positions:
+                obs[4, r, c] = 1.0
+
+            return obs
+            
+            # 4 - channels
+            '''
             obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
             r, c = self.agent_pos
@@ -462,6 +527,8 @@ class GridWorldEnv(Env):
                 obs[3, r, c] = 1.0  # Goal
 
             return obs
+            '''
+
         else:
             # Flat vector
             r, c = self.agent_pos
@@ -485,6 +552,7 @@ class GridWorldEnv(Env):
             )
 
             return np.concatenate([blocked_flags, norm_pos, [last_action], [dist_to_goal], battery_levels])
+
 
     def reset(self, seed=None, options = None):
         """
