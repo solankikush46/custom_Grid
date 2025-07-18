@@ -333,7 +333,3 @@ def generate_random_grid(n_rows=20, n_cols=20, obstacle_pct=0.15, seed=None):
 
     # Convert each row to a string
     return [''.join(row) for row in grid]
-
-random_grid = generate_random_grid(100, 100, obstacle_pct=0.10)
-for row in random_grid:
-    print(row)
