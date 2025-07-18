@@ -334,6 +334,8 @@ def generate_random_grid(n_rows=20, n_cols=20, obstacle_pct=0.15, seed=None):
     # Convert each row to a string
     return [''.join(row) for row in grid]
 
-print(generate_random_grid(100, 100, 0.20))
-#generate_random_grid(100, 100, 0.30)
-#generate_random_grid(100, 100, 0.40)
+'''
+grid = generate_random_grid(100, 100, 0.30)
+for row in grid:
+    print(row)
+'''
