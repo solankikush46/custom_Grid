@@ -167,7 +167,7 @@ def train_all_models(timesteps: int = 1_000_000):
         #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
         #{"grid_file": "a_50x50.txt", "is_cnn": True, "model_name": "a_50x50__reward_d_cnn_unet", "halfsplit": False},
         #{"grid_file": "a_50x50.txt", "is_cnn": True, "model_name": "a_50x50__reward_d_cnn_c5", "halfsplit": False},
-        {"grid_file": "10p_100x100.txt", "is_cnn": False, "model_name": "10p_100x100__reward_d", "halfsplit": False},
+        #{"grid_file": "10p_100x100.txt", "is_cnn": False, "model_name": "10p_100x100__reward_d", "halfsplit": False},
          {"grid_file": "20p_100x100.txt", "is_cnn": False, "model_name": "20p_100x100__reward_d", "halfsplit": False},
          {"grid_file": "30p_100x100.txt", "is_cnn": False, "model_name": "30p_100x100__reward_d", "halfsplit": False},
          #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_e3_sigmoid", "halfsplit": False},
