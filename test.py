@@ -116,7 +116,7 @@ def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose
 
     train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
 
-def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True):
+def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True, dos=[]):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
     """
@@ -143,6 +143,15 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
             if not os.path.isfile(model_path):
                 continue
 
+            flag = False
+            for do in dos:
+                if not do in ppo_path:
+                    print("ignoring", ppo_path)
+                    flag = True
+                    break
+            if flag:
+                continue
+
             evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
 
 def train_all_models(timesteps: int = 1_000_000):
@@ -151,6 +160,7 @@ def train_all_models(timesteps: int = 1_000_000):
     specified
     """
     models_to_train = [
+        '''
         #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_d_cnn_c4", "halfsplit": False},
         #{"grid_file": "a_30x30.txt", "is_cnn": True, "model_name": "a_30x30__reward_d_cnn", "halfsplit": False},
         #{"grid_file": "b_30x30.txt", "is_cnn": True, "model_name": "b_30x30__reward_d_cnn", "halfsplit": False},
@@ -158,6 +168,14 @@ def train_all_models(timesteps: int = 1_000_000):
         #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
         #{"grid_file": "a_50x50.txt", "is_cnn": True, "model_name": "a_50x50__reward_d_cnn_unet", "halfsplit": False},
         {"grid_file": "a_50x50.txt", "is_cnn": True, "model_name": "a_50x50__reward_d_cnn_c5", "halfsplit": False},
+         '''
+        {"grid_file": "10p_100x100.txt", "is_cnn": False, "model_name": "10p_100x100__reward_d", "halfsplit": False},
+         {"grid_file": "20p_100x100.txt", "is_cnn": False, "model_name": "20p_100x100__reward_d", "halfsplit": False},
+         {"grid_file": "30p_100x100.txt", "is_cnn": False, "model_name": "30p_100x100__reward_d", "halfsplit": False},
+         #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_e3_sigmoid", "halfsplit": False},
+        #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_e3_sigmoid", "halfsplit": False},
+        #{"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_e3_sigmoid", "halfsplit": False},
+         #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_e3_sigmoid", "halfsplit": False},
     ]
 
     for config in models_to_train:
