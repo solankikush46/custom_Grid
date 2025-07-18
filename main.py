@@ -13,7 +13,7 @@ def ensure_directories_exist():
         os.makedirs(d, exist_ok=True)
 
 def main():
-    #test_manual_control()
+    #test_manual_control("a_50x50.txt")
     #generate_all_plots(rolling_window=50_000)
     #test_PPO(10_000, 20, 20)
     #test_PPO(300_000, 100, 100)
@@ -24,8 +24,13 @@ def main():
     #train_quick_junk_model("mine_20x20.txt")
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
+<<<<<<< HEAD
     #train_all_models(2_000_000)
     evaluate_all_models(n_eval_episodes=100_000, render=False, verbose=False, dos = ["c5"])
+=======
+    train_all_models(1_000_000)
+    evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=[])
+>>>>>>> ba6eed833983620a8222e07f15940aa5f8e0afe5
     
 if __name__ == "__main__":
     ensure_directories_exist()

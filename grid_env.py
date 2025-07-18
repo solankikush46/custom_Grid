@@ -152,7 +152,9 @@ class CustomTensorboardCallback(BaseCallback):
                 # log to txt
                 success_ratio = self.success_count / self.episode_count
                 if self.txt_file:
-                    self.txt_file.write(f"Episode {self.episode_count}: Success Ratio = {success_ratio:.2%}\n")
+                    self.txt_file.write(
+                        f"Episode {self.episode_count}: Success Ratio = {self.success_count}/{self.episode_count} ({success_ratio:.1%})\n"
+                    )
                     self.txt_file.flush()
 
             sensor_battery_snapshot = info.get("sensor_batteries")
@@ -198,7 +200,8 @@ class GridWorldEnv(Env):
                  grid_width: int = None,
                  obstacle_percentage=None,
                  n_sensors=None, reset_kwargs={},
-                 is_cnn=False, battery_truncation=False
+                 is_cnn=False, battery_truncation=False,
+                 n_miners=12
                  ):
         super(GridWorldEnv, self).__init__()
 
@@ -220,7 +223,7 @@ class GridWorldEnv(Env):
         self.screen = None
         self.font = None
         self.clock = None
-        self.render_fps = 5
+        self.render_fps = 30
 
         # environment state variables
         self.grid = self.static_grid.copy()
@@ -235,6 +238,7 @@ class GridWorldEnv(Env):
         self.miners = []
         self.n_miners = 12
         self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION)
+        self.n_miners = n_miners
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -434,7 +438,7 @@ class GridWorldEnv(Env):
                     exit()
 
         if uncap_fps:
-            self.clock.tick(15)
+            self.clock.tick(60)
         else:
             self.clock.tick(self.render_fps) # use default render_fps
        
