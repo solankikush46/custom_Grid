@@ -48,7 +48,7 @@ def train_PPO_model(grid_file: str,
     model = PPO(
         policy="MlpPolicy",
         env=vec_env,
-        ent_coef=0.1, #0.5,
+        ent_coef=0.1,
         gae_lambda=0.90,
         learning_rate=3e-4,
         n_steps=2048,
@@ -74,7 +74,8 @@ def train_PPO_model(grid_file: str,
 
     # generate graphs from csvs using chunked smoothing
     grid_area = env.n_rows * env.n_cols
-    num_points = int(max(20, grid_area // 10))
+    num_points = 50
+    #num_points = int(max(20, grid_area // 10))
     plots = plot_all_metrics(log_dir=log_dir, num_points=num_points)
 
     print("\n=== Metrics Plots Generated ===")

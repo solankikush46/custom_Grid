@@ -162,7 +162,6 @@ def get_reward_e(env, new_pos):
     """
     sigmoid battery penalty
     """
-
     # Tunable weights
     w_goal = 1.0
     w_invalid = 0.75
@@ -206,58 +205,100 @@ def get_reward_e(env, new_pos):
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
 
-# composite reward
-#-----------------------
-def f_distance(agent_pos, goal_positions, n_rows, n_cols):
-    '''
-    Reward based on distance from agent to closest exit
-    '''
-    distances = chebyshev_distances(agent_pos, goal_positions, n_cols, n_rows, normalize=False)
-    d_min = min(distances)
-    norm = max(n_rows - 1, n_cols - 1)
-    return np.exp(-d_min / norm)
+def get_reward_e2(env, new_pos):
+    """
+    sigmoid battery penalty
+    """
+    # Tunable weights
+    w_goal = 1.0
+    w_invalid = 0.75
+    w_revisit = 0.25
+    w_dist = 2.0
+    w_battery = 5 # was 10
+    k_soft = 6.0  # sigmoid sharpness
+    battery_threshold = 10
 
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-k_soft * x))
 
-def f_wall(n_collisions, n_steps):
-    '''
-    Reward that penalizes agent for colliding with walls
-    '''
-    if n_steps == 0:
-        return 1.0
-    return np.exp(-n_collisions / n_steps)
-
-
-def f_battery(agent_pos, sensor_batteries, n_cols, n_rows):
-    '''
-    Reward that is based off the battery level of the nearest sensor
-    (motivates agent to go along high-battery level paths)
-    '''
-    sensor_coords = list(sensor_batteries.keys())
-    if not sensor_coords:
-        return 0.0
-
-    distances = chebyshev_distances(agent_pos, sensor_coords, n_cols, n_rows, normalize=False)
-    nearest_index = int(np.argmin(distances))
-    nearest_sensor = sensor_coords[nearest_index]
-    battery_level = sensor_batteries.get(nearest_sensor, 0.0)
-    return battery_level / 100
-
-
-def f_exit(agent_pos, goal_positions, battery_values_in_radar):
-    '''
-    Hard positive reward for when the agent reaches an exit
-    (influenced by avg battery level along path travelled by agent
-    to reach the exit)
-    '''
-    if tuple(agent_pos) in goal_positions:
-        if battery_values_in_radar:
-            average_battery = sum(battery_values_in_radar) / len(battery_values_in_radar)
-            return average_battery
-        else:
-            return 0.0
+    if new_pos in env.goal_positions:
+        subrewards = {
+            "goal_reward": w_goal,
+            "invalid_penalty": 0.0,
+            "revisit_penalty": 0.0,
+            "battery_penalty": 0.0,
+            "distance_penalty": 0.0
+        }
     else:
-        return 0.0
+        # distance penalty (0–1 normalized)
+        dist = env._compute_min_distance_to_goal()
+        dist_pen = -w_dist * dist
+
+        # sigmoid battery_penalty
+        b = env.current_battery_level
+        bat_pen = -w_battery * sigmoid((battery_threshold - b) / battery_threshold)
+
+        inval_pen = -w_invalid if not env.can_move_to(new_pos) else 0.0
+        rev_pen = -w_revisit if new_pos in env.visited else 0.0
+
+        subrewards = {
+            "goal_reward": 0.0,
+            "invalid_penalty": inval_pen,
+            "revisit_penalty": rev_pen,
+            "battery_penalty": bat_pen,
+            "distance_penalty": dist_pen
+        }
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+def get_reward_e3(env, new_pos):
+    """
+    sigmoid battery penalty
+    """
+    # Tunable weights
+    w_goal = 1.0
+    w_invalid = 0.75
+    w_revisit = 0.25
+    w_dist = 2.0
+    w_battery = 2.5
+    k_soft = 6.0  # sigmoid sharpness
+    battery_threshold = 10
+
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-k_soft * x))
+
+    if new_pos in env.goal_positions:
+        subrewards = {
+            "goal_reward": w_goal,
+            "invalid_penalty": 0.0,
+            "revisit_penalty": 0.0,
+            "battery_penalty": 0.0,
+            "distance_penalty": 0.0
+        }
+    else:
+        # distance penalty (0–1 normalized)
+        dist = env._compute_min_distance_to_goal()
+        dist_pen = -w_dist * dist
+
+        # sigmoid battery_penalty
+        b = env.current_battery_level
+        bat_pen = -w_battery * sigmoid((battery_threshold - b) / battery_threshold)
+
+        inval_pen = -w_invalid if not env.can_move_to(new_pos) else 0.0
+        rev_pen = -w_revisit if new_pos in env.visited else 0.0
+
+        subrewards = {
+            "goal_reward": 0.0,
+            "invalid_penalty": inval_pen,
+            "revisit_penalty": rev_pen,
+            "battery_penalty": bat_pen,
+            "distance_penalty": dist_pen
+        }
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_e(env, new_pos)
+    return get_reward_d(env, new_pos)

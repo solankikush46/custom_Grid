@@ -1,3 +1,5 @@
+# cnn_feature_extractor.py
+
 import gym
 import numpy as np
 import torch
