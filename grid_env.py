@@ -237,7 +237,7 @@ class GridWorldEnv(Env):
         self.last_action = -1
         self.miners = []
         self.n_miners = 12
-        self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION
+        self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION)
         self.n_miners = n_miners
         
         # exclusively for graphing
