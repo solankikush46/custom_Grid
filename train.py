@@ -129,7 +129,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     total_battery_sum = 0.0
     leq_10s = 0
     leq_0s = 0
-
+    no_sensors = False
 
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
@@ -150,9 +150,10 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
             success_count += int(reached_exit)
 
             # Track battery level at each step
+            no_sensors = info.get(sensor_batteries, {})
             curr_bat = info.get("current_battery", 0)
             ep_battery_sum += curr_bat
-            if curr_bat <= 10:
+            if not no_sensors == {} and curr_bat <= 10:
                 leq_10s += 1
                 if curr_bat == 0:
                     leq_0s += 1
@@ -186,6 +187,10 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     avg_steps = total_steps / n_eval_episodes
     avg_rev = total_revisits / n_eval_episodes
     mean_battery = total_battery_sum / n_eval_episodes
+    if 
+    leq_10_rate = leq_10s / total_steps
+    leq_0_rate = leq_0 / total_steps
+    
 
     print("\n=== Evaluation Summary ===")
     print(f"Total Episodes: {n_eval_episodes}")
@@ -195,8 +200,8 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Steps per Episode: {avg_steps:.1f}")
     print(f"Mean Revisits per Episode: {avg_rev:.1f}")
     print(f"Mean Battery Level per Episode: {mean_battery:.1f}")
-    print(f"Timesteps Where Battery Level <= 10: {leq_10s}/{total_steps} ({leq_10s/total_steps:.4f}%)")
-    print(f"Timesteps Where Battery Level <= 0: {leq_0s}/{total_steps} ({leq_0s/total_steps:.4f}%)")
+    print(f"Timesteps Where Battery Level <= 10: {leq_10s}/{total_steps} ({leq_10s/total_steps * 100:.4f}%)")
+    print(f"Timesteps Where Battery Level <= 0: {leq_0s}/{total_steps} ({leq_0s/total_steps * 100:.4f}%)")
 
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
