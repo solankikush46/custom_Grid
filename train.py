@@ -129,7 +129,6 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     total_battery_sum = 0.0
     leq_10s = 0
     leq_0s = 0
-    no_sensors = False
 
     for ep in range(n_eval_episodes):
         obs, _ = env.reset()
@@ -150,10 +149,9 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
             success_count += int(reached_exit)
 
             # Track battery level at each step
-            no_sensors = info.get(sensor_batteries, {})
             curr_bat = info.get("current_battery", 0)
             ep_battery_sum += curr_bat
-            if not no_sensors == {} and curr_bat <= 10:
+            if curr_bat <= 10:
                 leq_10s += 1
                 if curr_bat == 0:
                     leq_0s += 1
@@ -187,11 +185,7 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     avg_steps = total_steps / n_eval_episodes
     avg_rev = total_revisits / n_eval_episodes
     mean_battery = total_battery_sum / n_eval_episodes
-    if 
-    leq_10_rate = leq_10s / total_steps
-    leq_0_rate = leq_0 / total_steps
     
-
     print("\n=== Evaluation Summary ===")
     print(f"Total Episodes: {n_eval_episodes}")
     print(f"Reached Exit: {success_count}/{n_eval_episodes} ({success_rate:.1%})")
