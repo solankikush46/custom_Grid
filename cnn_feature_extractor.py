@@ -206,6 +206,8 @@ class GridCNNExtractor(BaseFeaturesExtractor):
 
         elif grid_file and "100x100" in grid_file:
             self.mode = "large"
+            '''
+            # c3 architecture
             self.cnn = nn.Sequential(
                 nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1),     
                 nn.ReLU(),
@@ -218,9 +220,40 @@ class GridCNNExtractor(BaseFeaturesExtractor):
                 nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),  
                 nn.ReLU()
             )
+            '''
+            self.cnn = nn.Sequential(
+            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),    # (32, 50, 50)
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
 
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),   # (64, 25, 25)
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # (128, 13, 13)
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # (256, 7, 7)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+
+            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1), # (256, 4, 4)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+
+            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1), # (256, 2, 2)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+
+            nn.AdaptiveAvgPool2d((1, 1)),  # (256, 1, 1)
+            nn.Flatten()
+        )
         elif grid_file and "50x50" in grid_file:
             self.mode = "custom-50x50"
+            #c5 architecture
             self.cnn = nn.Sequential(
                 nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),   # (32, 25, 25)
                 nn.BatchNorm2d(32),
