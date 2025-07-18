@@ -14,7 +14,7 @@ import time
 import datetime
 from constants import *
 from plot_metrics import *
-from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
+from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
 
 ##==============================================================
 ## Unified PPO Training Function
@@ -27,10 +27,11 @@ def train_PPO_model(grid_file: str,
                     features_dim: int = 128,
                     battery_truncation=False):
     
+    max_sensors = 9
     # Initialize environment (wrapped if CNN)
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
-        env = CustomGridCNNWrapper(env)
+        env = CustomGridCNNWrapper(env, max_sensors=max_sensors)
 
     vec_env = DummyVecEnv([lambda: env])
 
@@ -40,16 +41,19 @@ def train_PPO_model(grid_file: str,
     policy_kwargs = None
     if is_cnn:
         policy_kwargs = {
-            "features_extractor_class": GridCNNExtractor,
+            "features_extractor_class": UNetPathfinder,
             "features_extractor_kwargs": {
                 "features_dim": features_dim,
-                "grid_file" : grid_file
+                "input_channels": 5,
+                "base_filters": 32
+                #"grid_file" : grid_file
+
             },
-            "net_arch": dict(pi=[64, 64], vf=[64, 64]),
+            net_arch=[dict(pi=[64, 64], vf=[64, 64])]
         }
 
     model = PPO(
-        policy="CnnPolicy",
+        policy="MlpPolicy",
         env=vec_env,
         ent_coef=0.1, #0.5,
         gae_lambda=0.90,

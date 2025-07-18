@@ -72,3 +72,37 @@ def load_sensors_with_batteries(filename="sensor_coords.txt"):
 
 
 
+def get_c8_neighbors_status(grid, agent_pos, obstacle_val= ('#', 'S', 'B')):
+    """
+    Returns a list of 8 values for each direction: [N, NE, E, SE, S, SW, W, NW]
+    1 if blocked, 0 if free.
+    """
+    directions = [(-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)]
+    x, y = agent_pos
+    neighbors = []
+    for dx, dy in directions:
+        nx, ny = x + dx, y + dy
+        if 0 <= nx < grid.shape[0] and 0 <= ny < grid.shape[1]:
+            neighbors.append(1 if grid[nx, ny] == obstacle_val else 0)
+        else:
+            neighbors.append(1)  # treat out-of-bounds as blocked
+    return neighbors
+
+def make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sensor_batteries, max_sensors):
+    """
+    Build a 5x5 feature matrix for the agent observation, accommodating up to 9 sensors.
+    """
+    feature_matrix = np.zeros((5, 5), dtype=np.float32)
+    # Row 0: agent info
+    feature_matrix[0, :5] = [
+        agent_pos[0], agent_pos[1], last_action, goal_dist, 0.0
+    ]
+    # Row 1: neighbors [N, NE, E, SE, S]
+    feature_matrix[1, :5] = neighbors[:5]
+    # Row 2: [SW, W, NW, 0, 0]
+    feature_matrix[2, :3] = neighbors[5:8]
+    # Row 3 and 4: sensor batteries (up to 9 sensors)
+    nb = len(sensor_batteries)
+    feature_matrix[3, :5] = sensor_batteries[:5]
+    feature_matrix[4, :4] = sensor_batteries[5:9]
+    return feature_matrix

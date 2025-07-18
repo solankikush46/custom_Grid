@@ -2,7 +2,8 @@ import gym
 import numpy as np
 import torch
 import torch.nn as nn
-from gym import ObservationWrapper
+from gym import ObservationWrapper, spaces
+from utils import get_c8_neighbors_status, make_agent_feature_matrix
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import torch.nn.functional as F
 
@@ -272,3 +273,56 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             raise ValueError(f"Unknown backbone type: {self.backbone}")
 
 
+class AgentFeatureMatrixWrapper(ObservationWrapper):
+    """
+    Replaces observation with a 5x5 feature matrix per timestep.
+    """
+    def __init__(self, env, max_sensors=9):
+        super().__init__(env)
+        self.max_sensors = max_sensors
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(5, 5), dtype=np.float32
+        )
+
+    def observation(self, obs):
+        agent_pos = self.env.agent_pos
+        grid = self.env.grid
+        last_action = getattr(self.env, 'last_action', 0)
+        goals = self.env.goal_positions
+        goal_dist = min([abs(agent_pos[0] - gx) + abs(agent_pos[1] - gy) for (gx, gy) in goals])
+        neighbors = get_c8_neighbors_status(grid, agent_pos, obstacle_val=self.env.OBSTACLE_VALS)
+        sensor_batteries = [
+            self.env.sensor_batteries[pos]
+            for pos in sorted(self.env.sensor_batteries.keys())
+        ][:self.max_sensors]
+        sensor_batteries += [0.0] * (self.max_sensors - len(sensor_batteries))
+        return make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sensor_batteries, self.max_sensors)
+    
+class FeatureMatrixCNNExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=64):
+        super().__init__(observation_space, features_dim)
+        n_channels, height, width = 1, *observation_space.shape  # (1, 5, 5)
+        self.cnn = nn.Sequential(
+            # First conv: out (8, 3, 3)
+            nn.Conv2d(n_channels, 8, kernel_size=3, stride=1, padding=0),   # (5-3)/1+1=3
+            nn.ReLU(),
+            # Second conv: out (16, 1, 1)
+            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0),           # (3-3)/1+1=1
+            nn.ReLU(),
+            nn.Flatten()
+        )
+        with torch.no_grad():
+            dummy = torch.zeros(1, n_channels, height, width)
+            n_flat = self.cnn(dummy).shape[1]
+        self.linear = nn.Sequential(
+            nn.Linear(n_flat, features_dim),
+            nn.ReLU()
+        )
+
+    def forward(self, obs):
+        if obs.dim() == 3:
+            obs = obs.unsqueeze(1)
+        elif obs.dim() == 2:
+            obs = obs.unsqueeze(0).unsqueeze(0)
+        x = self.cnn(obs)
+        return self.linear(x)
