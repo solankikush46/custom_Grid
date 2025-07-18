@@ -148,7 +148,7 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
                     print("ignoring", ppo_path)
                     flag = True
                     break
-            if flag or "sigmoid" in ppo_path:
+            if flag:
                 continue
 
             evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)
@@ -160,6 +160,8 @@ def train_all_models(timesteps: int = 1_000_000):
     """
     models_to_train = [
         {"grid_file": "10p_100x100.txt", "is_cnn": False, "model_name": "10p_100x100__reward_d", "halfsplit": False},
+         {"grid_file": "20p_100x100.txt", "is_cnn": False, "model_name": "20p_100x100__reward_d", "halfsplit": False},
+         {"grid_file": "30p_100x100.txt", "is_cnn": False, "model_name": "30p_100x100__reward_d", "halfsplit": False},
          #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_e3_sigmoid", "halfsplit": False},
         #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_e3_sigmoid", "halfsplit": False},
         #{"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_e3_sigmoid", "halfsplit": False},
