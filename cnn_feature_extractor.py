@@ -114,9 +114,23 @@ class UNetPathfinder(nn.Module):
 
         out = self.final_conv(d1)
         return torch.sigmoid(out)
+class UNetFeatureExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=128, input_channels=5, base_filters=32):
+        super().__init__(observation_space, features_dim)
+        self.unet = UNetPathfinder(input_channels=input_channels, base_filters=base_filters)
+        # Figure out flattened size by passing a dummy input
+        with torch.no_grad():
+            dummy = torch.zeros(1, input_channels, *observation_space.shape[1:])
+            unet_out = self.unet(dummy)
+            n_flat = unet_out.view(1, -1).shape[1]
+        self.linear = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(n_flat, features_dim),
+            nn.ReLU()
+        )
 
 class GridCNNExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128, grid_file=None, backbone="unet"):
+    def __init__(self, observation_space, features_dim=128, grid_file=None, backbone="cnn"):
         super().__init__(observation_space, features_dim)
         n_input_channels, height, width = observation_space.shape
         self.grid_file = grid_file
@@ -206,20 +220,30 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         elif grid_file and "50x50" in grid_file:
             self.mode = "custom-50x50"
             self.cnn = nn.Sequential(
-                nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),    
+                nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),   # (32, 25, 25)
+                nn.BatchNorm2d(32),
                 nn.ReLU(),
-                nn.Conv2d(16, 12, kernel_size=3, stride=1, padding=1),   
+
+                nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # (64, 13, 13)
+                nn.BatchNorm2d(64),
                 nn.ReLU(),
-                nn.Conv2d(12, 38, kernel_size=3, stride=2, padding=1),   
+                nn.Dropout2d(0.1),
+
+                nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # (128, 7, 7)
+                nn.BatchNorm2d(128),
                 nn.ReLU(),
-                nn.Conv2d(38, 30, kernel_size=3, stride=1, padding=1),   
+
+                nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # (256, 4, 4)
+                nn.BatchNorm2d(256),
                 nn.ReLU(),
-                nn.Conv2d(30, 77, kernel_size=3, stride=2, padding=1),   
+                nn.Dropout2d(0.1),
+
+                nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1), # (256, 2, 2)
+                nn.BatchNorm2d(256),
                 nn.ReLU(),
-                nn.Conv2d(77, 117, kernel_size=3, stride=2, padding=1),  
-                nn.ReLU(),
-                nn.Conv2d(117, 313, kernel_size=3, stride=2, padding=1), 
-                nn.ReLU()
+
+                nn.AdaptiveAvgPool2d((1, 1)),  # (256, 1, 1)
+                nn.Flatten()
             )
             '''
             self.cnn = nn.Sequential(

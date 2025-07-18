@@ -31,7 +31,7 @@ def train_PPO_model(grid_file: str,
     # Initialize environment (wrapped if CNN)
     env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
-        env = CustomGridCNNWrapper(env, max_sensors=max_sensors)
+        env = CustomGridCNNWrapper(env)
 
     vec_env = DummyVecEnv([lambda: env])
 
@@ -41,21 +41,19 @@ def train_PPO_model(grid_file: str,
     policy_kwargs = None
     if is_cnn:
         policy_kwargs = {
-            "features_extractor_class": UNetPathfinder,
+            "features_extractor_class": GridCNNExtractor,
             "features_extractor_kwargs": {
                 "features_dim": features_dim,
-                "input_channels": 5,
-                "base_filters": 32
-                #"grid_file" : grid_file
+                "grid_file" : grid_file
 
             },
-            net_arch=[dict(pi=[64, 64], vf=[64, 64])]
+            "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }
 
     model = PPO(
         policy="MlpPolicy",
         env=vec_env,
-        ent_coef=0.1, #0.5,
+        ent_coef=0.2, #0.5,
         gae_lambda=0.90,
         learning_rate=3e-4,
         n_steps=2048,
