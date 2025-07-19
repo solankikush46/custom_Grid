@@ -142,8 +142,8 @@ class GridCNNExtractor(BaseFeaturesExtractor):
         if grid_file and "20x20" in grid_file or "30x30" in grid_file:
             self.mode = "small"
             '''
+            #c4 architecture
             self.cnn = nn.Sequential(
-            # Input: (5, 20, 20)
             nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),   # (16, 10, 10) ~80%
             nn.ReLU(),
             nn.Conv2d(16, 12, kernel_size=3, stride=1, padding=1),  # (12, 10, 10) ~60%
@@ -161,6 +161,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             )
             '''
             '''
+            #c3 architecture
             self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
@@ -174,7 +175,9 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.ReLU()
             )
             '''
+
             '''
+            #c2 architecture
             self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 4, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
@@ -186,22 +189,28 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.ReLU()
             )
             '''
-            # The uncommented, actual default:
+            # c5 architecture
             self.cnn = nn.Sequential(
-                nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(16, 12, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(12, 24, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(24, 18, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(18, 36, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(36, 60, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(60, 100, kernel_size=3, stride=2, padding=1),
-                nn.ReLU()
+            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),   # (32, 15, 15)
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # (64, 8, 8)
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # (128, 4, 4)
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # (256, 2, 2)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+
+            nn.AdaptiveAvgPool2d((1, 1)),  # (256, 1, 1)
+            nn.Flatten()
             )
 
         elif grid_file and "100x100" in grid_file:
