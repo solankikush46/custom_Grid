@@ -1,6 +1,6 @@
 # train.py
-from grid_env import *
-from episode_callback import EpisodeStatsCallback
+from src.grid_env import *
+from src.episode_callback import EpisodeStatsCallback
 import os
 import numpy as np
 import gym
@@ -8,44 +8,45 @@ from stable_baselines3 import PPO, DQN, SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from stable_baselines3.common.evaluation import evaluate_policy
-from Qlearning import QLearningAgent
+from src.Qlearning import QLearningAgent
 from torch.utils.tensorboard import SummaryWriter
 import time
 import datetime
-from constants import *
-from plot_metrics import *
-from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
+from src.constants import *
+from src.plot_metrics import *
+from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
+import src.reward_functions as reward_functions
 
 ##==============================================================
 ## Unified PPO Training Function
 ##==============================================================
-def train_PPO_model(grid_file: str,
+def train_PPO_model(reward_fn,
+                    grid_file: str,
                     timesteps: int,
                     folder_name: str,
                     reset_kwargs: dict = {},
-                    is_cnn: bool = False,
+                    arch: str | None = None,
                     features_dim: int = 128,
-                    battery_truncation=False):
-    
-    max_sensors = 9
-    # Initialize environment (wrapped if CNN)
-    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
+                    battery_truncation=False
+                    ):
+
+    # Initialize environment
+    is_cnn = arch is not None
+    env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 
     vec_env = DummyVecEnv([lambda: env])
-
     base_log_path = os.path.join(SAVE_DIR, folder_name)
 
-    # Setup CNN policy kwargs if needed
     policy_kwargs = None
     if is_cnn:
         policy_kwargs = {
             "features_extractor_class": GridCNNExtractor,
             "features_extractor_kwargs": {
                 "features_dim": features_dim,
-                "grid_file" : grid_file
-
+                "grid_file": grid_file,
+                "backbone": arch.lower()
             },
             "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }
@@ -64,18 +65,16 @@ def train_PPO_model(grid_file: str,
         clip_range_vf=0.5,
         tensorboard_log=base_log_path,
         verbose=1,
-        policy_kwargs= policy_kwargs
+        policy_kwargs=policy_kwargs
     )
 
     callback = CustomTensorboardCallback()
-
     model.learn(total_timesteps=timesteps, callback=callback)
 
     log_dir = get_latest_run_dir(base_log_path)
     model_save_path = os.path.join(log_dir, "model.zip")
-    
     model.save(model_save_path)
-    print("\nPPO training complete. Logs and model stored to %s" % log_dir)
+    print(f"\nPPO training complete. Logs and model stored to {log_dir}")
 
     # generate graphs from csvs using chunked smoothing
     grid_area = env.n_rows * env.n_cols
@@ -91,6 +90,25 @@ def train_PPO_model(grid_file: str,
 
     return model
 
+def infer_reward_fn(experiment_name: str):
+    """
+    Extracts and returns the reward function used in a given experiment name.
+    Looks for parts like 'reward_d' in the experiment name (split by '__'),
+    then returns the corresponding function 'get_reward_d' from reward_functions.
+    """
+    parts = experiment_name.split("__")
+    
+    for part in parts:
+        if part.startswith("reward_"):
+            reward_key = part.split("_")[0] + "_" + part.split("_")[1]  # "reward_d"
+            fn_name = f"get_{reward_key}"
+            if hasattr(reward_functions, fn_name):
+                return getattr(reward_functions, fn_name)
+            else:
+                raise ValueError(f"No reward function named {fn_name} in reward_functions.py")
+    
+    raise ValueError(f"No reward key found in experiment name: {experiment_name}")
+
 # training utils
 #-------------------------------------------------
 def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
@@ -104,8 +122,9 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     """
     print("experiment_folder", experiment_folder)
     model_path = os.path.join(experiment_folder, "model")
+    reward_fn = infer_reward_fn(experiment_folder)
 
-    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 

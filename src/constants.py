@@ -48,7 +48,8 @@ ACTION_NAMES = {
 }
 
 # model saving and logging
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 
 MODEL_DIR = os.path.join(BASE_DIR, "SavedModels")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
@@ -86,5 +87,7 @@ MAX_COMM_RANGE = 141 # 25.0           # Max Communication range (in grid cells)
 K_BROADCAST = 10_000 # Sensor-to-Sensor
 K_TO_MINER = 5_000 # Miner-to-Sensor
 K_TO_BASE = 2_000  # Sensor-to-base
+
+
 
 
