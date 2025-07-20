@@ -106,3 +106,4 @@ def make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sens
     feature_matrix[3, :5] = sensor_batteries[:5]
     feature_matrix[4, :4] = sensor_batteries[5:9]
     return feature_matrix
+

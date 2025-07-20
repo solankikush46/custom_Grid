@@ -174,7 +174,7 @@ def train_all_models(timesteps: int = 1_000_000):
         #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_e3_sigmoid", "halfsplit": False},
         #{"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_e3_sigmoid", "halfsplit": False},
          #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_e3_sigmoid", "halfsplit": False},
-         {"grid_file": "mine_100x100.txt", "is_cnn": True, "model_name": "mine_100x100__reward_d_cnn_c6", "halfsplit": False},
+         {"grid_file": "mine_100x100.txt", "is_cnn": True, "model_name": "mine_100x100__reward_d_cnn_c5_7_ch", "halfsplit": False},
     ]
 
     for config in models_to_train:

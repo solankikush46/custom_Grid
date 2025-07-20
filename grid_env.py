@@ -292,13 +292,20 @@ class GridWorldEnv(Env):
             dtype=np.float32
             )
             '''
+            '''
             self.observation_space = Box(
             low=0.0,
             high=1.0,
             shape=(5, self.n_rows, self.n_cols),
             dtype=np.float32
             )
-            
+            '''
+            self.observation_space = Box(
+            low=0.0,
+            high=1.0,
+            shape=(7, self.n_rows, self.n_cols),
+            dtype=np.float32
+            )
         else:
             
             # [0, 7] - space around agent
@@ -482,6 +489,7 @@ class GridWorldEnv(Env):
 
             return obs
             '''
+            '''
             # 5 channels
             
             obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
@@ -506,7 +514,37 @@ class GridWorldEnv(Env):
                 obs[4, r, c] = 1.0
 
             return obs
+            '''
+            # 7 channels
             
+            obs = np.zeros((7, self.n_rows, self.n_cols), dtype=np.float32)
+
+            # Channel 0: agent
+            r, c = self.agent_pos
+            obs[0, r, c] = 1.0
+
+            # Channel 1: blocked (obstacle, base station, etc.)
+            for r in range(self.n_rows):
+                for c in range(self.n_cols):
+                    if self.static_grid[r, c] in (OBSTACLE, BASE_STATION):  # add others if needed
+                        obs[1, r, c] = 1.0
+
+            # Channel 2: sensor presence, Channel 3: sensor battery
+            for (r, c), battery in self.sensor_batteries.items():
+                obs[2, r, c] = 1.0
+                obs[3, r, c] = battery / 100.0  # normalized battery
+
+            # Channel 4: goal
+            for r, c in self.goal_positions:
+                obs[4, r, c] = 1.0
+            
+            row_coords = np.linspace(0, 1, self.n_rows, dtype=np.float32).reshape(1, self.n_rows, 1)
+            col_coords = np.linspace(0, 1, self.n_cols, dtype=np.float32).reshape(1, 1, self.n_cols)
+            obs[5] = np.repeat(row_coords, self.n_cols, axis=2)[0]
+            obs[6] = np.repeat(col_coords, self.n_rows, axis=1)[0]
+
+            return obs
+
             # 4 - channels
             '''
             obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)

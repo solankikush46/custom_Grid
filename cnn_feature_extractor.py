@@ -191,7 +191,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             '''
             # c5 architecture
             self.cnn = nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),   # (32, 15, 15)
+            nn.Conv2d(n_input_channels, 32, kernel_size=3, stride=2, padding=1),   # (32, 15, 15)
             nn.BatchNorm2d(32),
             nn.ReLU(),
 
@@ -230,11 +230,10 @@ class GridCNNExtractor(BaseFeaturesExtractor):
                 nn.ReLU()
             )
             '''
-            '''
             # c5 architecture
 
             self.cnn = nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),    # (32, 50, 50)
+            nn.Conv2d(n_input_channels, 32, kernel_size=3, stride=2, padding=1),    # (32, 50, 50)
             nn.BatchNorm2d(32),
             nn.ReLU(),
 
@@ -294,7 +293,8 @@ class GridCNNExtractor(BaseFeaturesExtractor):
 
             nn.AdaptiveAvgPool2d((1, 1)),  # (256, 1, 1)
             nn.Flatten()
-        )
+            )
+            '''
         elif grid_file and "50x50" in grid_file:
             self.mode = "custom-50x50"
             #c5 architecture
