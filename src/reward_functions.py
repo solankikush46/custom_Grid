@@ -1,7 +1,7 @@
 # reward_functions.py
 
 import numpy as np
-from utils import *
+from src.utils import *
 
 ##==============================================================
 ## Reward functions agent in GridWorldEnv may use
@@ -301,6 +301,6 @@ def get_reward_e3(env, new_pos):
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
 
-def compute_reward(env, new_pos):
+def compute_reward(env, new_pos, reward_fn):
     new_pos = tuple(new_pos)
-    return get_reward_d(env, new_pos)
+    return reward_fn(env, new_pos)

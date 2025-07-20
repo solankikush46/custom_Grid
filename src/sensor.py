@@ -1,8 +1,8 @@
 # sensor.py
 
 import numpy as np
-from utils import *
-from constants import *
+from src.utils import *
+from src.constants import *
 
 # Computing the transmission energy based on the distance and message size
 def transmission_energy(k_bits, distance):

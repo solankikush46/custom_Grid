@@ -1,8 +1,8 @@
 # main.py
 
-from test import *
-from plot_metrics import generate_all_plots
-from train import *
+from src.test import *
+from src.plot_metrics import generate_all_plots
+from src.train import *
 
 def ensure_directories_exist():
     directories = [
@@ -24,8 +24,8 @@ def main():
     #train_quick_junk_model("mine_20x20.txt")
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
-    #train_all_models(1_000_000)
-    evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=["__reward_e"])
+    train_all_models(1_000_000)
+    evaluate_all_models(n_eval_episodes=2, render=False, verbose=False, dos=["reward_e"])
     
 if __name__ == "__main__":
     ensure_directories_exist()

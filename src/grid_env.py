@@ -7,11 +7,11 @@ import random
 import os
 import csv
 import pygame
-import grid_gen
-from constants import *
-from utils import *
-from reward_functions import compute_reward
-from sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
+import src.grid_gen as grid_gen
+from src.constants import *
+from src.utils import *
+from src.reward_functions import compute_reward
+from src.sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
 from stable_baselines3.common.callbacks import BaseCallback
 import datetime
 
@@ -195,13 +195,14 @@ class CustomTensorboardCallback(BaseCallback):
 ##==============================================================
 class GridWorldEnv(Env):
     def __init__(self,
+                 reward_fn,
                  grid_file: str = None,
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
                  n_sensors=None, reset_kwargs={},
                  is_cnn=False, battery_truncation=False,
-                 n_miners=12
+                 n_miners=12,
                  ):
         super(GridWorldEnv, self).__init__()
 
@@ -215,7 +216,7 @@ class GridWorldEnv(Env):
         self.reset_kwargs = reset_kwargs
         self.is_cnn = is_cnn
         self.battery_truncation = battery_truncation
-
+        
         # pygame rendering
         self.pygame_initialized = False
         self.fixed_window_size = None
@@ -239,6 +240,7 @@ class GridWorldEnv(Env):
         self.n_miners = 12
         self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION)
         self.n_miners = n_miners
+        self.reward_fn = reward_fn
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -456,34 +458,7 @@ class GridWorldEnv(Env):
 
     def get_observation(self):
         if self.is_cnn:
-            # 2 channels
-            '''
-            obs = np.zeros((2, self.n_rows, self.n_cols), dtype=np.float32)
-
-            # Channel 0: what is in the cell
-            for r in range(self.n_rows):
-                for c in range(self.n_cols):
-                    if (r, c) == tuple(self.agent_pos):
-                        obs[0, r, c] = 2  # Agent
-                    elif self.static_grid[r, c] == OBSTACLE:
-                        obs[0, r, c] = 1  # Obstacle
-                    elif self.static_grid[r, c] == GOAL:
-                        obs[0, r, c] = 3  # Goal
-                    elif self.static_grid[r, c] == SENSOR:
-                        obs[0, r, c] = 4  # Sensor
-                    elif self.static_grid[r,c] == BASE_STATION:
-                        obs[0, r, c] = 5 # Base station
-                    else:
-                        obs[0, r, c] = 0  # Empty
-
-            # Channel 1: battery level (only for sensors)
-            for (r, c), battery in self.sensor_batteries.items():
-                obs[1, r, c] = battery / 100.0  # Normalize 0-1
-
-            return obs
-            '''
-            # 5 channels
-            
+            # 5 channels      
             obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
 
             # Channel 0: agent
@@ -506,29 +481,6 @@ class GridWorldEnv(Env):
                 obs[4, r, c] = 1.0
 
             return obs
-            
-            # 4 - channels
-            '''
-            obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
-
-            r, c = self.agent_pos
-            obs[0, r, c] = 1.0  # Agent
-
-            for r in range(self.n_rows):
-                for c in range(self.n_cols):
-                    if self.static_grid[r, c] in ('#', 'S', 'B'):
-                        obs[1, r, c] = 1.0  # Blocked
-
-            obs[2, :, :] = -1.0
-            for (r, c), battery in self.sensor_batteries.items():
-                obs[2, r, c] = battery / 100.0  # Battery
-
-            for r, c in self.goal_positions:
-                obs[3, r, c] = 1.0  # Goal
-
-            return obs
-            '''
-
         else:
             # Flat vector
             r, c = self.agent_pos
@@ -644,7 +596,7 @@ class GridWorldEnv(Env):
         return self.get_observation(), reward, terminated, truncated, info
 
     def _compute_reward_and_update(self, new_pos):
-        reward, subrewards = compute_reward(self, new_pos)
+        reward, subrewards = compute_reward(self, new_pos, self.reward_fn)
         self.total_reward += reward
         new_pos = tuple(new_pos)
         if new_pos in self.visited:

@@ -1,7 +1,7 @@
 # grid_gen.py
 import numpy as np
 import random
-from constants import EMPTY, OBSTACLE, GOAL, SENSOR, AGENT, BASE_STATION, MINER
+from src.constants import EMPTY, OBSTACLE, GOAL, SENSOR, AGENT, BASE_STATION, MINER
 
 ##==============================================================
 ## Kush
