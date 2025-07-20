@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from gym import ObservationWrapper, spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from src.utils import get_c8_neighbors_status, make_agent_feature_matrix
+from src.attention import SpatialChannelAttention
 
 class CustomGridCNNWrapper(ObservationWrapper):
     '''
@@ -207,6 +208,11 @@ def build_default_cnn(in_channels, grid_file):
             nn.Conv2d(60, 100, kernel_size=3, stride=2, padding=1), # (100, 2, 2) ~10%
             nn.ReLU()
         )
+
+def build_attention_cnn(in_channels, grid_file):
+    cnn = build_default_cnn(in_channels, grid_file)
+    attn = SpatialChannelAttention(in_channels=cnn[-1].out_channels if hasattr(cnn[-1], 'out_channels') else 100)
+    return nn.Sequential(cnn, attn)
     
 class GridCNNExtractor(BaseFeaturesExtractor):
     '''
@@ -221,6 +227,8 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             self.feature_net = build_default_cnn(n_input_channels, grid_file)
         elif backbone.lower() == "unet":
             self.feature_net = UNetPathfinder(input_channels=n_input_channels)
+        elif backbone.lower() == "attn":
+            self.feature_net = build_attention_cnn(n_input_channels, grid_file)
         else:
             raise ValueError(f"Unknown backbone: {backbone}")
 

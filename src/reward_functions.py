@@ -303,4 +303,4 @@ def get_reward_e3(env, new_pos):
 
 def compute_reward(env, new_pos):
     new_pos = tuple(new_pos)
-    return get_reward_e3(env, new_pos)
+    return get_reward_d(env, new_pos)

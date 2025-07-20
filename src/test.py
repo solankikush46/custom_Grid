@@ -159,15 +159,12 @@ def train_all_models(timesteps: int = 1_000_000):
     Trains PPO models with support for halfsplit battery overrides when
     specified
     """
-    '''
     models_to_train = [
-       {"grid_file": "20p_100x100.txt", "arch": None, "model_name": "20p_100x100__reward_d", "halfsplit": False},
-        {"grid_file": "30p_100x100.txt", "arch": None, "model_name": "30p_100x100__reward_d", "halfsplit": False},
-    ]
-    '''
-    models_to_train = [
-        {"grid_file": "20p_100x100.txt", "arch": "seq", "model_name": "20p_100x100__reward_d_cnn_seq", "halfsplit": False},
-        {"grid_file": "30p_100x100.txt", "arch": None, "model_name": "30p_100x100__reward_d", "halfsplit": False},
+        {"grid_file": "a_30x30.txt", "arch": "attn", "model_name": "a_30x30__reward_d_attn", "halfsplit": False},
+        {"grid_file": "b_30x30.txt", "arch": "attn", "model_name": "b_30x30__reward_d_attn", "halfsplit": False},
+        {"grid_file": "c_30x30.txt", "arch": "attn", "model_name": "c_30x30__reward_d_attn", "halfsplit": False},
+        {"grid_file": "a_50x50.txt", "arch": "attn", "model_name": "a_50x50__reward_d_attn", "halfsplit": False},
+        {"grid_file": "mine_100x100.txt", "arch": "attn", "model_name": "a_50x50__reward_d_attn", "halfsplit": False}
     ]
 
     for config in models_to_train:
