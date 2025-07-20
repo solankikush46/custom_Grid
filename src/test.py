@@ -149,7 +149,7 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
                     print("ignoring", ppo_path)
                     flag = True
                     break
-            if flag or "sigmoid" in ppo_path:
+            if flag:
                 continue
 
             evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose)

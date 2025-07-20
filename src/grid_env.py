@@ -456,34 +456,7 @@ class GridWorldEnv(Env):
 
     def get_observation(self):
         if self.is_cnn:
-            # 2 channels
-            '''
-            obs = np.zeros((2, self.n_rows, self.n_cols), dtype=np.float32)
-
-            # Channel 0: what is in the cell
-            for r in range(self.n_rows):
-                for c in range(self.n_cols):
-                    if (r, c) == tuple(self.agent_pos):
-                        obs[0, r, c] = 2  # Agent
-                    elif self.static_grid[r, c] == OBSTACLE:
-                        obs[0, r, c] = 1  # Obstacle
-                    elif self.static_grid[r, c] == GOAL:
-                        obs[0, r, c] = 3  # Goal
-                    elif self.static_grid[r, c] == SENSOR:
-                        obs[0, r, c] = 4  # Sensor
-                    elif self.static_grid[r,c] == BASE_STATION:
-                        obs[0, r, c] = 5 # Base station
-                    else:
-                        obs[0, r, c] = 0  # Empty
-
-            # Channel 1: battery level (only for sensors)
-            for (r, c), battery in self.sensor_batteries.items():
-                obs[1, r, c] = battery / 100.0  # Normalize 0-1
-
-            return obs
-            '''
-            # 5 channels
-            
+            # 5 channels      
             obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
 
             # Channel 0: agent
@@ -506,29 +479,6 @@ class GridWorldEnv(Env):
                 obs[4, r, c] = 1.0
 
             return obs
-            
-            # 4 - channels
-            '''
-            obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
-
-            r, c = self.agent_pos
-            obs[0, r, c] = 1.0  # Agent
-
-            for r in range(self.n_rows):
-                for c in range(self.n_cols):
-                    if self.static_grid[r, c] in ('#', 'S', 'B'):
-                        obs[1, r, c] = 1.0  # Blocked
-
-            obs[2, :, :] = -1.0
-            for (r, c), battery in self.sensor_batteries.items():
-                obs[2, r, c] = battery / 100.0  # Battery
-
-            for r, c in self.goal_positions:
-                obs[3, r, c] = 1.0  # Goal
-
-            return obs
-            '''
-
         else:
             # Flat vector
             r, c = self.agent_pos
