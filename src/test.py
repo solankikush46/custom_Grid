@@ -9,6 +9,7 @@ import src.grid_gen as grid_gen
 import matplotlib.pyplot as plt
 from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
 from src.plot_metrics import *
+from src.reward_functions import *
 import re
 
 def test_manual_control(grid_file: str = "mine_20x20.txt"):
@@ -159,13 +160,45 @@ def train_all_models(timesteps: int = 1_000_000):
     Trains PPO models with support for halfsplit battery overrides when
     specified
     """
+    def attach_model_names(model_configs):
+        for config in model_configs:
+            grid_name = os.path.splitext(config["grid_file"])[0]
+            reward_fn_name = config.get("reward_fn").__name__ if config.get("reward_fn") else "unknown_reward"
+            reward_name = reward_fn_name.replace("get_", "")
+            arch = config.get("arch", "unknown_arch")
+            
+            # Add 'cnn' if arch is specified and doesn't already contain 'cnn'
+            cnn_tag = "cnn" if arch != "unknown_arch" else ""
+
+            # Construct model_name with optional cnn tag
+            if cnn_tag:
+                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
+            else:
+                model_name = f"{grid_name}__{reward_name}__{arch}"
+
+            config["model_name"] = model_name
+            
     models_to_train = [
-        {"grid_file": "a_30x30.txt", "arch": "attn", "model_name": "a_30x30__reward_d_attn", "halfsplit": False},
-        {"grid_file": "b_30x30.txt", "arch": "attn", "model_name": "b_30x30__reward_d_attn", "halfsplit": False},
-        {"grid_file": "c_30x30.txt", "arch": "attn", "model_name": "c_30x30__reward_d_attn", "halfsplit": False},
-        {"grid_file": "a_50x50.txt", "arch": "attn", "model_name": "a_50x50__reward_d_attn", "halfsplit": False},
-        {"grid_file": "mine_100x100.txt", "arch": "attn", "model_name": "a_50x50__reward_d_attn", "halfsplit": False}
+        # get_reward_e
+        {"grid_file": "a_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
+        {"grid_file": "b_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
+        {"grid_file": "c_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
+        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
+
+        # get_reward_e2
+        {"grid_file": "a_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
+        {"grid_file": "b_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
+        {"grid_file": "c_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
+        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
+
+        # get_reward_e3
+        {"grid_file": "a_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
+        {"grid_file": "b_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
+        {"grid_file": "c_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
+        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
     ]
+
+    attach_model_names(models_to_train)
 
     for config in models_to_train:
         try:
@@ -179,10 +212,11 @@ def train_all_models(timesteps: int = 1_000_000):
                 battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
             model = train.train_PPO_model(
+                reward_fn=config.get("reward_fn"),
                 grid_file=config["grid_file"],
                 timesteps=timesteps,
                 reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-                arch=config.get("arch"),  # <-- updated here
+                arch=config.get("arch"),
                 folder_name=config["model_name"],
                 battery_truncation=True
             )

@@ -15,21 +15,24 @@ import datetime
 from src.constants import *
 from src.plot_metrics import *
 from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
+import src.reward_functions as reward_functions
 
 ##==============================================================
 ## Unified PPO Training Function
 ##==============================================================
-def train_PPO_model(grid_file: str,
+def train_PPO_model(reward_fn,
+                    grid_file: str,
                     timesteps: int,
                     folder_name: str,
                     reset_kwargs: dict = {},
                     arch: str | None = None,
                     features_dim: int = 128,
-                    battery_truncation=False):
+                    battery_truncation=False
+                    ):
 
     # Initialize environment
     is_cnn = arch is not None
-    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
+    env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 
@@ -87,7 +90,24 @@ def train_PPO_model(grid_file: str,
 
     return model
 
-    return model
+def infer_reward_fn(experiment_name: str):
+    """
+    Extracts and returns the reward function used in a given experiment name.
+    Looks for parts like 'reward_d' in the experiment name (split by '__'),
+    then returns the corresponding function 'get_reward_d' from reward_functions.
+    """
+    parts = experiment_name.split("__")
+    
+    for part in parts:
+        if part.startswith("reward_"):
+            reward_key = part.split("_")[0] + "_" + part.split("_")[1]  # "reward_d"
+            fn_name = f"get_{reward_key}"
+            if hasattr(reward_functions, fn_name):
+                return getattr(reward_functions, fn_name)
+            else:
+                raise ValueError(f"No reward function named {fn_name} in reward_functions.py")
+    
+    raise ValueError(f"No reward key found in experiment name: {experiment_name}")
 
 # training utils
 #-------------------------------------------------
@@ -102,8 +122,9 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     """
     print("experiment_folder", experiment_folder)
     model_path = os.path.join(experiment_folder, "model")
+    reward_fn = infer_reward_fn(experiment_folder)
 
-    env = GridWorldEnv(grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
 

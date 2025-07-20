@@ -195,13 +195,14 @@ class CustomTensorboardCallback(BaseCallback):
 ##==============================================================
 class GridWorldEnv(Env):
     def __init__(self,
+                 reward_fn,
                  grid_file: str = None,
                  grid_height: int = None,
                  grid_width: int = None,
                  obstacle_percentage=None,
                  n_sensors=None, reset_kwargs={},
                  is_cnn=False, battery_truncation=False,
-                 n_miners=12
+                 n_miners=12,
                  ):
         super(GridWorldEnv, self).__init__()
 
@@ -215,7 +216,7 @@ class GridWorldEnv(Env):
         self.reset_kwargs = reset_kwargs
         self.is_cnn = is_cnn
         self.battery_truncation = battery_truncation
-
+        
         # pygame rendering
         self.pygame_initialized = False
         self.fixed_window_size = None
@@ -239,6 +240,7 @@ class GridWorldEnv(Env):
         self.n_miners = 12
         self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION)
         self.n_miners = n_miners
+        self.reward_fn = reward_fn
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -594,7 +596,7 @@ class GridWorldEnv(Env):
         return self.get_observation(), reward, terminated, truncated, info
 
     def _compute_reward_and_update(self, new_pos):
-        reward, subrewards = compute_reward(self, new_pos)
+        reward, subrewards = compute_reward(self, new_pos, self.reward_fn)
         self.total_reward += reward
         new_pos = tuple(new_pos)
         if new_pos in self.visited:
