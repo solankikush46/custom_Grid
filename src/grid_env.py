@@ -7,11 +7,11 @@ import random
 import os
 import csv
 import pygame
-import grid_gen
-from constants import *
-from utils import *
-from reward_functions import compute_reward
-from sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
+import src.grid_gen as grid_gen
+from src.constants import *
+from src.utils import *
+from src.reward_functions import compute_reward
+from src.sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
 from stable_baselines3.common.callbacks import BaseCallback
 import datetime
 

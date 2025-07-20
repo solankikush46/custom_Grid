@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from gym import ObservationWrapper, spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from utils import get_c8_neighbors_status, make_agent_feature_matrix
+from src.utils import get_c8_neighbors_status, make_agent_feature_matrix
 
 class CustomGridCNNWrapper(ObservationWrapper):
     '''
@@ -212,12 +212,12 @@ class GridCNNExtractor(BaseFeaturesExtractor):
     '''
     Feature Extractor
     '''
-    def __init__(self, observation_space, features_dim=128, grid_file=None, backbone="cnn"):
+    def __init__(self, observation_space, features_dim=128, grid_file=None, backbone="seq"):
         super().__init__(observation_space, features_dim)
         n_input_channels, height, width = observation_space.shape
         dummy_input = torch.zeros(1, n_input_channels, height, width)
 
-        if backbone.lower() == "cnn":
+        if backbone.lower() == "seq":
             self.feature_net = build_default_cnn(n_input_channels, grid_file)
         elif backbone.lower() == "unet":
             self.feature_net = UNetPathfinder(input_channels=n_input_channels)

@@ -2,13 +2,13 @@
 
 import time
 import os
-from grid_env import GridWorldEnv
-from constants import *
-import train
-import grid_gen
+from src.grid_env import GridWorldEnv
+from src.constants import *
+import src.train as train
+import src.grid_gen as grid_gen
 import matplotlib.pyplot as plt
-from cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
-from plot_metrics import *
+from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor
+from src.plot_metrics import *
 import re
 
 def test_manual_control(grid_file: str = "mine_20x20.txt"):
@@ -159,26 +159,20 @@ def train_all_models(timesteps: int = 1_000_000):
     Trains PPO models with support for halfsplit battery overrides when
     specified
     """
+    '''
     models_to_train = [
-        #{"grid_file": "mine_20x20.txt", "is_cnn": True, "model_name": "mine_20x20__reward_d_cnn_c4", "halfsplit": False},
-        #{"grid_file": "a_30x30.txt", "is_cnn": True, "model_name": "a_30x30__reward_d_cnn", "halfsplit": False},
-        #{"grid_file": "b_30x30.txt", "is_cnn": True, "model_name": "b_30x30__reward_d_cnn", "halfsplit": False},
-        #{"grid_file": "c_30x30.txt", "is_cnn": True, "model_name": "c_30x30__reward_d_cnn", "halfsplit": False},
-        #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_d", "halfsplit": False},
-        #{"grid_file": "a_50x50.txt", "is_cnn": True, "model_name": "a_50x50__reward_d_cnn_unet", "halfsplit": False},
-        #{"grid_file": "a_50x50.txt", "is_cnn": True, "model_name": "a_50x50__reward_d_cnn_c5", "halfsplit": False},
-        #{"grid_file": "10p_100x100.txt", "is_cnn": False, "model_name": "10p_100x100__reward_d", "halfsplit": False},
-         {"grid_file": "20p_100x100.txt", "is_cnn": False, "model_name": "20p_100x100__reward_d", "halfsplit": False},
-         {"grid_file": "30p_100x100.txt", "is_cnn": False, "model_name": "30p_100x100__reward_d", "halfsplit": False},
-         #{"grid_file": "a_30x30.txt", "is_cnn": False, "model_name": "a_30x30__reward_e3_sigmoid", "halfsplit": False},
-        #{"grid_file": "b_30x30.txt", "is_cnn": False, "model_name": "b_30x30__reward_e3_sigmoid", "halfsplit": False},
-        #{"grid_file": "c_30x30.txt", "is_cnn": False, "model_name": "c_30x30__reward_e3_sigmoid", "halfsplit": False},
-         #{"grid_file": "a_50x50.txt", "is_cnn": False, "model_name": "a_50x50__reward_e3_sigmoid", "halfsplit": False},
+       {"grid_file": "20p_100x100.txt", "arch": None, "model_name": "20p_100x100__reward_d", "halfsplit": False},
+        {"grid_file": "30p_100x100.txt", "arch": None, "model_name": "30p_100x100__reward_d", "halfsplit": False},
+    ]
+    '''
+    models_to_train = [
+        {"grid_file": "20p_100x100.txt", "arch": "seq", "model_name": "20p_100x100__reward_d_cnn_seq", "halfsplit": False},
+        {"grid_file": "30p_100x100.txt", "arch": None, "model_name": "30p_100x100__reward_d", "halfsplit": False},
     ]
 
     for config in models_to_train:
         try:
-            print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (CNN={config['is_cnn']})")
+            print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (arch={config.get('arch')})")
 
             grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
 
@@ -191,7 +185,7 @@ def train_all_models(timesteps: int = 1_000_000):
                 grid_file=config["grid_file"],
                 timesteps=timesteps,
                 reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-                is_cnn=config["is_cnn"],
+                arch=config.get("arch"),  # <-- updated here
                 folder_name=config["model_name"],
                 battery_truncation=True
             )

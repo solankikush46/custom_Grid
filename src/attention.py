@@ -1,5 +1,5 @@
 # attention.py
-from cnn_feature_extractor import *
+from src.cnn_feature_extractor import *
 
 class SpatialChannelAttention(nn.Module):
     def __init__(self, in_channels, reduction=8):

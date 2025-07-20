@@ -1,7 +1,7 @@
 # reward_functions.py
 
 import numpy as np
-from utils import *
+from src.utils import *
 
 ##==============================================================
 ## Reward functions agent in GridWorldEnv may use
