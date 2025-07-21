@@ -174,7 +174,7 @@ def train_all_models(timesteps: int = 1_000_000):
             if cnn_tag:
                 model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
             else:
-                model_name = f"{grid_name}__{reward_name}__{arch}"
+                model_name = f"{grid_name}__{reward_name}"
 
             config["model_name"] = model_name
             
