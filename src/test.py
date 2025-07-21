@@ -179,23 +179,7 @@ def train_all_models(timesteps: int = 1_000_000):
             config["model_name"] = model_name
             
     models_to_train = [
-        # get_reward_e
-        {"grid_file": "a_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
-        {"grid_file": "b_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
-        {"grid_file": "c_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
-        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e},
-
-        # get_reward_e2
-        {"grid_file": "a_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
-        {"grid_file": "b_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
-        {"grid_file": "c_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
-        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e2},
-
-        # get_reward_e3
-        {"grid_file": "a_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
-        {"grid_file": "b_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
-        {"grid_file": "c_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
-        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3},
+        {"grid_file": "old_mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_d}
     ]
 
     attach_model_names(models_to_train)
