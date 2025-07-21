@@ -16,6 +16,8 @@ from src.constants import *
 from src.plot_metrics import *
 from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
 import src.reward_functions as reward_functions
+from src.attention import AttentionCNNExtractor
+from src.wrappers import TimeStackObservation
 
 ##==============================================================
 ## Unified PPO Training Function
@@ -27,7 +29,9 @@ def train_PPO_model(reward_fn,
                     reset_kwargs: dict = {},
                     arch: str | None = None,
                     features_dim: int = 128,
-                    battery_truncation=False
+                    battery_truncation=False,
+                    is_att = False,
+                    num_frames = 4
                     ):
 
     # Initialize environment
@@ -35,6 +39,8 @@ def train_PPO_model(reward_fn,
     env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
+    if is_att:
+        env = TimeStackObservation(env, num_frames = num_frames)
 
     vec_env = DummyVecEnv([lambda: env])
     base_log_path = os.path.join(SAVE_DIR, folder_name)
@@ -47,6 +53,16 @@ def train_PPO_model(reward_fn,
                 "features_dim": features_dim,
                 "grid_file": grid_file,
                 "backbone": arch.lower()
+            },
+            "net_arch": dict(pi=[64, 64], vf=[64, 64])
+        }
+    
+    elif is_att:
+        policy_kwargs = {
+            "features_extractor_class": AttentionCNNExtractor,
+            "features_extractor_kwargs": {
+                "features_dim": features_dim,
+                "grid_file": grid_file
             },
             "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }

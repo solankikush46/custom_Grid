@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from gym import ObservationWrapper, spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from src.utils import get_c8_neighbors_status, make_agent_feature_matrix
-from src.attention import SpatialChannelAttention
+from src.attention import *
 
 class CustomGridCNNWrapper(ObservationWrapper):
     '''
@@ -164,15 +164,39 @@ def build_default_cnn(in_channels, grid_file):
     '''
     if grid_file and "100x100" in grid_file:
         return nn.Sequential(
-            nn.Conv2d(in_channels, 10, 3, stride=2, padding=1), nn.ReLU(),
-            nn.Conv2d(10, 20, 3, stride=2, padding=1), nn.ReLU(),
-            nn.Conv2d(20, 40, 3, stride=2, padding=1), nn.ReLU(),
-            nn.Conv2d(40, 80, 3, stride=2, padding=1), nn.ReLU(),
-            nn.Conv2d(80, 160, 3, stride=2, padding=1), nn.ReLU()
-        )
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1),    # (32, 50, 50)
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),   # (64, 25, 25)
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # (128, 13, 13)
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # (256, 7, 7)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+
+            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1), # (256, 4, 4)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+
+            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1), # (256, 2, 2)
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+
+            nn.AdaptiveAvgPool2d((1, 1)),  # (256, 1, 1)
+            nn.Flatten()
+            )
     elif grid_file and "50x50" in grid_file:
+
         return nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),   # (32, 25, 25)
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1),   # (32, 25, 25)
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # (64, 13, 13)
@@ -192,8 +216,9 @@ def build_default_cnn(in_channels, grid_file):
             nn.AdaptiveAvgPool2d((1, 1))  # (256, 1, 1)
         )
     elif grid_file and "20x20" in grid_file:
+
         return nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),    # (32, 10, 10)
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1),    # (32, 10, 10)
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),   # (64, 5, 5)
@@ -210,7 +235,7 @@ def build_default_cnn(in_channels, grid_file):
         )
     else:
         return nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1),    # (32, 15, 15)
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1),    # (32, 15, 15)
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),   # (64, 8, 8)
