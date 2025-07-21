@@ -174,12 +174,12 @@ def train_all_models(timesteps: int = 1_000_000):
             if cnn_tag:
                 model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
             else:
-                model_name = f"{grid_name}__{reward_name}"
+                model_name = f"{grid_name}__{reward_name}__{arch}"
 
             config["model_name"] = model_name
             
     models_to_train = [
-        {"grid_file": "old_mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_d}
+        {"grid_file": "old_mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_b}
     ]
 
     attach_model_names(models_to_train)

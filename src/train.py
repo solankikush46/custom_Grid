@@ -122,8 +122,10 @@ def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, res
     """
     print("experiment_folder", experiment_folder)
     model_path = os.path.join(experiment_folder, "model")
-    reward_fn = infer_reward_fn(experiment_folder)
-
+    experiment_name = os.path.basename(experiment_folder)
+    parent_folder = os.path.basename(os.path.dirname(experiment_folder))
+    reward_fn = infer_reward_fn(parent_folder)
+    
     env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
     if is_cnn:
         env = CustomGridCNNWrapper(env)
