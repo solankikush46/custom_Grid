@@ -168,7 +168,7 @@ def train_all_models(timesteps: int = 1_000_000):
             arch = config.get("arch", "unknown_arch")
             
             # Add 'cnn' if arch is specified and doesn't already contain 'cnn'
-            cnn_tag = "cnn" if arch != "unknown_arch" else ""
+            cnn_tag = "cnn" if arch != "None" else ""
 
             # Construct model_name with optional cnn tag
             if cnn_tag:
