@@ -16,7 +16,7 @@ def test_manual_control(grid_file: str = "mine_20x20.txt"):
     """
     Launch manual control mode for the specified grid file.
     """
-    env = GridWorldEnv(grid_file=grid_file)
+    env = GridWorldEnv(grid_file=grid_file, reward_fn=get_reward_d)
     env.manual_control_loop()  
 
 def generate_grid(rows: int, cols: int, obstacle_percentage: float,
@@ -179,7 +179,7 @@ def train_all_models(timesteps: int = 1_000_000):
             config["model_name"] = model_name
             
     models_to_train = [
-        {"grid_file": "old_mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_b}
+        {"grid_file": "a_30x30.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_d}
     ]
 
     attach_model_names(models_to_train)
