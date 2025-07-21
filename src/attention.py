@@ -6,21 +6,19 @@ class SpatialChannelAttention(nn.Module):
         super().__init__()
 
         # --- Channel Attention ---
-        # This MLP learns weights for each channel using global context
         self.mlp = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),        # Pool each channel to a single value (B, C, 1, 1)
-            nn.Flatten(1),                  # Flatten to (B, C)
-            nn.Linear(in_channels, in_channels // reduction),  # Dim reduction
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(1),
+            nn.Linear(in_channels, in_channels // reduction),
             nn.ReLU(),
-            nn.Linear(in_channels // reduction, in_channels),  # Expand back to original size
-            nn.Sigmoid()                    # Output weights in [0, 1] for each channel
+            nn.Linear(in_channels // reduction, in_channels),
+            nn.Sigmoid()                   
         )
 
         # --- Spatial Attention ---
-        # Learns weights for spatial positions (i.e., which (h, w) are important)
         self.spatial = nn.Sequential(
-            nn.Conv2d(2, 1, kernel_size=7, padding=3),  # Kernel sees a 7x7 neighborhood
-            nn.Sigmoid()                                # Output shape: (B, 1, H, W)
+            nn.Conv2d(2, 1, kernel_size=7, padding=3),
+            nn.Sigmoid()
         )
 
     def forward(self, x):  # x: (B, C, H, W)
