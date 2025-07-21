@@ -24,8 +24,8 @@ def main():
     #train_quick_junk_model("mine_20x20.txt")
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
-    train_all_models(1_000_000)
-    #evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=["a_30x30__reward_d_cnn"])
+    #train_all_models(1_000_000)
+    evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=["mine_20x20__reward_c_cnn_5_channels"])
     
 if __name__ == "__main__":
     ensure_directories_exist()

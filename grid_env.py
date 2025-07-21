@@ -294,18 +294,20 @@ class GridWorldEnv(Env):
             '''
             '''
             self.observation_space = Box(
+            low=-1.0,
+            high=1.0,
+            shape=(4, self.n_rows, self.n_cols),
+            dtype=np.float32
+            )
+            '''
+            
+            self.observation_space = Box(
             low=0.0,
             high=1.0,
             shape=(5, self.n_rows, self.n_cols),
             dtype=np.float32
             )
-            '''
-            self.observation_space = Box(
-            low=0.0,
-            high=1.0,
-            shape=(7, self.n_rows, self.n_cols),
-            dtype=np.float32
-            )
+            
         else:
             
             # [0, 7] - space around agent
@@ -489,7 +491,7 @@ class GridWorldEnv(Env):
 
             return obs
             '''
-            '''
+
             # 5 channels
             
             obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
@@ -514,6 +516,7 @@ class GridWorldEnv(Env):
                 obs[4, r, c] = 1.0
 
             return obs
+
             '''
             # 7 channels
             
@@ -544,9 +547,10 @@ class GridWorldEnv(Env):
             obs[6] = np.repeat(col_coords, self.n_rows, axis=1)[0]
 
             return obs
-
-            # 4 - channels
             '''
+            '''
+            # 4 - channels
+            
             obs = np.zeros((4, self.n_rows, self.n_cols), dtype=np.float32)
 
             r, c = self.agent_pos

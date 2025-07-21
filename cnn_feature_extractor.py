@@ -160,7 +160,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.ReLU()
             )
             '''
-            '''
+            
             #c3 architecture
             self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 10, kernel_size=3, stride=2, padding=1),
@@ -174,8 +174,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.Conv2d(80, 160, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
             )
-            '''
-
+            
             '''
             #c2 architecture
             self.cnn = nn.Sequential(
@@ -188,6 +187,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
             )
+            '''
             '''
             # c5 architecture
             self.cnn = nn.Sequential(
@@ -212,7 +212,7 @@ class GridCNNExtractor(BaseFeaturesExtractor):
             nn.AdaptiveAvgPool2d((1, 1)),  # (256, 1, 1)
             nn.Flatten()
             )
-
+            '''
         elif grid_file and "100x100" in grid_file:
             self.mode = "large"
             '''
