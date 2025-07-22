@@ -572,7 +572,7 @@ class GridWorldEnv(Env):
         self.pathfinder = DStarLite(
             grid=planning_grid,
             start=tuple(self.agent_pos),
-            goals=self.goal_positions[0],
+            goals=self.goal_positions,
             cost_function=self._dstar_cost_function
         )
         self.pathfinder._compute_shortest_path()
@@ -597,15 +597,24 @@ class GridWorldEnv(Env):
         return tuple(self.agent_pos) in self.goal_positions
 
     def _pathfinder_step(self):
-        # === PATHFINDER: Get list of changed cells AFTER miners move ===
-        sensors_after_miners = set(self.sensor_batteries.keys())
-        changed_cost_cells = list(sensors_before_miners.union(sensors_after_miners))
-        if self.pathfinder:
-            # 1. Update costs from battery changes
-            if changed_cost_cells:
-                self.pathfinder.update_costs(changed_cost_cells)
-            # 2. Tell pathfinder where the agent moved
-            self.pathfinder.move_and_replan(tuple(self.agent_pos))
+        """
+        Updates the D* Lite pathfinder. Assumes all sensor costs may have changed.
+        This should be called after all world states (batteries, agent pos) have been updated.
+        """
+        if not self.pathfinder:
+            return
+
+        # === SIMPLIFIED LOGIC ===
+        # Get the list of all current sensor positions.
+        all_sensor_positions = list(self.sensor_batteries.keys())
+
+        # 1. Update the costs for ALL sensor locations, as per the assumption.
+        if all_sensor_positions:
+            self.pathfinder.update_costs(all_sensor_positions)
+
+        # 2. Tell pathfinder where the agent moved.
+        #    Ensure the position is passed as a tuple.
+        self.pathfinder.move_and_replan(tuple(self.agent_pos))
     
     def step(self, action):
         move = DIRECTION_MAP[int(action)]
@@ -631,9 +640,10 @@ class GridWorldEnv(Env):
         reward, subrewards = compute_reward(self, old_pos, self.reward_fn)
         self.total_reward += reward
         old_pos = tuple(old_pos)
-        if tuple(self.agent_pos) in self.visited:
+        new_pos = tuple(self.agent_pos)
+        if new_pos in self.visited:
             self.episode_revisits += 1
-        self.visited.add(self.agent_pos)
+        self.visited.add(tuple(new_pos))
         return reward, subrewards
 
     def _update_agent_position(self, new_pos):

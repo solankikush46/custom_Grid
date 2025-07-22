@@ -301,7 +301,7 @@ def get_reward_e3(env, new_pos):
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
 
-def get_reward_6(env, new_pos):
+def get_reward_6(env, old_pos):
     """
     A proactive, path-informed reward function (Version 2).
 
@@ -328,6 +328,7 @@ def get_reward_6(env, new_pos):
     }
     
     # Case 1: Goal is reached
+    new_pos = tuple(env.agent_pos)
     if new_pos in env.goal_positions:
         subrewards["goal_reward"] = w_goal
         total_reward = sum(subrewards.values())

@@ -158,7 +158,8 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
 def train_all_models(timesteps: int = 1_000_000):
     """
     Trains PPO models with support for halfsplit battery overrides when
-    specified
+    specified. This version runs without a try-except block and will
+    halt on any error.
     """
     def attach_model_names(model_configs):
         for config in model_configs:
@@ -167,7 +168,7 @@ def train_all_models(timesteps: int = 1_000_000):
             reward_name = reward_fn_name.replace("get_", "")
             arch = config.get("arch", "unknown_arch")
             
-            # Add 'cnn' if arch is specified and doesn't already contain 'cnn'
+            # Add 'cnn' if arch is specified
             cnn_tag = "cnn" if arch is not None else ""
 
             # Construct model_name with optional cnn tag
@@ -185,30 +186,26 @@ def train_all_models(timesteps: int = 1_000_000):
     attach_model_names(models_to_train)
 
     for config in models_to_train:
-        try:
-            print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (arch={config.get('arch')})")
+        print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (arch={config.get('arch')})")
 
-            grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
+        grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
 
-            # compute battery overrides only if halfsplit flag is True
-            battery_overrides = {}
-            if config.get("halfsplit", False):
-                battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
+        # Compute battery overrides only if halfsplit flag is True
+        battery_overrides = {}
+        if config.get("halfsplit", False):
+            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
 
-            model = train.train_PPO_model(
-                reward_fn=config.get("reward_fn"),
-                grid_file=config["grid_file"],
-                timesteps=timesteps,
-                reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-                arch=config.get("arch"),
-                folder_name=config["model_name"],
-                battery_truncation=True
-            )
-        
-            print(f"Finished training")
-            
-        except Exception as e:
-            print(f"Failed to train {config['model_name']} on {config['grid_file']}: {e}")
+        model = train.train_PPO_model(
+            reward_fn=config.get("reward_fn"),
+            grid_file=config["grid_file"],
+            timesteps=timesteps,
+            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
+            arch=config.get("arch"),
+            folder_name=config["model_name"],
+            battery_truncation=True
+        )
+    
+        print(f"Finished training {config['model_name']}")
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """

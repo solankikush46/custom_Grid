@@ -1,5 +1,3 @@
-# path_planning.py
-
 import heapq
 import math
 import pygame
@@ -9,8 +7,7 @@ import random
 class DStarLite:
     """
     An optimized D* Lite pathfinding algorithm that supports dynamic edge costs
-    and multiple goal destinations. It uses a "super-goal" to efficiently find
-    the cheapest path to the nearest of several possible exits.
+    and multiple goal destinations by initializing all goals as zero-cost path sources.
     """
     def __init__(self, grid, start, goals, cost_function):
         if not goals:
@@ -21,10 +18,12 @@ class DStarLite:
         self.height = len(grid)
         self.cost_function = cost_function
 
-        self.s_supergoal = (-1, -1)
+        # --- Multi-Goal Setup (Simpler/Correct Approach) ---
         self.real_goals = goals
-        self.s_goal = self.s_supergoal
+        # s_goal is only needed for the heuristic, can be any goal
+        self.s_goal = self.real_goals[0]
 
+        # --- D* Lite Core Variables ---
         self.s_start = start
         self.s_last = start
         self.k_m = 0.0
@@ -39,8 +38,7 @@ class DStarLite:
                 self.g[(c, r)] = float('inf')
                 self.rhs[(c, r)] = float('inf')
         
-        self.rhs[self.s_supergoal] = 0
-
+        # --- Initialize ALL real goals ---
         for goal in self.real_goals:
             self.rhs[goal] = 0
             heapq.heappush(self.U, (self._calculate_key(goal), goal))
@@ -84,35 +82,28 @@ class DStarLite:
             if self.g.get(u, float('inf')) > self.rhs.get(u, float('inf')):
                 self.g[u] = self.rhs[u]
                 for s_prime in self._get_neighbors(u):
-                    self.rhs[s_prime] = min(self.rhs.get(s_prime, float('inf')), self._get_edge_cost(s_prime, u) + self.g.get(u, float('inf')))
+                    self.rhs[s_prime] = min(self.rhs.get(s_prime, float('inf')), self._get_edge_cost(u, s_prime) + self.g.get(u, float('inf')))
                     self._update_node(s_prime)
             else:
                 g_old = self.g.get(u, float('inf')); self.g[u] = float('inf')
                 for s_prime in self._get_neighbors(u) + [u]:
-                    if self.rhs.get(s_prime, float('inf')) == self._get_edge_cost(s_prime, u) + g_old:
-                        if s_prime != self.s_supergoal:
+                    if self.rhs.get(s_prime, float('inf')) == self._get_edge_cost(u, s_prime) + g_old:
+                        if s_prime not in self.real_goals:
                             min_rhs = float('inf')
-                            for s_hat in self._get_neighbors(s_prime): min_rhs = min(min_rhs, self._get_edge_cost(s_prime, s_hat) + self.g.get(s_hat, float('inf')))
+                            for s_hat in self._get_neighbors(s_prime):
+                                min_rhs = min(min_rhs, self._get_edge_cost(s_prime, s_hat) + self.g.get(s_hat, float('inf')))
                             self.rhs[s_prime] = min_rhs
                     self._update_node(s_prime)
 
     def _get_neighbors(self, u):
-        # First, get the standard grid neighbors
         neighbors = []
         for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
             nx, ny = u[0] + dx, u[1] + dy
             if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] == 0:
                 neighbors.append((nx, ny))
-    
-        # Then, if the node is a real goal, ALSO add the super-goal to its list of neighbors
-        if u in self.real_goals:
-            neighbors.append(self.s_supergoal)
-        
         return neighbors
 
     def _get_edge_cost(self, u, v):
-        if u in self.real_goals and v == self.s_supergoal:
-            return 0.0
         return 1 + self.cost_function(v)
 
     def move_and_replan(self, new_start):
@@ -122,9 +113,8 @@ class DStarLite:
 
     def update_costs(self, changed_edges):
         for u in changed_edges:
-            # When a cell's cost changes, the rhs values of its neighbors must be re-evaluated.
-            for s_prime in self._get_neighbors(u) + [u]: # Update neighbors and the node itself
-                if s_prime != self.s_supergoal:
+            for s_prime in self._get_neighbors(u) + [u]:
+                if s_prime not in self.real_goals:
                     min_rhs = float('inf')
                     for s_hat in self._get_neighbors(s_prime):
                         min_rhs = min(min_rhs, self._get_edge_cost(s_prime, s_hat) + self.g.get(s_hat, float('inf')))
@@ -163,15 +153,15 @@ class DynamicGridWorld:
             else: stack.pop()
         return grid
     def _add_loops(self, n):
-        walls=[];_ = [walls.append((x,y)) for y in range(1,self.height-1) for x in range(1,self.width-1) if self.grid[y][x]==1 and ((self.grid[y][x-1]==0 and self.grid[y][x+1]==0) or (self.grid[y-1][x]==0 and self.grid[y+1][x]==0))]
-        random.shuffle(walls); [self._set_grid_val(walls[i],0) for i in range(min(n,len(walls)))]
+        walls=[];_=[walls.append((x,y)) for y in range(1,self.height-1) for x in range(1,self.width-1) if self.grid[y][x]==1 and ((self.grid[y][x-1]==0 and self.grid[y][x+1]==0) or (self.grid[y-1][x]==0 and self.grid[y+1][x]==0))]
+        random.shuffle(walls);[self._set_grid_val(walls[i],0) for i in range(min(n,len(walls)))]
     def _set_grid_val(self,pos,val): self.grid[pos[1]][pos[0]]=val
     def get_cost(self,pos): return float('inf') if pos in self.impassable_nodes else self.dynamic_costs.get(pos,0)
     def draw(self, screen, cam_x, cam_y, zoom, colors):
-        w,h=screen.get_size(); zcs=max(1,int(8*zoom)); sc=int(cam_x/zcs); ec=sc+int(w/zcs)+2; sr=int(cam_y/zcs); er=sr+int(h/zcs)+2
+        w,h=screen.get_size();zcs=max(1,int(8*zoom));sc=int(cam_x/zcs);ec=sc+int(w/zcs)+2;sr=int(cam_y/zcs);er=sr+int(h/zcs)+2
         for y in range(max(0,sr),min(self.height,er)):
             for x in range(max(0,sc),min(self.width,ec)):
-                sx=x*zcs-cam_x; sy=y*zcs-cam_y; rect=pygame.Rect(sx,sy,zcs,zcs)
+                sx=x*zcs-cam_x;sy=y*zcs-cam_y;rect=pygame.Rect(sx,sy,zcs,zcs)
                 if (x,y) in self.impassable_nodes: c=colors['red']
                 elif self.grid[y][x]==1: c=colors['black']
                 elif (x,y) in self.dynamic_costs: c=colors['cost']
@@ -185,21 +175,21 @@ def run_visual_test(width=101, height=101, loops=50, speed=60):
     pygame.display.set_caption("D* Lite Multi-Goal: Use ARROWS to Pan, +/- to Zoom")
     clock = pygame.time.Clock()
 
-    colors = {'white':(255,255,255),'black':(0,0,0),'blue':(0,0,255),'green':(0,255,0),'red':(255,0,0),'path':(30,144,255),'cost':(255,255,0)}
+    colors={'white':(255,255,255),'black':(0,0,0),'blue':(0,0,255),'green':(0,255,0),'red':(255,0,0),'path':(30,144,255),'cost':(255,255,0)}
     font = pygame.font.Font(None, 30)
 
-    loading_font = pygame.font.Font(None, 50); text = loading_font.render("Generating Maze & Computing Path...", True, colors['red'])
-    text_rect = text.get_rect(center=(screen_w/2, screen_h/2)); screen.fill(colors['black']); screen.blit(text, text_rect); pygame.display.flip()
+    loading_font=pygame.font.Font(None,50);text=loading_font.render("Generating Maze & Computing Path...",True,colors['red'])
+    text_rect=text.get_rect(center=(screen_w/2,screen_h/2));screen.fill(colors['black']);screen.blit(text,text_rect);pygame.display.flip()
 
-    world = DynamicGridWorld(width, height, loops_to_add=loops)
-    start_pos = (1, 1)
-    goal_positions = [(width-2, height-2), (width-2, 1), (1, height-2)]
-    agent_pos = start_pos
+    world=DynamicGridWorld(width,height,loops_to_add=loops)
+    start_pos=(1,1)
+    goal_positions=[(width-2,height-2),(width-2,1),(1,height-2)]
+    agent_pos=start_pos
     
-    dstar = DStarLite(world.grid, agent_pos, goal_positions, world.get_cost)
-    dstar._compute_shortest_path(); path = dstar.get_path_to_goal()
+    dstar=DStarLite(world.grid,agent_pos,goal_positions,world.get_cost)
+    dstar._compute_shortest_path();path=dstar.get_path_to_goal()
 
-    zoom = 2.0; cam_x, cam_y = 0, 0; pan_speed = 20
+    zoom=2.0;cam_x,cam_y=0,0;pan_speed=20
 
     running = True
     while running:
@@ -207,55 +197,52 @@ def run_visual_test(width=101, height=101, loops=50, speed=60):
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
             if event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = pygame.mouse.get_pos(); wx = int((mx+cam_x)/zcs); wy = int((my+cam_y)/zcs); pos=(wx,wy)
+                mx,my=pygame.mouse.get_pos();wx=int((mx+cam_x)/zcs);wy=int((my+cam_y)/zcs);pos=(wx,wy)
                 if 0<=wx<width and 0<=wy<height and world.grid[wy][wx]==0 and pos not in goal_positions:
                     if event.button==3:
                         if pos in world.impassable_nodes: world.impassable_nodes.remove(pos)
                         else: world.impassable_nodes.add(pos)
-                    # --- THIS BLOCK IS NOW FIXED ---
-                    elif event.button == 1:
-                        if pos in world.dynamic_costs:
-                            del world.dynamic_costs[pos]
-                        else:
-                            world.dynamic_costs[pos] = 150.0
-                    dstar.update_costs([pos]); path=dstar.get_path_to_goal()
+                    elif event.button==1:
+                        if pos in world.dynamic_costs: del world.dynamic_costs[pos]
+                        else: world.dynamic_costs[pos]=150.0
+                    dstar.update_costs([pos]);path=dstar.get_path_to_goal()
         
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]: cam_x -= pan_speed
-        if keys[pygame.K_RIGHT]: cam_x += pan_speed
-        if keys[pygame.K_UP]: cam_y -= pan_speed
-        if keys[pygame.K_DOWN]: cam_y += pan_speed
-        if keys[pygame.K_EQUALS] or keys[pygame.K_PLUS]: zoom *= 1.1
-        if keys[pygame.K_MINUS]: zoom /= 1.1
+        keys=pygame.key.get_pressed()
+        if keys[pygame.K_LEFT]: cam_x-=pan_speed
+        if keys[pygame.K_RIGHT]: cam_x+=pan_speed
+        if keys[pygame.K_UP]: cam_y-=pan_speed
+        if keys[pygame.K_DOWN]: cam_y+=pan_speed
+        if keys[pygame.K_EQUALS] or keys[pygame.K_PLUS]: zoom*=1.1
+        if keys[pygame.K_MINUS]: zoom/=1.1
 
-        if agent_pos not in goal_positions and path and len(path) > 1:
-            next_pos = path[1]; dstar.move_and_replan(next_pos); agent_pos=next_pos; path=dstar.get_path_to_goal()
+        if agent_pos not in goal_positions and path and len(path)>1:
+            next_pos=path[1];dstar.move_and_replan(next_pos);agent_pos=next_pos;path=dstar.get_path_to_goal()
 
-        cam_x = agent_pos[0]*zcs - screen_w/2; cam_y = agent_pos[1]*zcs - screen_h/2
+        cam_x=agent_pos[0]*zcs-screen_w/2;cam_y=agent_pos[1]*zcs-screen_h/2
 
         screen.fill(colors['black'])
-        world.draw(screen, cam_x, cam_y, zoom, colors)
+        world.draw(screen,cam_x,cam_y,zoom,colors)
 
         if path:
-            path_points = [(p[0]*zcs-cam_x+zcs/2, p[1]*zcs-cam_y+zcs/2) for p in path]
-            if len(path_points)>1: pygame.draw.lines(screen, colors['path'], False, path_points, max(1,int(2*zoom)))
+            path_points=[(p[0]*zcs-cam_x+zcs/2,p[1]*zcs-cam_y+zcs/2) for p in path]
+            if len(path_points)>1: pygame.draw.lines(screen,colors['path'],False,path_points,max(1,int(2*zoom)))
         
-        agent_sx, agent_sy = (agent_pos[0]*zcs-cam_x+zcs/2, agent_pos[1]*zcs-cam_y+zcs/2)
-        pygame.draw.circle(screen, colors['blue'], (agent_sx, agent_sy), zcs/1.8)
+        agent_sx,agent_sy=(agent_pos[0]*zcs-cam_x+zcs/2,agent_pos[1]*zcs-cam_y+zcs/2)
+        pygame.draw.circle(screen,colors['blue'],(agent_sx,agent_sy),zcs/1.8)
         
         for goal_pos in goal_positions:
-            goal_sx, goal_sy = (goal_pos[0]*zcs-cam_x+zcs/2, goal_pos[1]*zcs-cam_y+zcs/2)
-            pygame.draw.circle(screen, colors['green'], (goal_sx, goal_sy), zcs/1.8)
+            goal_sx,goal_sy=(goal_pos[0]*zcs-cam_x+zcs/2,goal_pos[1]*zcs-cam_y+zcs/2)
+            pygame.draw.circle(screen,colors['green'],(goal_sx,goal_sy),zcs/1.8)
 
-        zoom_text=font.render(f"Zoom: {zoom:.2f}x", True, colors['white']); screen.blit(zoom_text, (10,10))
-        controls_text=font.render("ARROWS: Pan | +/-: Zoom", True, colors['white']); screen.blit(controls_text, (10,40))
+        zoom_text=font.render(f"Zoom: {zoom:.2f}x",True,colors['white']);screen.blit(zoom_text,(10,10))
+        controls_text=font.render("ARROWS: Pan| +/-: Zoom| Click: Modify",True,colors['white']);screen.blit(controls_text,(10,40))
         pygame.display.flip()
 
         if agent_pos in goal_positions:
-            print("Goal reached!"); pygame.time.wait(1000); running=False
+            print("Goal reached!");pygame.time.wait(1000);running=False
         clock.tick(speed)
 
     pygame.quit()
 
 if __name__ == '__main__':
-    run_visual_test(width=501, height=501, loops=150, speed=120)
+    run_visual_test(width=501, height=501, loops=500, speed=240)
