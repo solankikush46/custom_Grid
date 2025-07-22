@@ -147,7 +147,7 @@ def get_reward_d(env, new_pos):
         inval_pen = -0.75 if not env.can_move_to(new_pos) else 0.0
         rev_pen = -0.25 if new_pos in env.visited else 0.0
         bat_pen = -1.0 if env.current_battery_level <= 10 else 0.0
-        dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclid distance to closest goal
+        dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclidean distance to closest goal
 
         subrewards = {
             "goal_reward": 0.0,
@@ -301,6 +301,115 @@ def get_reward_e3(env, new_pos):
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
 
-def compute_reward(env, new_pos, reward_fn):
-    new_pos = tuple(new_pos)
-    return reward_fn(env, new_pos)
+def get_reward_6(env, old_pos):
+    """
+    A proactive, path-informed reward function (Version 2).
+
+    This version guarantees that the returned 'subrewards' dictionary always
+    contains the same set of keys, preventing KeyErrors during data logging.
+
+    Args:
+        env: The environment object, which must contain the pathfinder.
+        old_pos (tuple): The agent's position *before* the action.
+    """
+    # --- Tunable Weights ---
+    w_goal = 1.0
+    w_invalid = -0.75
+    w_revisit = -0.25
+    w_path_progress = 1.0
+    w_dangerous = -1.0 # Penalty for moving to a state from which the pathfinder, with its knowledge of costs, can no longer find a viable or reasonable path to the goal
+    path_prog_norm = 201 # max battery penalty + cost of moving a square = 200 + 1
+
+    subrewards = {
+        "goal_reward": 0.0,
+        "invalid_penalty": 0.0,
+        "revisit_penalty": 0.0,
+        "path_progress_reward": 0.0,
+    }
+    
+    # Case 1: Goal is reached
+    new_pos = tuple(env.agent_pos)
+    if new_pos in env.goal_positions:
+        subrewards["goal_reward"] = w_goal
+        total_reward = sum(subrewards.values())
+        return total_reward, subrewards
+
+    if not env.can_move_to(new_pos):
+        subrewards["invalid_penalty"] = w_invalid
+        total_reward = sum(subrewards.values())
+        return total_reward, subrewards
+
+    if new_pos in env.visited:
+        subrewards["revisit_penalty"] = w_revisit
+    
+    cost_from_old_pos = env.get_path_cost(old_pos)
+    cost_from_new_pos = env.get_path_cost(new_pos)
+
+    
+    if cost_from_new_pos == float('inf'):
+        if cost_from_old_pos == float('inf'):
+            path_reward = 0.0
+        else:
+            path_reward = w_dangerous
+    else:
+        if cost_from_old_pos == float('inf'):
+             path_reward = -w_dangerous
+        else:
+            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1]
+
+    subrewards["path_progress_reward"] = path_reward
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+'''
+def get_reward_f(env, new_pos, w_battery = 10):
+    """
+    Returns (reward, cost, info)
+    - reward: positive task progress (goal, distance)
+    - cost: penalties for constraints (invalid moves, revisits, battery)
+    - info: dictionary with individual components for debugging/logging
+    """
+    # Tunable weights
+    w_goal = 1.0
+    w_dist = 2.0
+    w_invalid = 0.75
+    w_revisit = 0.25
+    k_soft = 6.0  # sigmoid sharpness
+    battery_threshold = 10
+
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-k_soft * x))
+
+    # Reward components
+    if new_pos in env.goal_positions:
+        reward = w_goal
+        dist_pen = 0.0
+    else:
+        # Reward is negative distance to goal (encourages progress)
+        dist = env._compute_min_distance_to_goal()
+        dist_pen = -w_dist * dist
+        reward = dist_pen  # distance penalty treated as negative reward here
+
+    # Cost components (penalties for constraints)
+    inval_pen = w_invalid if not env.can_move_to(new_pos) else 0.0
+    rev_pen = w_revisit if new_pos in env.visited else 0.0
+    b = env.current_battery_level
+    bat_pen = w_battery * sigmoid((battery_threshold - b) / battery_threshold)
+
+    cost = inval_pen + rev_pen + bat_pen
+
+    info = {
+        "goal_reward": w_goal if new_pos in env.goal_positions else 0.0,
+        "distance_reward": dist_pen,
+        "invalid_cost": inval_pen,
+        "revisit_cost": rev_pen,
+        "battery_cost": bat_pen
+    }
+
+    return reward, cost, info
+'''
+
+def compute_reward(env, old_pos, reward_fn):
+    old_pos = tuple(old_pos)
+    return reward_fn(env, old_pos)

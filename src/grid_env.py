@@ -14,6 +14,7 @@ from src.reward_functions import compute_reward
 from src.sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
 from stable_baselines3.common.callbacks import BaseCallback
 import datetime
+from src.path_planning import *
 
 ##==============================================================
 ## Logs custom metrics stored in `info` dict to TensorBoard
@@ -241,6 +242,10 @@ class GridWorldEnv(Env):
         self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION)
         self.n_miners = n_miners
         self.reward_fn = reward_fn
+
+        # d*lite pathplanning assitance
+        self.pathfinder = None
+        self.cost_func_calls = 0
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -407,6 +412,24 @@ class GridWorldEnv(Env):
                 # Border
                 pygame.draw.rect(screen, (0, 0, 0), (col * cell_size, row * cell_size, cell_size, cell_size), 1)
 
+        if self.pathfinder:
+            path = self.pathfinder.get_path_to_goal()
+            # We need at least two points to draw a line
+            if path and len(path) > 1:
+                # Convert grid coordinates (row, col) to pixel coordinates (center of each cell)
+                # Assuming the path from D* Lite is a list of (col, row) tuples
+                path_points = [
+                (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
+                for x, y in path
+            ]
+            
+                # Define color and thickness for the path line
+                path_color = (30, 144, 255)  # A nice, visible "dodger blue"
+                path_thickness = 3
+            
+                # Draw the series of connected lines on the screen
+                pygame.draw.lines(screen, path_color, False, path_points, path_thickness)
+
         # draw miners
         if show_miners:
             for row, col in self.miners:
@@ -557,7 +580,30 @@ class GridWorldEnv(Env):
             r, c = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
-                
+
+        # Create a grid for planning where ALL impassable cells are marked as OBSTACLE (1).
+        # The pathfinder only understands 0 (passable) and 1 (impassable).
+        impassable_grid = np.zeros_like(self.static_grid) # Start with all-passable grid
+        for r in range(self.n_rows):
+            for c in range(self.n_cols):
+                # If the cell is an obstacle, sensor, or base station, mark it as impassable.
+                if self.static_grid[r, c] in self.OBSTACLE_VALS:
+                    impassable_grid[r, c] = 1
+                else:
+                    impassable_grid[r, c] = 0
+            
+        start_xy = (int(self.agent_pos[1]), int(self.agent_pos[0]))
+        goals_xy = [(int(pos[1]), int(pos[0])) for pos in self.goal_positions]
+    
+        # === Compute initial path === #
+        self.pathfinder = DStarLite(
+            grid=impassable_grid.tolist(),
+            start=start_xy,
+            goals=goals_xy,
+            cost_function=self._dstar_cost_function
+        )
+        self.pathfinder._compute_shortest_path()
+
         return self.get_observation(), {}
 
     def can_move_to(self, pos):
@@ -577,31 +623,55 @@ class GridWorldEnv(Env):
     def agent_reached_exit(self):
         return tuple(self.agent_pos) in self.goal_positions
 
+    def _pathfinder_step(self):
+        """
+        Updates the D* Lite pathfinder. Assumes all sensor costs may have changed.
+        """
+        if not self.pathfinder:
+            return
+
+        # Convert sensor positions from (row, col) to (col, row) for the update.
+        # Assumes self.sensor_batteries.keys() are (row, col) tuples.
+        all_sensor_positions_xy = [(pos[1], pos[0]) for pos in self.sensor_batteries.keys()]
+
+        if all_sensor_positions_xy:
+            # Note: update_costs doesn't actually use the positions, just the fact
+            # that costs have changed. This is a slight inefficiency in the D* code
+            # but won't break it. A better D* would take a list of changed nodes.
+            self.pathfinder.update_costs(all_sensor_positions_xy)
+
+        # Convert the agent's new position to (col, row) for the pathfinder
+        agent_pos_xy = (self.agent_pos[1], self.agent_pos[0])
+        self.pathfinder.move_and_replan(agent_pos_xy)
+    
     def step(self, action):
         move = DIRECTION_MAP[int(action)]
+        old_pos = self.agent_pos
         new_pos = self.agent_pos + move
         self.episode_steps += 1
 
         self._update_sensor_batteries()
         self._update_agent_position(new_pos)
         self._move_miners_and_update_sensors()
-        reward, subrewards = self._compute_reward_and_update(new_pos)
+        self._pathfinder_step()
+        reward, subrewards = self._compute_reward_and_update(old_pos)
 
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps or \
             (self.battery_truncation and self.current_battery_level <= 10)
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
-
+        
         return self.get_observation(), reward, terminated, truncated, info
 
-    def _compute_reward_and_update(self, new_pos):
-        reward, subrewards = compute_reward(self, new_pos, self.reward_fn)
+    def _compute_reward_and_update(self, old_pos):
+        reward, subrewards = compute_reward(self, old_pos, self.reward_fn)
         self.total_reward += reward
-        new_pos = tuple(new_pos)
+        old_pos = tuple(old_pos)
+        new_pos = tuple(self.agent_pos)
         if new_pos in self.visited:
             self.episode_revisits += 1
-        self.visited.add(new_pos)
+        self.visited.add(tuple(new_pos))
         return reward, subrewards
 
     def _update_agent_position(self, new_pos):
@@ -793,3 +863,49 @@ class GridWorldEnv(Env):
 
         self.prev_agent_pos = (curr_r, curr_c)
 
+    # === PATHFINDER ===
+    def _dstar_cost_function(self, position_xy):
+        """
+        Defines the traversal cost for D* Lite based on the environment rule
+        that each cell is covered by its single closest sensor. Includes debugging prints.
+        """
+        # Convert (col, row) to (row, col) for env logic
+        pos_rc = (position_xy[1], position_xy[0])
+    
+        # Find the sensor that covers this cell.
+        closest_sensor_pos_rc = self._get_closest_sensor(pos_rc)
+    
+        if closest_sensor_pos_rc is None:
+            return 0.0
+
+        battery_level = self.sensor_batteries.get(closest_sensor_pos_rc, 0.0)
+    
+        # Determine cost based on the covering sensor's battery
+        cost = 0.0
+        if battery_level == 0:
+            cost = 200.0
+        elif battery_level <= 10:
+            cost = 100.0
+        elif battery_level <= 30:
+            cost = 25.0
+
+        return cost
+
+    # === PATHFINDER ===
+    def get_path_cost(self, position_rc):
+        """
+        Gets the total cost of the optimal path from a given position to the goal.
+        This is a wrapper around the pathfinder's g-score.
+        """
+        if self.pathfinder is None:
+            return float('inf') # Should not happen after reset
+            
+        # Return infinite cost if the move itself is invalid (e.g., into a wall)
+        if not self.can_move_to(position_rc):
+            return float('inf')
+            
+        # We query the pathfinder using (col, row) coordinates
+        position_xy = (position_rc[1], position_rc[0])
+        cost = self.pathfinder.g.get(position_xy, float('inf'))
+        return cost
+    
