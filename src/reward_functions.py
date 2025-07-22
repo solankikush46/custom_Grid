@@ -311,14 +311,14 @@ def get_reward_6(env, old_pos):
     Args:
         env: The environment object, which must contain the pathfinder.
         old_pos (tuple): The agent's position *before* the action.
-        new_pos (tuple): The agent's position *after* the action.
     """
     # --- Tunable Weights ---
     w_goal = 1.0
     w_invalid = -0.75
     w_revisit = -0.25
     w_path_progress = 1.0
-    w_dead_end = -1.0   # Penalty for moving to a state with no path to the goal
+    w_dangerous = -1.0 # Penalty for moving to a state from which the pathfinder, with its knowledge of costs, can no longer find a viable or reasonable path to the goal
+    path_prog_norm = 201 # max battery penalty + cost of moving a square = 200 + 1
 
     subrewards = {
         "goal_reward": 0.0,
@@ -345,16 +345,17 @@ def get_reward_6(env, old_pos):
     cost_from_old_pos = env.get_path_cost(old_pos)
     cost_from_new_pos = env.get_path_cost(new_pos)
 
+    
     if cost_from_new_pos == float('inf'):
         if cost_from_old_pos == float('inf'):
             path_reward = 0.0
         else:
-            path_reward = w_dead_end
+            path_reward = w_dangerous
     else:
         if cost_from_old_pos == float('inf'):
-             path_reward = -w_dead_end
+             path_reward = -w_dangerous
         else:
-            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos)
+            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1]
 
     subrewards["path_progress_reward"] = path_reward
 
