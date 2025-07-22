@@ -179,7 +179,7 @@ def train_all_models(timesteps: int = 1_000_000):
             config["model_name"] = model_name
             
     models_to_train = [
-        {"grid_file": "mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_f},
+        {"grid_file": "mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_6},
     ]
 
     attach_model_names(models_to_train)
