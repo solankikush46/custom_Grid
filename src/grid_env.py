@@ -241,6 +241,9 @@ class GridWorldEnv(Env):
         self.OBSTACLE_VALS = (OBSTACLE, SENSOR, BASE_STATION)
         self.n_miners = n_miners
         self.reward_fn = reward_fn
+
+        # d*lite pathplanning assitance
+        self.pathfinder = None
         
         # exclusively for graphing
         self.battery_levels_during_episode = []
@@ -557,7 +560,16 @@ class GridWorldEnv(Env):
             r, c = random.randint(0, self.n_rows - 1), random.randint(0, self.n_cols - 1)
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
-                
+
+        # === Compute initial path === #
+        self.pathfinder = DStarLite(
+            grid=planning_grid,
+            start=tuple(self.agent_pos),
+            goal=tuple(self.goal_positions[0]), # D* Lite uses a single goal
+            cost_function=self._dstar_cost_function
+        )
+        self.pathfinder._compute_shortest_path()
+        
         return self.get_observation(), {}
 
     def can_move_to(self, pos):
@@ -577,31 +589,44 @@ class GridWorldEnv(Env):
     def agent_reached_exit(self):
         return tuple(self.agent_pos) in self.goal_positions
 
+    def _pathfinder_step(self):
+        # === PATHFINDER: Get list of changed cells AFTER miners move ===
+        sensors_after_miners = set(self.sensor_batteries.keys())
+        changed_cost_cells = list(sensors_before_miners.union(sensors_after_miners))
+        if self.pathfinder:
+            # 1. Update costs from battery changes
+            if changed_cost_cells:
+                self.pathfinder.update_costs(changed_cost_cells)
+            # 2. Tell pathfinder where the agent moved
+            self.pathfinder.move_and_replan(tuple(self.agent_pos))
+    
     def step(self, action):
         move = DIRECTION_MAP[int(action)]
+        old_pos = self.agent_pos
         new_pos = self.agent_pos + move
         self.episode_steps += 1
 
         self._update_sensor_batteries()
         self._update_agent_position(new_pos)
         self._move_miners_and_update_sensors()
-        reward, subrewards = self._compute_reward_and_update(new_pos)
+        self._pathfinder_step()
+        reward, subrewards = self._compute_reward_and_update(old_pos)
 
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps or \
             (self.battery_truncation and self.current_battery_level <= 10)
 
         info = self._build_info_dict(terminated, truncated, reward, subrewards)
-
+        
         return self.get_observation(), reward, terminated, truncated, info
 
-    def _compute_reward_and_update(self, new_pos):
-        reward, subrewards = compute_reward(self, new_pos, self.reward_fn)
+    def _compute_reward_and_update(self, old_pos):
+        reward, subrewards = compute_reward(self, old_pos, self.reward_fn)
         self.total_reward += reward
-        new_pos = tuple(new_pos)
-        if new_pos in self.visited:
+        old_pos = tuple(old_pos)
+        if tuple(self.agent_pos) in self.visited:
             self.episode_revisits += 1
-        self.visited.add(new_pos)
+        self.visited.add(self.agent_pos)
         return reward, subrewards
 
     def _update_agent_position(self, new_pos):
@@ -793,3 +818,40 @@ class GridWorldEnv(Env):
 
         self.prev_agent_pos = (curr_r, curr_c)
 
+    # === PATHFINDER ===
+    def _dstar_cost_function(self, position):
+        """
+        Defines the traversal cost for D* Lite.
+        The cost is high if the cell is near a sensor with low battery.
+        """
+        # Find the sensor this cell would be "connected" to.
+        closest_sensor_pos = self._get_closest_sensor(position)
+        
+        if closest_sensor_pos is None:
+            return 0.0 # No sensors, no additional cost.
+
+        battery_level = self.sensor_batteries.get(closest_sensor_pos, 0.0)
+
+        # Define cost tiers based on battery level.
+        if battery_level <= 10:
+            return 100.0  # High penalty for critical battery
+        elif battery_level <= 30:
+            return 25.0   # Medium penalty
+        else:
+            return 0.0    # No penalty for healthy battery
+
+    # === PATHFINDER ===
+    def get_path_cost(self, position):
+        """
+        Gets the total cost of the optimal path from a given position to the goal.
+        This is a wrapper around the pathfinder's g-score.
+        """
+        if self.pathfinder is None:
+            return float('inf') # Should not happen after reset
+            
+        # Return infinite cost if the move itself is invalid (e.g., into a wall)
+        if not self.can_move_to(position):
+            return float('inf')
+            
+        cost = self.pathfinder.g.get(tuple(position), float('inf'))
+        return cost
