@@ -562,6 +562,12 @@ class GridWorldEnv(Env):
             if self.is_empty((r, c)) and (r, c) not in self.miners:
                 self.miners.append((r, c))
 
+        planning_grid = self.static_grid.copy()
+        for r in range(self.n_rows):
+            for c in range(self.n_cols):
+                if planning_grid[r, c] in (SENSOR, BASE_STATION):
+                    planning_grid[r, c] = EMPTY
+
         # === Compute initial path === #
         self.pathfinder = DStarLite(
             grid=planning_grid,
