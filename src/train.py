@@ -16,8 +16,6 @@ from src.constants import *
 from src.plot_metrics import *
 from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
 import src.reward_functions as reward_functions
-from omnisafe import Agent
-from omnisafe.envs.utils.env_wrappers import RecordEpisodeStatistics
 import gymnasium as gym
 
 
@@ -93,58 +91,6 @@ def train_PPO_model(reward_fn,
             print(f"  {p}")
 
     return model
-
-def train_PPO_lagrangian_model(reward_fn,
-                               grid_file: str,
-                               timesteps: int,
-                               folder_name: str,
-                               reset_kwargs: dict = {},
-                               arch: str | None = None,
-                               features_dim: int = 128,
-                               battery_truncation=False):
-
-    is_cnn = arch is not None
-    env = GridWorldEnv(
-        reward_fn=reward_fn,
-        grid_file=grid_file,
-        is_cnn=is_cnn,
-        reset_kwargs=reset_kwargs,
-        battery_truncation=battery_truncation,
-    )
-
-    # Conform to gymnasium + SafetyGym API
-    env = RecordEpisodeStatistics(env)
-    if is_cnn:
-        env = CustomGridCNNWrapper(env)
-
-    # Define a custom task in OmniSafe format (optional but cleaner)
-    # Otherwise, register your env using Gymnasium's registry and use its string name
-
-    agent = Agent(
-        algo="ppo_lagrangian",
-        env=env,
-        custom_cfg={
-            "train_cfgs": {
-                "total_steps": timesteps,
-            },
-            "algo_cfgs": {
-                "cost_limit": 25.0,  # ⚠️ Adjust to your use case
-                "lambda_lr": 0.05,
-            },
-            "logger_cfgs": {
-                "use_wandb": False,
-                "log_dir": os.path.join(SAVE_DIR, folder_name),
-            },
-            "policy_cfgs": {
-                "net_arch": [64, 64],
-            },
-        }
-    )
-
-    agent.learn()
-
-    print(f"\nPPO-Lagrangian training complete. Logs and model saved to {folder_name}")
-    return agent
 
 def infer_reward_fn(experiment_name: str):
     """
