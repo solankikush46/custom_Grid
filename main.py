@@ -24,7 +24,7 @@ def main():
     #train_quick_junk_model("mine_20x20.txt")
     #test_render_junk_model("mine_20x20.txt")
     #train_and_render_junk_model()
-    train_all_models(100)
+    train_all_models(1_000_000)
     evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=[])
     
 if __name__ == "__main__":
