@@ -187,8 +187,9 @@ def train_all_models(timesteps: int = 1_000_000):
             config["model_name"] = model_name
             
     models_to_train = [
-        #{"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3, "is_cnn": True, "is_att": True, "tag": "8_frames"},
-        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"},
+         {"grid_file": "mine_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"},
+        {"grid_file": "mine_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"},
+         {"grid_file": "mine_100x100.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"}
     ]
 
     attach_model_names(models_to_train)

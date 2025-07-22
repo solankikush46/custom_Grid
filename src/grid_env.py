@@ -635,9 +635,6 @@ class GridWorldEnv(Env):
         all_sensor_positions_xy = [(pos[1], pos[0]) for pos in self.sensor_batteries.keys()]
 
         if all_sensor_positions_xy:
-            # Note: update_costs doesn't actually use the positions, just the fact
-            # that costs have changed. This is a slight inefficiency in the D* code
-            # but won't break it. A better D* would take a list of changed nodes.
             self.pathfinder.update_costs(all_sensor_positions_xy)
 
         # Convert the agent's new position to (col, row) for the pathfinder
