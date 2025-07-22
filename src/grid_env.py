@@ -14,6 +14,7 @@ from src.reward_functions import compute_reward
 from src.sensor import transmission_energy, reception_energy, compute_sensor_energy_loss, update_single_sensor_battery
 from stable_baselines3.common.callbacks import BaseCallback
 import datetime
+from src.path_plannning import *
 
 ##==============================================================
 ## Logs custom metrics stored in `info` dict to TensorBoard
