@@ -167,18 +167,23 @@ def train_all_models(timesteps: int = 1_000_000):
             reward_name = reward_fn_name.replace("get_", "")
             arch = config.get("arch", "unknown_arch")
             
-            tags = []
-            if config.get("is_cnn"):
-                tags.append("cnn")
-            if config.get("is_att"):
-                tags.append("attn")
-            tag_str = "__".join([arch] + tags) if arch != "unknown_arch" else "__".join(tags)
-            model_name = f"{grid_name}__{reward_name}__{tag_str}".strip("__")
-            config["model_name"] = model_name
+            # Add 'cnn' if arch is specified and doesn't already contain 'cnn'
+            cnn_tag = "cnn" if arch != "unknown_arch" else ""
+
+            # Construct model_name with optional cnn tag
+            if cnn_tag:
+                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
+            else:
+                model_name = f"{grid_name}__{reward_name}__{arch}"
 
             
+            if config.get("tag"):
+                model_name += f"__{config['tag']}"
+
+            config["model_name"] = model_name
+            
     models_to_train = [
-        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3, "is_cnn": True, "is_att": True},
+        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3, "is_cnn": True, "is_att": True, "tag": "8_frames"},
     ]
 
     attach_model_names(models_to_train)

@@ -29,7 +29,7 @@ def train_PPO_model(reward_fn,
                     features_dim: int = 128,
                     battery_truncation=False,
                     is_att = False,
-                    num_frames = 4
+                    num_frames = 8
                     ):
 
     # Initialize environment
