@@ -147,7 +147,7 @@ def get_reward_d(env, new_pos):
         inval_pen = -0.75 if not env.can_move_to(new_pos) else 0.0
         rev_pen = -0.25 if new_pos in env.visited else 0.0
         bat_pen = -1.0 if env.current_battery_level <= 10 else 0.0
-        dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclid distance to closest goal
+        dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclidean distance to closest goal
 
         subrewards = {
             "goal_reward": 0.0,
