@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 class TemporalAttention(nn.Module):
-    def __init__(self, embed_dim, num_heads=2, num_layers=2, dropout=0.1):
+    def __init__(self, embed_dim, num_heads=4, num_layers=3, dropout=0.1):
         super().__init__()
 
         self.layers = nn.ModuleList([
