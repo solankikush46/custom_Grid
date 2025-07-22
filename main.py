@@ -15,18 +15,8 @@ def ensure_directories_exist():
 def main():
     #test_manual_control("mine_20x20.txt")
     #generate_all_plots(rolling_window=50_000)
-    #test_PPO(10_000, 20, 20)
-    #test_PPO(300_000, 100, 100)
-    #test_100x100_no_obstacles(timesteps=500_000, episodes=20)
-    #test_20x20_battery_override(1_000_000, 1)
-    #evaluate_all_models()
-    #train_all_halfsplit_models(1_000_000)
-    #train_quick_junk_model("mine_20x20.txt")
-    #test_render_junk_model("mine_20x20.txt")
-    #train_and_render_junk_model()
-    #evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=["5_channels"])
     train_all_models(1_000_000)
-    evaluate_all_models(n_eval_episodes=10, render=True, verbose=False, dos=[])
+    evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=[])
     
 if __name__ == "__main__":
     ensure_directories_exist()
