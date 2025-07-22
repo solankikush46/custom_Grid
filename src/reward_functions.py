@@ -355,7 +355,7 @@ def get_reward_6(env, old_pos):
         if cost_from_old_pos == float('inf'):
              path_reward = -w_dangerous
         else:
-            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1]
+            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) # scaled to [-1, 1] # try larger scale, or lower scale of other things?
 
     subrewards["path_progress_reward"] = path_reward
 
