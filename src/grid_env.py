@@ -572,7 +572,7 @@ class GridWorldEnv(Env):
         self.pathfinder = DStarLite(
             grid=planning_grid,
             start=tuple(self.agent_pos),
-            goal=tuple(self.goal_positions[0]), # D* Lite uses a single goal
+            goals=self.goal_positions[0],
             cost_function=self._dstar_cost_function
         )
         self.pathfinder._compute_shortest_path()
