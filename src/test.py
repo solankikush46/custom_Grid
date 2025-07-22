@@ -167,23 +167,28 @@ def train_all_models(timesteps: int = 1_000_000):
             reward_fn_name = config.get("reward_fn").__name__ if config.get("reward_fn") else "unknown_reward"
             reward_name = reward_fn_name.replace("get_", "")
             arch = config.get("arch", "unknown_arch")
+            att_tag = "att"
             
             # Add 'cnn' if arch is specified
             cnn_tag = "cnn" if arch is not None else ""
 
             # Construct model_name with optional cnn tag
-            if cnn_tag:
+            if att_tag:
+                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}_{att_tag}"
+            elif cnn_tag:
                 model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
             else:
                 model_name = f"{grid_name}__{reward_name}"
 
+            
+            if config.get("tag"):
+                model_name += f"__{config['tag']}"
+
             config["model_name"] = model_name
             
     models_to_train = [
-        {"grid_file": "mine_20x20.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_6},
-         {"grid_file": "mine_30x30.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_6},
-        {"grid_file": "mine_50x50.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_6},
-        {"grid_file": "mine_100x100.txt", "arch": None, "halfsplit": False, "reward_fn": get_reward_6},
+        #{"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3, "is_cnn": True, "is_att": True, "tag": "8_frames"},
+        {"grid_file": "a_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_e3, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"},
     ]
 
     attach_model_names(models_to_train)
