@@ -879,9 +879,11 @@ class GridWorldEnv(Env):
     
         # Determine cost based on the covering sensor's battery
         cost = 0.0
+        '''
         if battery_level == 0:
             cost = 200.0
-        elif battery_level <= 10:
+        '''
+        if battery_level <= 10:
             cost = 100.0
         elif battery_level <= 30:
             cost = 25.0
