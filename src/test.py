@@ -206,7 +206,7 @@ def train_all_models(timesteps: int = 1_000_000):
             "grid_file": "mine_50x50.txt", "arch": None, "reward_fn": get_reward_8, 
             "is_att": False,
             "fallback": True,
-            "conf": 0.75
+            "conf": 0.5
         },
     ]
 
