@@ -8,7 +8,6 @@ import torch.nn.functional as F
 from gym import ObservationWrapper, spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from src.utils import get_c8_neighbors_status, make_agent_feature_matrix
-from src.attention import *
 
 class CustomGridCNNWrapper(ObservationWrapper):
     '''
