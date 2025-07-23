@@ -99,24 +99,39 @@ def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
     return grid_name
 
 def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose):
+    """
+    Evaluates a PPO run by parsing its configuration from the folder name
+    and passing the correct information to the smart `load_model` function.
+    """
+    # --- 1. Prepare environment-specific arguments ---
+    # This logic is simple and belongs here.
     inferred_grid = best_matching_grid(experiment_name, FIXED_GRID_DIR)
-    grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
-
-    is_cnn = "cnn" in experiment_name.lower()
     is_halfsplit = "halfsplit" in experiment_name.lower()
-
-    print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn}, Halfsplit={is_halfsplit})...")
 
     reset_kwargs = {}
     if is_halfsplit:
+        grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
         battery_overrides = get_halfsplit_battery_overrides(grid_file_path)
         reset_kwargs["battery_overrides"] = battery_overrides
 
-    model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    # --- 2. Call the new `load_model` function with the correct arguments ---
+    # The 'experiment_name' is passed in so the loader can parse the config.
+    # The 'ppo_path' is passed in so the loader knows where to find the model.zip file.
+    model = train.load_model(
+        experiment_folder=ppo_path,
+        experiment_name=experiment_name,
+        reset_kwargs=reset_kwargs
+    )
+    
+    # --- 3. Get the fully-configured environment from the model ---
+    # This now works as required.
     env = model.get_env().envs[0]
 
-    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
-
+    # --- 4. Proceed with the evaluation ---
+    print("\nStarting evaluation...")
+    # Assuming train.evaluate_model is a function you have that runs the evaluation loop.
+    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, verbose=verbose)
+    
 def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True, dos=[]):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
@@ -191,13 +206,13 @@ def train_all_models(timesteps: int = 1_000_000):
             "grid_file": "mine_100x100.txt", "arch": None, "reward_fn": get_reward_7, 
             "is_att": False,
             "fallback": True,
-            "conf": 0.75
+            "conf": 0.3
         },
         {
             "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_7, 
             "is_att": True,
             "fallback": True,
-            "conf": 0.75
+            "conf": 0.3
         },
     ]
 

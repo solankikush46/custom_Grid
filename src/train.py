@@ -18,6 +18,7 @@ import src.reward_functions as reward_functions
 from src.attention import AttentionCNNExtractor
 from src.wrappers import TimeStackObservation
 from src.DStarFallbackWrapper import *
+import re
 
 ##==============================================================
 ## Unified PPO Training Function
@@ -236,33 +237,16 @@ def infer_reward_fn(experiment_name: str):
     
     raise ValueError(f"No reward key found in experiment name: {experiment_name}")
 
+def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
+    grid_name = experiment_name.split("__")[0] + ".txt"
+    print(grid_name)
+    grid_file_path = os.path.join(grid_dir, grid_name)
+    if not os.path.exists(grid_file_path):
+        raise FileNotFoundError(f"Grid file not found: {grid_file_path}")
+    return grid_name
+
 # training utils
 #-------------------------------------------------
-def load_model(experiment_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {}):
-    """
-    Load a PPO model with environment matching the training setup.
-    Args:
-        experiment_folder: full path to the experiment folder containing model.zip and logs
-        grid_file: grid text filename used for environment construction
-        is_cnn: whether to wrap env for CNN input
-        reset_kwargs: optional reset keyword args (e.g., battery overrides)
-    """
-    print("experiment_folder", experiment_folder)
-    model_path = os.path.join(experiment_folder, "model")
-    experiment_name = os.path.basename(experiment_folder)
-    parent_folder = os.path.basename(os.path.dirname(experiment_folder))
-    reward_fn = infer_reward_fn(parent_folder)
-    
-    env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
-    if is_cnn:
-        env = CustomGridCNNWrapper(env)
-
-    print("Loading env observation space:", env.observation_space)
-    vec_env = DummyVecEnv([lambda: env])
-
-    model = PPO.load(model_path, env=vec_env)
-    return model
-
 def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True,
                    halfsplit=False):
     """
@@ -304,11 +288,25 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
                 if curr_bat == 0:
                     leq_0s += 1
 
+            # ===== Printout Info ===== #
             if verbose:
                 action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
-                print(f"Episode {ep + 1} Step {step_num}: Pos={agent_pos}, Action={action} ({action_dir}), Reward={reward:.2f}")
+
+                # 1. Print the main step information
+                print(f"Step {step_num}: Pos={agent_pos}, Action={action_dir} ({action_dir}), Reward={reward:.2f}")
+
+                # 2. Print the confidence and decision information (if available)
+                if 'used_fallback' in info:
+                    confidence = info.get('confidence', 0)
+                    if info.get('used_fallback'):
+                        print(f"  └─ Decision: Agent uncertain (conf: {confidence:.3f}). Falling back to D* Lite.")
+                    else:
+                        print(f"  └─ Decision: Agent confident (conf: {confidence:.3f}). Using learned policy.")
+                
+                # 3. Print the subreward breakdown
                 for name, val in subrewards.items():
                     print(f"  └─ {name}: {val:.2f}")
+            #===========================#
 
             if render:
                 env.render_pygame()
@@ -344,6 +342,63 @@ def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool 
     print(f"Mean Battery Level per Episode: {mean_battery:.1f}")
     print(f"Timesteps Where Battery Level <= 10: {leq_10s}/{total_steps} ({leq_10s/total_steps * 100:.4f}%)")
     print(f"Timesteps Where Battery Level <= 0: {leq_0s}/{total_steps} ({leq_0s/total_steps * 100:.4f}%)")
+
+def load_model(experiment_folder: str, 
+               experiment_name: str,
+               reset_kwargs: dict = {}):
+    """
+    Loads a PPO model and reconstructs its full environment stack.
+    It uses the provided 'experiment_name' to infer the configuration.
+    """
+    model_path = os.path.join(experiment_folder, "model.zip")
+    if not os.path.isfile(model_path):
+        raise FileNotFoundError(f"Model not found at {model_path}")
+
+    # --- 1. Parse the full configuration from the PROVIDED experiment_name ---
+    name_lower = experiment_name.lower()
+    
+    inferred_grid = best_matching_grid(experiment_name, FIXED_GRID_DIR)
+    
+    is_att = "att" in name_lower
+    is_cnn = "cnn" in name_lower and not is_att
+    
+    use_fallback = "fb_" in name_lower
+    confidence_threshold = 0.75 # Default
+    if use_fallback:
+        match = re.search(r'fb_(\d\.\d+)', name_lower)
+        if match:
+            confidence_threshold = float(match.group(1))
+
+    reward_fn = infer_reward_fn(experiment_name)
+    
+    print(f"\n--- Loading Model: {experiment_name} from folder {os.path.basename(experiment_folder)} ---")
+    print(f"  Grid: {inferred_grid}, Reward Fn: {reward_fn.__name__}")
+    print(f"  CNN: {is_cnn}, Attention: {is_att}, Fallback: {use_fallback} (conf={confidence_threshold})")
+    
+    # --- 2. Load the model weights FIRST to break the circular dependency ---
+    model = PPO.load(model_path, device='cpu')
+
+    # --- 3. Build the full environment stack based on the parsed flags ---
+    num_frames = 8 # Assume this is a constant for your attention models
+
+    base_env = GridWorldEnv(reward_fn=reward_fn, grid_file=inferred_grid, is_cnn=(is_cnn or is_att), reset_kwargs=reset_kwargs)
+
+    obs_wrapped_env = base_env
+    if is_cnn or is_att:
+        obs_wrapped_env = CustomGridCNNWrapper(obs_wrapped_env)
+    if is_att:
+        obs_wrapped_env = TimeStackObservation(obs_wrapped_env, num_frames=num_frames)
+    
+    if use_fallback:
+        final_env = DStarFallbackWrapper(obs_wrapped_env, model, confidence_threshold)
+    else:
+        final_env = obs_wrapped_env
+
+    # --- 4. Connect the model to the final, fully-wrapped environment ---
+    vec_env = DummyVecEnv([lambda: final_env])
+    model.set_env(vec_env)
+    
+    return model
 
 def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
                             n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):

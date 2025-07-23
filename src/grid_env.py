@@ -597,7 +597,7 @@ class GridWorldEnv(Env):
     
         # === Compute initial path === #
         self.pathfinder = DStarLite(
-            grid=impassable_grid.tolist(),
+            grid=impassable_grid,
             start=start_xy,
             goals=goals_xy,
             cost_function=self._dstar_cost_function
