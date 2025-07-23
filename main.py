@@ -17,6 +17,7 @@ def main():
     #generate_all_plots(rolling_window=50_000)
     train_all_models(100)
     evaluate_all_models(n_eval_episodes=20, render=True, verbose=False, dos=[])
+    #evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=[])
     
 if __name__ == "__main__":
     ensure_directories_exist()
