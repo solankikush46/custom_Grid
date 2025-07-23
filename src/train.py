@@ -19,6 +19,7 @@ from src.attention import AttentionCNNExtractor
 from src.wrappers import TimeStackObservation
 from src.DStarFallbackWrapper import *
 import re
+from src.PPOFallback import *
 
 ##==============================================================
 ## Unified PPO Training Function
@@ -38,98 +39,111 @@ def train_PPO_model(reward_fn,
                     ):
 
     # --- Step 1: Create the foundational environment ---
-    # This is the raw env that the fallback wrapper will need to "reach through" to.
     base_env = GridWorldEnv(
-        reward_fn=reward_fn, grid_file=grid_file, is_cnn=(arch is not None or is_att), 
-        reset_kwargs=reset_kwargs, battery_truncation=battery_truncation
+        reward_fn=reward_fn,
+        grid_file=grid_file,
+        is_cnn=(arch is not None or is_att),
+        reset_kwargs=reset_kwargs,
+        battery_truncation=battery_truncation
     )
 
-    # --- Step 2: Create the stack of observation wrappers ---
-    # This defines the final observation shape the model and fallback wrapper will see.
+    # --- Step 2: Apply observation wrappers ---
     obs_wrapped_env = base_env
     if (arch is not None) or is_att:
         obs_wrapped_env = CustomGridCNNWrapper(obs_wrapped_env)
     if is_att:
         obs_wrapped_env = TimeStackObservation(obs_wrapped_env, num_frames=num_frames)
 
-    # --- Step 3: Define Policy and create the PPO model ---
+    # --- Step 3: Define the policy and model kwargs ---
     policy_kwargs = None
-    policy_name = "MlpPolicy" # Always "MlpPolicy" when using a custom features_extractor
+    policy_name = "MlpPolicy"
 
-    # Correctly select the feature extractor, prioritizing the attention model
     if is_att:
         print("INFO: Using AttentionCNNExtractor for 4D time-stacked observations.")
         policy_kwargs = {
             "features_extractor_class": AttentionCNNExtractor,
-            "features_extractor_kwargs": {"features_dim": features_dim, "grid_file": grid_file, "temporal_len": num_frames},
+            "features_extractor_kwargs": {
+                "features_dim": features_dim,
+                "grid_file": grid_file,
+                "temporal_len": num_frames
+            },
             "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }
     elif arch is not None:
         print(f"INFO: Using GridCNNExtractor (backbone: {arch}) for 3D image observations.")
         policy_kwargs = {
             "features_extractor_class": GridCNNExtractor,
-            "features_extractor_kwargs": {"features_dim": features_dim, "grid_file": grid_file, "backbone": arch.lower()},
+            "features_extractor_kwargs": {
+                "features_dim": features_dim,
+                "grid_file": grid_file,
+                "backbone": arch.lower()
+            },
             "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }
     else:
         print("INFO: Using default MLP for flat vector observations.")
-        
-    # Initialize the model with a temporary VecEnv that has the correct observation space
-    temp_vec_env = DummyVecEnv([lambda: obs_wrapped_env])
 
-    model = PPO(
-        policy=policy_name,
-        env=temp_vec_env,
-        ent_coef=0.1,
-        gae_lambda=0.90,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        gamma=0.99,
-        clip_range=0.2,
-        clip_range_vf=0.5,
-        tensorboard_log=os.path.join("saved_experiments", folder_name),
-        verbose=1,
-        policy_kwargs=policy_kwargs
-    )
-    
-    # --- Step 4: Create the FINAL training environment stack ---
-    # This is the critical change that fixes the error.
+    # --- Step 4: Choose environment and model based on hybrid flag ---
     if use_hybrid_control:
         print(f"--- Applying D* Lite Fallback Wrapper (OUTERMOST) ---")
-        # Start with the environment that has all observation wrappers applied.
-        final_env = obs_wrapped_env
-        # Now, wrap THIS with the fallback controller. This is the outermost layer.
-        final_env = DStarFallbackWrapper(final_env, model, confidence_threshold)
+        final_env = DStarFallbackWrapper(obs_wrapped_env, None, confidence_threshold)
+        vec_env = DummyVecEnv([lambda: final_env])
+        model = PPOFallback(
+            policy=policy_name,
+            env=vec_env,
+            ent_coef=0.1,
+            gae_lambda=0.90,
+            learning_rate=3e-4,
+            n_steps=2048,
+            batch_size=64,
+            n_epochs=10,
+            gamma=0.99,
+            clip_range=0.2,
+            clip_range_vf=0.5,
+            tensorboard_log=os.path.join("saved_experiments", folder_name),
+            verbose=1,
+            policy_kwargs=policy_kwargs
+        )
+        final_env.set_model(model)  # So the wrapper has access to the model for confidence
     else:
-        # If not using hybrid control, the final env is just the observation-wrapped one.
-        final_env = obs_wrapped_env
+        vec_env = DummyVecEnv([lambda: obs_wrapped_env])
+        model = PPO(
+            policy=policy_name,
+            env=vec_env,
+            ent_coef=0.1,
+            gae_lambda=0.90,
+            learning_rate=3e-4,
+            n_steps=2048,
+            batch_size=64,
+            n_epochs=10,
+            gamma=0.99,
+            clip_range=0.2,
+            clip_range_vf=0.5,
+            tensorboard_log=os.path.join("saved_experiments", folder_name),
+            verbose=1,
+            policy_kwargs=policy_kwargs
+        )
 
-    # --- Step 5: Set the model's environment to our final, fully-wrapped stack ---
-    vec_env = DummyVecEnv([lambda: final_env])
-    model.set_env(vec_env)
-
-    # --- Step 6: Train the model ---
+    # --- Step 5: Train ---
     print("Starting model training...")
     callback = CustomTensorboardCallback(verbose=1)
     model.learn(total_timesteps=timesteps, callback=callback)
 
-    # --- Step 7: Save results and plots ---
+    # --- Step 6: Save ---
     log_dir = callback.logger.dir
     model_save_path = os.path.join(log_dir, "model.zip")
     model.save(model_save_path)
     print(f"\nPPO training complete. Logs and model stored to {log_dir}")
 
-    # grid_area = base_env.n_rows * base_env.n_cols
+    # --- Step 7: Metrics ---
     num_points = 50
     plots = plot_all_metrics(log_dir=log_dir, num_points=num_points)
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
-         print(f"\n{csv_file}:")
-         for p in plot_list:
-             print(f"  {p}")
-            
+        print(f"\n{csv_file}:")
+        for p in plot_list:
+            print(f"  {p}")
+
     return model
 
 '''
@@ -376,8 +390,15 @@ def load_model(experiment_folder: str,
     print(f"  CNN: {is_cnn}, Attention: {is_att}, Fallback: {use_fallback} (conf={confidence_threshold})")
     
     # --- 2. Load the model weights FIRST to break the circular dependency ---
-    model = PPO.load(model_path, device='cpu')
+    if use_fallback:
+        print("Loading PPOFallback model (with fallback support).")
+        model_class = PPOFallback
+    else:
+        print("Loading standard PPO model.")
+        model_class = PPO
 
+    model = model_class.load(model_path)
+        
     # --- 3. Build the full environment stack based on the parsed flags ---
     num_frames = 8 # Assume this is a constant for your attention models
 

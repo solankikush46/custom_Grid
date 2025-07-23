@@ -7,7 +7,7 @@ import torch as th
 import numpy as np
 from gym import spaces
 
-class PPOWithFinalAction(PPO):
+class PPOFallback(PPO):
     def collect_rollouts(
         self,
         env: VecEnv,
@@ -69,6 +69,8 @@ class PPOWithFinalAction(PPO):
                     with th.no_grad():
                         terminal_value = self.policy.predict_values(terminal_obs)[0]
                     rewards[idx] += self.gamma * terminal_value
+
+            print(f"[RolloutBuffer] Actions to be stored: {actions}")
 
             rollout_buffer.add(
                 self._last_obs,  # type: ignore[arg-type]
