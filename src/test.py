@@ -214,7 +214,7 @@ def train_all_models(timesteps: int = 1_000_000):
 
     for config in models_to_train:
         print(f"\n===== Training {config['model_name']} =====")
-        print(f"  Grid: {config['grid_file']}, Timesteps: {timesteps}, Arch: {config.get('arch')}")
+        print(f"  Grid: {config['grid_file']}, Timesteps: {timesteps}, Arch: {config.get('arch', 'Mlp')}")
 
         battery_overrides = {}
         if config.get("halfsplit", False):
@@ -237,69 +237,6 @@ def train_all_models(timesteps: int = 1_000_000):
         )
     
         print(f"===== Finished training {config['model_name']} =====")
-
-'''
-def train_all_models(timesteps: int = 1_000_000):
-    """
-    Trains PPO models with support for halfsplit battery overrides when
-    specified. This version runs without a try-except block and will
-    halt on any error.
-    """
-    def attach_model_names(model_configs):
-        for config in model_configs:
-            grid_name = os.path.splitext(config["grid_file"])[0]
-            reward_fn_name = config.get("reward_fn").__name__ if config.get("reward_fn") else "unknown_reward"
-            reward_name = reward_fn_name.replace("get_", "")
-            arch = config.get("arch", "unknown_arch")
-            att_tag = "att"
-            
-            # Add 'cnn' if arch is specified
-            cnn_tag = "cnn" if arch is not None else ""
-
-            # Construct model_name with optional cnn tag
-            if att_tag:
-                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}_{att_tag}"
-            elif cnn_tag:
-                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
-            else:
-                model_name = f"{grid_name}__{reward_name}"
-
-            
-            if config.get("tag"):
-                model_name += f"__{config['tag']}"
-
-            config["model_name"] = model_name
-            
-    models_to_train = [
-         {"grid_file": "mine_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"},
-        {"grid_file": "mine_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"},
-         {"grid_file": "mine_100x100.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"}
-    ]
-
-    attach_model_names(models_to_train)
-
-    for config in models_to_train:
-        print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (arch={config.get('arch')})")
-
-        grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
-
-        # Compute battery overrides only if halfsplit flag is True
-        battery_overrides = {}
-        if config.get("halfsplit", False):
-            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
-
-        model = train.train_PPO_model(
-            reward_fn=config.get("reward_fn"),
-            grid_file=config["grid_file"],
-            timesteps=timesteps,
-            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-            arch=config.get("arch"),
-            folder_name=config["model_name"],
-            battery_truncation=True
-        )
-    
-        print(f"Finished training {config['model_name']}")
-'''
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """

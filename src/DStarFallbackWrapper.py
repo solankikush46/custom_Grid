@@ -52,6 +52,13 @@ class DStarFallbackWrapper(gym.Wrapper):
         self.last_obs = next_obs
         info['confidence'] = float(max_prob)
         info['used_fallback'] = (expert_action is not None and final_action == expert_action)
+        info['final_action'] = final_action
+        '''
+        print(f"[FallbackWrapper] Agent action: {action_from_agent}, "
+              f"Final action: {final_action}, "
+              f"Confidence: {max_prob:.3f}, "
+              f"Used fallback: {final_action != action_from_agent}")
+        '''
         
         return next_obs, reward, terminated, truncated, info
 
