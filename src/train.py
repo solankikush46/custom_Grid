@@ -14,7 +14,7 @@ from src.constants import *
 from src.plot_metrics import *
 from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
 import src.reward_functions as reward_functions
-import gymnasium as gym
+#import gymnasium as gym
 from src.attention import AttentionCNNExtractor
 from src.wrappers import TimeStackObservation
 from src.DStarFallbackWrapper import *
@@ -37,47 +37,44 @@ def train_PPO_model(reward_fn,
                     ):
 
     # --- Step 1: Create the foundational environment ---
-    # This is the raw env that the fallback wrapper will need access to.
+    # This is the raw env that the fallback wrapper will need to "reach through" to.
     base_env = GridWorldEnv(
         reward_fn=reward_fn, grid_file=grid_file, is_cnn=(arch is not None or is_att), 
         reset_kwargs=reset_kwargs, battery_truncation=battery_truncation
     )
 
-    # --- Step 2: Create the stack of observation wrappers for the model ---
-    # This defines the observation space the model expects to see.
-    env_for_model = base_env
+    # --- Step 2: Create the stack of observation wrappers ---
+    # This defines the final observation shape the model and fallback wrapper will see.
+    obs_wrapped_env = base_env
     if (arch is not None) or is_att:
-        env_for_model = CustomGridCNNWrapper(env_for_model)
+        obs_wrapped_env = CustomGridCNNWrapper(obs_wrapped_env)
     if is_att:
-        env_for_model = TimeStackObservation(env_for_model, num_frames=num_frames)
-
-    # In train_PPO_model function
+        obs_wrapped_env = TimeStackObservation(obs_wrapped_env, num_frames=num_frames)
 
     # --- Step 3: Define Policy and create the PPO model ---
     policy_kwargs = None
-    
-    # --- CORRECTED LOGIC ---
-    # The policy is always "MlpPolicy" when using a custom features_extractor_class.
-    # The "CnnPolicy" is only used if you want SB3's *default* CNN.
-    policy_name = "MlpPolicy" 
+    policy_name = "MlpPolicy" # Always "MlpPolicy" when using a custom features_extractor
 
-    if arch is not None:
-        # This is your standard CNN feature extractor
-        policy_kwargs = {
-            "features_extractor_class": GridCNNExtractor,
-            "features_extractor_kwargs": {"features_dim": features_dim, "grid_file": grid_file, "backbone": arch.lower()},
-            "net_arch": dict(pi=[64, 64], vf=[64, 64])
-        }
-    elif is_att:
-        # This is your Attention-based feature extractor
+    # Correctly select the feature extractor, prioritizing the attention model
+    if is_att:
+        print("INFO: Using AttentionCNNExtractor for 4D time-stacked observations.")
         policy_kwargs = {
             "features_extractor_class": AttentionCNNExtractor,
             "features_extractor_kwargs": {"features_dim": features_dim, "grid_file": grid_file, "temporal_len": num_frames},
             "net_arch": dict(pi=[64, 64], vf=[64, 64])
         }
-    
-    # Use a temporary VecEnv for model initialization
-    temp_vec_env = DummyVecEnv([lambda: env_for_model])
+    elif arch is not None:
+        print(f"INFO: Using GridCNNExtractor (backbone: {arch}) for 3D image observations.")
+        policy_kwargs = {
+            "features_extractor_class": GridCNNExtractor,
+            "features_extractor_kwargs": {"features_dim": features_dim, "grid_file": grid_file, "backbone": arch.lower()},
+            "net_arch": dict(pi=[64, 64], vf=[64, 64])
+        }
+    else:
+        print("INFO: Using default MLP for flat vector observations.")
+        
+    # Initialize the model with a temporary VecEnv that has the correct observation space
+    temp_vec_env = DummyVecEnv([lambda: obs_wrapped_env])
 
     model = PPO(
         policy=policy_name,
@@ -95,21 +92,18 @@ def train_PPO_model(reward_fn,
         verbose=1,
         policy_kwargs=policy_kwargs
     )
-    # --- Step 4: Create the final environment stack for training ---
+    
+    # --- Step 4: Create the FINAL training environment stack ---
+    # This is the critical change that fixes the error.
     if use_hybrid_control:
-        print(f"--- Using D* Lite Fallback Wrapper with confidence threshold: {confidence_threshold} ---")
-        # Start with the raw base environment
-        final_env = base_env
-        # Apply the control wrapper first
+        print(f"--- Applying D* Lite Fallback Wrapper (OUTERMOST) ---")
+        # Start with the environment that has all observation wrappers applied.
+        final_env = obs_wrapped_env
+        # Now, wrap THIS with the fallback controller. This is the outermost layer.
         final_env = DStarFallbackWrapper(final_env, model, confidence_threshold)
-        # Re-apply the observation wrappers on top of the control wrapper
-        if (arch is not None) or is_att:
-            final_env = CustomGridCNNWrapper(final_env)
-        if is_att:
-            final_env = TimeStackObservation(final_env, num_frames=num_frames)
     else:
-        # If not using hybrid control, the final env is the one we built for the model
-        final_env = env_for_model
+        # If not using hybrid control, the final env is just the observation-wrapped one.
+        final_env = obs_wrapped_env
 
     # --- Step 5: Set the model's environment to our final, fully-wrapped stack ---
     vec_env = DummyVecEnv([lambda: final_env])
@@ -126,17 +120,14 @@ def train_PPO_model(reward_fn,
     model.save(model_save_path)
     print(f"\nPPO training complete. Logs and model stored to {log_dir}")
 
-    # generate graphs from csvs using chunked smoothing
-    grid_area = base_env.n_rows * base_env.n_cols
+    # grid_area = base_env.n_rows * base_env.n_cols
     num_points = 50
-    #num_points = int(max(20, grid_area // 10))
     plots = plot_all_metrics(log_dir=log_dir, num_points=num_points)
-
     print("\n=== Metrics Plots Generated ===")
     for csv_file, plot_list in plots.items():
-        print(f"\n{csv_file}:")
-        for p in plot_list:
-            print(f"  {p}")
+         print(f"\n{csv_file}:")
+         for p in plot_list:
+             print(f"  {p}")
             
     return model
 

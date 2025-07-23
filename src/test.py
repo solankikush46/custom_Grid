@@ -199,7 +199,7 @@ def train_all_models(timesteps: int = 1_000_000):
             "fallback": True,
             "conf": 0.75
         },
-           {
+        {
             "grid_file": "mine_50x50.txt", "arch": "seq", "reward_fn": get_reward_7, 
             "is_att": True,
             "fallback": True,
