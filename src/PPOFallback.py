@@ -70,7 +70,7 @@ class PPOFallback(PPO):
                         terminal_value = self.policy.predict_values(terminal_obs)[0]
                     rewards[idx] += self.gamma * terminal_value
 
-            print(f"[RolloutBuffer] Actions to be stored: {actions}")
+            #print(f"[RolloutBuffer] Actions to be stored: {actions}")
 
             rollout_buffer.add(
                 self._last_obs,  # type: ignore[arg-type]
