@@ -47,6 +47,8 @@ ACTION_NAMES = {
     7: "UP-LEFT"
 }
 
+MOVE_TO_ACTION_MAP = {move: action for action, move in DIRECTION_MAP.items()}
+
 # model saving and logging
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 

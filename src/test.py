@@ -157,6 +157,87 @@ def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verb
 
 def train_all_models(timesteps: int = 1_000_000):
     """
+    Trains PPO models with support for the DStarFallbackWrapper,
+    using concise configuration keys.
+    """
+    def attach_model_names(model_configs):
+        for config in model_configs:
+            grid_name = os.path.splitext(config["grid_file"])[0]
+            reward_fn_name = config.get("reward_fn").__name__
+            reward_name = reward_fn_name.replace("get_", "")
+            arch = config.get("arch", "mlp")
+            
+            tags = []
+            if config.get("is_att", False):
+                tags.append("att")
+            elif config.get("arch") is not None:
+                tags.append("cnn")
+
+            if config.get("fallback", False):
+                conf_thresh = config.get('conf', 'default')
+                tags.append(f"fb_{conf_thresh}") # 'fb' for fallback
+            
+            if config.get("tag"):
+                tags.append(config["tag"])
+
+            model_name = f"{grid_name}__{reward_name}__{arch}"
+            if tags:
+                model_name += f"__{'_'.join(tags)}"
+
+            config["model_name"] = model_name
+            
+    models_to_train = [
+        {
+            "grid_file": "mine_50x50.txt", "arch": None, "reward_fn": get_reward_7, 
+            "is_att": False,
+            "fallback": False,
+            "conf": 0.75
+        },
+        {
+            "grid_file": "mine_50x50.txt", "arch": None, "reward_fn": get_reward_7, 
+            "is_att": False,
+            "fallback": True,
+            "conf": 0.75
+        },
+           {
+            "grid_file": "mine_50x50.txt", "arch": "seq", "reward_fn": get_reward_7, 
+            "is_att": True,
+            "fallback": True,
+            "conf": 0.75
+        },
+    ]
+
+    attach_model_names(models_to_train)
+
+    for config in models_to_train:
+        print(f"\n===== Training {config['model_name']} =====")
+        print(f"  Grid: {config['grid_file']}, Timesteps: {timesteps}, Arch: {config.get('arch')}")
+
+        battery_overrides = {}
+        if config.get("halfsplit", False):
+            grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
+            battery_overrides = get_halfsplit_battery_overrides(grid_path)
+
+        model = train.train_PPO_model(
+            reward_fn=config["reward_fn"],
+            grid_file=config["grid_file"],
+            timesteps=timesteps,
+            folder_name=config["model_name"],
+            # Pass new hybrid control parameters using the short names
+            use_hybrid_control=config.get("fallback", False),
+            confidence_threshold=config.get("conf", 0.75),
+            # Pass other existing parameters
+            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
+            arch=config.get("arch"),
+            is_att=config.get("is_att", False),
+            battery_truncation=True
+        )
+    
+        print(f"===== Finished training {config['model_name']} =====")
+
+'''
+def train_all_models(timesteps: int = 1_000_000):
+    """
     Trains PPO models with support for halfsplit battery overrides when
     specified. This version runs without a try-except block and will
     halt on any error.
@@ -187,9 +268,9 @@ def train_all_models(timesteps: int = 1_000_000):
             config["model_name"] = model_name
             
     models_to_train = [
-         {"grid_file": "mine_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"},
-        {"grid_file": "mine_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"},
-         {"grid_file": "mine_100x100.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "transformer_pool_v3"}
+         {"grid_file": "mine_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"},
+        {"grid_file": "mine_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"},
+         {"grid_file": "mine_100x100.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"}
     ]
 
     attach_model_names(models_to_train)
@@ -215,6 +296,7 @@ def train_all_models(timesteps: int = 1_000_000):
         )
     
         print(f"Finished training {config['model_name']}")
+'''
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """

@@ -344,7 +344,6 @@ def get_reward_6(env, old_pos):
     
     cost_from_old_pos = env.get_path_cost(old_pos)
     cost_from_new_pos = env.get_path_cost(new_pos)
-
     
     if cost_from_new_pos == float('inf'):
         if cost_from_old_pos == float('inf'):
@@ -355,9 +354,66 @@ def get_reward_6(env, old_pos):
         if cost_from_old_pos == float('inf'):
              path_reward = -w_dangerous
         else:
-            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1]
+            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1] # try larger scale, or lower scale of other things?
 
     subrewards["path_progress_reward"] = path_reward
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+def get_reward_7(env, old_pos):
+    """
+    reward_6 with time penalty and lower cost of batteries
+    """
+    # --- Tunable Weights ---
+    w_goal = 1.0
+    w_invalid = -0.75
+    w_revisit = -0.25
+    w_path_progress = 1.0
+    w_dangerous = -1.0 # Penalty for moving to a state from which the pathfinder, with its knowledge of costs, can no longer find a viable or reasonable path to the goal
+    path_prog_norm = 101
+    w_time = -0.05
+
+    subrewards = {
+        "goal_reward": 0.0,
+        "invalid_penalty": 0.0,
+        "revisit_penalty": 0.0,
+        "path_progress_reward": 0.0,
+        "time_penalty": 0.0
+    }
+    
+    # Case 1: Goal is reached
+    new_pos = tuple(env.agent_pos)
+    if new_pos in env.goal_positions:
+        subrewards["goal_reward"] = w_goal
+        total_reward = sum(subrewards.values())
+        return total_reward, subrewards
+
+    if not env.can_move_to(new_pos):
+        subrewards["invalid_penalty"] = w_invalid
+        total_reward = sum(subrewards.values())
+        return total_reward, subrewards
+
+    if new_pos in env.visited:
+        subrewards["revisit_penalty"] = w_revisit
+    
+    cost_from_old_pos = env.get_path_cost(old_pos)
+    cost_from_new_pos = env.get_path_cost(new_pos)
+
+    if cost_from_new_pos == float('inf'):
+        if cost_from_old_pos == float('inf'):
+            path_reward = 0.0
+        else:
+            path_reward = w_dangerous
+    else:
+        if cost_from_old_pos == float('inf'):
+             path_reward = -w_dangerous
+        else:
+            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1] # try larger scale, or lower scale of other things?
+
+    subrewards["path_progress_reward"] = path_reward
+
+    subrewards["time_penalty"] = w_time
 
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
