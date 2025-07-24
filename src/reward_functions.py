@@ -381,10 +381,16 @@ def get_reward_pathlen(env, old_pos):
     w_invalid = -0.75
     w_revisit = -0.25
     w_battery = -1 # incorporate later
-    alpha = 0.05  # Exponential decay factor
     k = 3
-    diagonal_length = np.sqrt(2) * env.n_rows * env.n_cols
-    alpha = k / diagonal_length
+    #diagonal_length = 1.4 * (env.n_rows + env.n_cols)
+    #alpha = np.log(k) / diagonal_length # base e ln
+    #alpha = 0.03
+    target_penalty_at_halfway = 0.43 # try 0.6
+    d_half = 0.5 * max(env.n_rows, env.n_cols)
+    alpha = -np.log(1 - target_penalty_at_halfway) / d_half
+    print("alpha", alpha)
+    # try no invalid or revisit penalty,
+    # just battery and pathlen penalty
 
     subrewards = {
         "goal_reward": 0.0,

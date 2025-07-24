@@ -16,7 +16,7 @@ def test_manual_control(grid_file: str = "mine_20x20.txt"):
     """
     Launch manual control mode for the specified grid file.
     """
-    env = GridWorldEnv(grid_file=grid_file, reward_fn=get_reward_d)
+    env = GridWorldEnv(grid_file=grid_file, reward_fn=get_reward_pathlen)
     env.manual_control_loop()  
 
 def generate_grid(rows: int, cols: int, obstacle_percentage: float,
@@ -203,28 +203,16 @@ def train_all_models(timesteps: int = 1_000_000):
             
     models_to_train = [
         {
-            "grid_file": "mine_100x100.txt", "arch": None, "reward_fn": get_reward_pathlen, 
+            "grid_file": "mine_50x50.txt", "arch": None, "reward_fn": get_reward_pathlen, 
             "is_att": False,
             "fallback": False,
             #"conf": 0.5
         },
         {
-            "grid_file": "mine_100x100.txt", "arch": None, "reward_fn": get_reward_pathlen, 
-            "is_att": False,
-            "fallback": True,
-            "conf": 0.5
-        },
-        {
-            "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_pathlen, 
+            "grid_file": "mine_50x50.txt", "arch": "seq", "reward_fn": get_reward_pathlen, 
             "is_att": True,
             "fallback": False,
             #"conf": 0.5
-        },
-         {
-            "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_pathlen, 
-            "is_att": True,
-            "fallback": True,
-            "conf": 0.5
         },
     ]
 

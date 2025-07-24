@@ -1,3 +1,5 @@
+# path_planning.py
+
 import heapq
 import math
 import pygame
@@ -182,7 +184,9 @@ class DStarLite:
 
         return []
     
-# (The visual test code below is also the corrected, multi-maze, multi-exit version)
+##==============================================================
+## Visual Test Code
+##==============================================================
 class DynamicGridWorld:
     def __init__(self, width, height, loops_to_add=0):
         self.width=width; self.height=height; self.dynamic_costs={}; self.impassable_nodes=set(); self.grid=self._generate_maze(); self._add_loops(loops_to_add)
