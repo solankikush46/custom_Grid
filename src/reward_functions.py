@@ -388,7 +388,6 @@ def get_reward_pathlen(env, old_pos):
     target_penalty_at_halfway = 0.43 # try 0.6
     d_half = 0.5 * max(env.n_rows, env.n_cols)
     alpha = -np.log(1 - target_penalty_at_halfway) / d_half
-    print("alpha", alpha)
     # try no invalid or revisit penalty,
     # just battery and pathlen penalty
 
