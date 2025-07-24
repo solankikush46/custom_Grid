@@ -187,6 +187,8 @@ def train_all_models(timesteps: int = 1_000_000):
                 tags.append("att")
             elif config.get("arch") is not None:
                 tags.append("cnn")
+            else:
+                tags.append("mlp")
 
             if config.get("fallback", False):
                 conf_thresh = config.get('conf', 'default')
