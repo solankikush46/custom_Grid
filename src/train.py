@@ -383,7 +383,7 @@ def load_model(experiment_folder: str,
         if match:
             confidence_threshold = float(match.group(1))
 
-    reward_fn = reward_functions.get_reward_8 # infer_reward_fn(experiment_name)
+    reward_fn = infer_reward_fn(experiment_name)
     
     print(f"\n--- Loading Model: {experiment_name} from folder {os.path.basename(experiment_folder)} ---")
     print(f"  Grid: {inferred_grid}, Reward Fn: {reward_fn.__name__}")
