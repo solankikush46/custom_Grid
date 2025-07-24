@@ -99,24 +99,39 @@ def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
     return grid_name
 
 def evaluate_ppo_run(ppo_path, experiment_name, n_eval_episodes, render, verbose):
+    """
+    Evaluates a PPO run by parsing its configuration from the folder name
+    and passing the correct information to the smart `load_model` function.
+    """
+    # --- 1. Prepare environment-specific arguments ---
+    # This logic is simple and belongs here.
     inferred_grid = best_matching_grid(experiment_name, FIXED_GRID_DIR)
-    grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
-
-    is_cnn = "cnn" in experiment_name.lower()
     is_halfsplit = "halfsplit" in experiment_name.lower()
-
-    print(f"\nEvaluating {ppo_path} using grid {inferred_grid} (CNN={is_cnn}, Halfsplit={is_halfsplit})...")
 
     reset_kwargs = {}
     if is_halfsplit:
+        grid_file_path = os.path.join(FIXED_GRID_DIR, inferred_grid)
         battery_overrides = get_halfsplit_battery_overrides(grid_file_path)
         reset_kwargs["battery_overrides"] = battery_overrides
 
-    model = train.load_model(ppo_path, grid_file=inferred_grid, is_cnn=is_cnn, reset_kwargs=reset_kwargs)
+    # --- 2. Call the new `load_model` function with the correct arguments ---
+    # The 'experiment_name' is passed in so the loader can parse the config.
+    # The 'ppo_path' is passed in so the loader knows where to find the model.zip file.
+    model = train.load_model(
+        experiment_folder=ppo_path,
+        experiment_name=experiment_name,
+        reset_kwargs=reset_kwargs
+    )
+    
+    # --- 3. Get the fully-configured environment from the model ---
+    # This now works as required.
     env = model.get_env().envs[0]
 
-    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, halfsplit=is_halfsplit, verbose=verbose)
-
+    # --- 4. Proceed with the evaluation ---
+    print("\nStarting evaluation...")
+    # Assuming train.evaluate_model is a function you have that runs the evaluation loop.
+    train.evaluate_model(env, model, n_eval_episodes=n_eval_episodes, render=render, verbose=verbose)
+    
 def evaluate_all_models(base_dir=SAVE_DIR, n_eval_episodes=10, render=True, verbose=True, dos=[]):
     """
     Evaluates all PPO models under each experiment in `base_dir`.
@@ -188,16 +203,28 @@ def train_all_models(timesteps: int = 1_000_000):
             
     models_to_train = [
         {
-            "grid_file": "mine_100x100.txt", "arch": None, "reward_fn": get_reward_7, 
+            "grid_file": "mine_100x100.txt", "arch": None, "reward_fn": get_reward_pathlen, 
             "is_att": False,
-            "fallback": True,
-            "conf": 0.75
+            "fallback": False,
+            #"conf": 0.5
         },
         {
-            "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_7, 
+            "grid_file": "mine_100x100.txt", "arch": None, "reward_fn": get_reward_pathlen, 
+            "is_att": False,
+            "fallback": True,
+            "conf": 0.5
+        },
+        {
+            "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_pathlen, 
+            "is_att": True,
+            "fallback": False,
+            #"conf": 0.5
+        },
+         {
+            "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_pathlen, 
             "is_att": True,
             "fallback": True,
-            "conf": 0.75
+            "conf": 0.5
         },
     ]
 
@@ -205,7 +232,7 @@ def train_all_models(timesteps: int = 1_000_000):
 
     for config in models_to_train:
         print(f"\n===== Training {config['model_name']} =====")
-        print(f"  Grid: {config['grid_file']}, Timesteps: {timesteps}, Arch: {config.get('arch')}")
+        print(f"  Grid: {config['grid_file']}, Timesteps: {timesteps}, Arch: {config.get('arch', 'Mlp')}")
 
         battery_overrides = {}
         if config.get("halfsplit", False):
@@ -228,69 +255,6 @@ def train_all_models(timesteps: int = 1_000_000):
         )
     
         print(f"===== Finished training {config['model_name']} =====")
-
-'''
-def train_all_models(timesteps: int = 1_000_000):
-    """
-    Trains PPO models with support for halfsplit battery overrides when
-    specified. This version runs without a try-except block and will
-    halt on any error.
-    """
-    def attach_model_names(model_configs):
-        for config in model_configs:
-            grid_name = os.path.splitext(config["grid_file"])[0]
-            reward_fn_name = config.get("reward_fn").__name__ if config.get("reward_fn") else "unknown_reward"
-            reward_name = reward_fn_name.replace("get_", "")
-            arch = config.get("arch", "unknown_arch")
-            att_tag = "att"
-            
-            # Add 'cnn' if arch is specified
-            cnn_tag = "cnn" if arch is not None else ""
-
-            # Construct model_name with optional cnn tag
-            if att_tag:
-                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}_{att_tag}"
-            elif cnn_tag:
-                model_name = f"{grid_name}__{reward_name}__{arch}__{cnn_tag}"
-            else:
-                model_name = f"{grid_name}__{reward_name}"
-
-            
-            if config.get("tag"):
-                model_name += f"__{config['tag']}"
-
-            config["model_name"] = model_name
-            
-    models_to_train = [
-         {"grid_file": "mine_30x30.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"},
-        {"grid_file": "mine_50x50.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"},
-         {"grid_file": "mine_100x100.txt", "arch": "seq", "halfsplit": False, "reward_fn": get_reward_6, "is_cnn": True, "is_att": True, "tag": "v3_no_norm"}
-    ]
-
-    attach_model_names(models_to_train)
-
-    for config in models_to_train:
-        print(f"\nTraining {config['model_name']} for {timesteps} timesteps on {config['grid_file']} (arch={config.get('arch')})")
-
-        grid_path = os.path.join(FIXED_GRID_DIR, config["grid_file"])
-
-        # Compute battery overrides only if halfsplit flag is True
-        battery_overrides = {}
-        if config.get("halfsplit", False):
-            battery_overrides = train.get_halfsplit_battery_overrides(grid_path)
-
-        model = train.train_PPO_model(
-            reward_fn=config.get("reward_fn"),
-            grid_file=config["grid_file"],
-            timesteps=timesteps,
-            reset_kwargs={"battery_overrides": battery_overrides} if battery_overrides else {},
-            arch=config.get("arch"),
-            folder_name=config["model_name"],
-            battery_truncation=True
-        )
-    
-        print(f"Finished training {config['model_name']}")
-'''
 
 def train_and_render_junk_model(grid_file: str = "mine_20x20.txt", is_cnn: bool = False, n_eval_episodes: int = 3):
     """

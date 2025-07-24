@@ -597,7 +597,7 @@ class GridWorldEnv(Env):
     
         # === Compute initial path === #
         self.pathfinder = DStarLite(
-            grid=impassable_grid.tolist(),
+            grid=impassable_grid,
             start=start_xy,
             goals=goals_xy,
             cost_function=self._dstar_cost_function
@@ -611,11 +611,10 @@ class GridWorldEnv(Env):
         Return True if the position is in bounds
         and not blocked
         '''
-        return self.in_bounds(pos) and \
-            self.static_grid[pos[0], pos[1]] != OBSTACLE and \
-                self.static_grid[pos[0], pos[1]] != SENSOR and \
-                    self.static_grid[pos[0], pos[1]] != BASE_STATION
-
+        row, col = pos
+        in_bounds = self.in_bounds(pos)
+        return in_bounds and not self.static_grid[row, col] in self.OBSTACLE_VALS
+    
     def in_bounds(self, pos):
         return 0 <= pos[0] < self.n_rows \
     and 0 <= pos[1] < self.n_cols
@@ -651,8 +650,11 @@ class GridWorldEnv(Env):
         self._update_agent_position(new_pos)
         self._move_miners_and_update_sensors()
         self._pathfinder_step()
-        reward, subrewards = self._compute_reward_and_update(old_pos)
-
+        reward, subrewards = self._compute_reward_and_update(old_pos) 
+        if tuple(new_pos) in self.visited:
+            self.episode_revisits += 1
+        self.visited.add(tuple(new_pos))
+        
         terminated = self.agent_reached_exit()
         truncated = self.episode_steps >= self.max_steps or \
             (self.battery_truncation and self.current_battery_level <= 10)
@@ -664,11 +666,6 @@ class GridWorldEnv(Env):
     def _compute_reward_and_update(self, old_pos):
         reward, subrewards = compute_reward(self, old_pos, self.reward_fn)
         self.total_reward += reward
-        old_pos = tuple(old_pos)
-        new_pos = tuple(self.agent_pos)
-        if new_pos in self.visited:
-            self.episode_revisits += 1
-        self.visited.add(tuple(new_pos))
         return reward, subrewards
 
     def _update_agent_position(self, new_pos):

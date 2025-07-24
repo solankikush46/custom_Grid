@@ -1,3 +1,5 @@
+# DStarFallbackWrapper
+
 import gym
 import numpy as np
 import torch as th
@@ -48,10 +50,24 @@ class DStarFallbackWrapper(gym.Wrapper):
             final_action = expert_action if expert_action is not None else action_from_agent
 
         next_obs, reward, terminated, truncated, info = self.env.step(final_action)
-        
+
+        if isinstance(info, dict):
+            # Single env case
+            info['final_action'] = final_action
+        else:
+            # VecEnv case: info is a list of dicts, one per env
+            for env_info in info:
+                env_info['final_action'] = final_action
+            
         self.last_obs = next_obs
         info['confidence'] = float(max_prob)
         info['used_fallback'] = (expert_action is not None and final_action == expert_action)
+        '''
+        print(f"[FallbackWrapper] Agent action: {action_from_agent}, "
+              f"Final action: {final_action}, "
+              f"Confidence: {max_prob:.3f}, "
+              f"Used fallback: {final_action != action_from_agent}")
+        '''
         
         return next_obs, reward, terminated, truncated, info
 
@@ -66,3 +82,6 @@ class DStarFallbackWrapper(gym.Wrapper):
         move_rc = (next_pos_xy[1] - current_pos_rc[0], next_pos_xy[0] - current_pos_rc[1])
         
         return MOVE_TO_ACTION_MAP.get(move_rc)
+
+    def set_model(self, model):
+        self.model = model
