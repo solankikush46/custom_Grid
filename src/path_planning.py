@@ -150,50 +150,50 @@ class DStarLite:
         self._compute_shortest_path()
 
     def get_path_to_goal(self, start=None):
-    """
-    Returns a path from `start` (or current self.s_start) to the nearest real goal.
-    If no path is found, returns an empty list.
+        """
+        Returns a path from `start` (or current self.s_start) to the nearest real goal.
+        If no path is found, returns an empty list.
 
-    Args:
+        Args:
         start (tuple or None): Optional override for starting position.
 
-    Returns:
+        Returns:
         List[Tuple[int, int]]: The path from start to goal, including start and goal.
-    """
-    curr = start if start is not None else self.s_start
+        """
+        curr = start if start is not None else self.s_start
 
-    if self.g.get(curr, float('inf')) == float('inf'):
-        return []
-
-    if curr in self.real_goals:
-        return [curr]
-
-    path = [curr] # cycle detection not neccesary ->
-    visited = set([curr])  # prevent loops in degenerate cases
-
-    for _ in range(self.width * self.height):
-        min_cost = float('inf')
-        next_node = None
-
-        for s_prime in self._get_neighbors(curr):
-            if s_prime in visited:
-                continue
-            cost = self._get_edge_cost(curr, s_prime) + self.g.get(s_prime, float('inf'))
-            if cost < min_cost:
-                min_cost = cost
-                next_node = s_prime
-
-        if next_node is None:
-            return []  # no valid next step
-
-        curr = next_node
-        path.append(curr)
-        visited.add(curr)
+        if self.g.get(curr, float('inf')) == float('inf'):
+            return []
 
         if curr in self.real_goals:
-            return path
+            return [curr]
 
-    return []  # fallback if loop limit is reached
+        path = [curr] # cycle detection not neccesary ->
+        visited = set([curr])  # prevent loops in degenerate cases
+
+        for _ in range(self.width * self.height):
+            min_cost = float('inf')
+            next_node = None
+
+            for s_prime in self._get_neighbors(curr):
+                if s_prime in visited:
+                    continue
+                cost = self._get_edge_cost(curr, s_prime) + self.g.get(s_prime, float('inf'))
+                if cost < min_cost:
+                    min_cost = cost
+                    next_node = s_prime
+
+            if next_node is None:
+                return []  # no valid next step
+
+            curr = next_node
+            path.append(curr)
+            visited.add(curr)
+
+            if curr in self.real_goals:
+                return path
+
+        return []  # fallback if loop limit is reached
 
 ##==============================================================
 ## Visual Test Code
