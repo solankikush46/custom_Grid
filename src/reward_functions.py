@@ -445,7 +445,7 @@ def get_reward_follow_dstar(env, old_pos):
         "goal_reward": 0.0,
         "wall_penalty": 0.0,
         "revisit_penalty": 0.0,
-        "path_follow_bonus": 0.0,
+        "path_follow_reward": 0.0,
     }
 
     new_pos = tuple(env.agent_pos)
