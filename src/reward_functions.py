@@ -382,7 +382,7 @@ def get_reward_pathlen(env, old_pos):
     #diagonal_length = 1.4 * (env.n_rows + env.n_cols)
     #alpha = np.log(k) / diagonal_length # base e ln
     #alpha = 0.03
-    target_penalty_at_halfway = 0.6 # try 0.6
+    target_penalty_at_halfway = 0.43 # try 0.6
     d_half = 0.5 * max(env.n_rows, env.n_cols)
     alpha = -np.log(1 - target_penalty_at_halfway) / d_half
     # try no invalid or revisit penalty,
@@ -417,6 +417,61 @@ def get_reward_pathlen(env, old_pos):
     penalty = -(1 - np.exp(-alpha * path_len))  # In range [-1, 0]
     
     subrewards["path_length_penalty"] = penalty
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+def get_reward_follow_dstar(env, old_pos):
+    """
+    Rewards the agent for following the path provided by D* Lite.
+    Penalizes deviation from the optimal path.
+    
+    Args:
+        env: Environment with pathfinder and agent info
+        old_pos (tuple): Agent position before the action
+        
+    Returns:
+        total_reward: float
+        subrewards: dict with detailed components
+    """
+    # --- Tunable parameters ---
+    w_goal = 1.0
+    w_wall = -0.75
+    w_revisit = -0.25
+    w_path_follow = 0.3     # reward for correct next step
+    w_path_deviation = -0.2 # penalty for deviating from path
+    # try without path deviation penalty
+    subrewards = {
+        "goal_reward": 0.0,
+        "wall_penalty": 0.0,
+        "revisit_penalty": 0.0,
+        "path_follow_bonus": 0.0,
+    }
+
+    new_pos = tuple(env.agent_pos)
+
+    # Reached goal
+    if new_pos in env.goal_positions:
+        subrewards["goal_reward"] = w_goal
+        return sum(subrewards.values()), subrewards
+
+    # Wall collision
+    if not env.can_move_to(new_pos):
+        subrewards["wall_penalty"] = w_wall
+        return sum(subrewards.values()), subrewards
+
+    # Revisit penalty
+    if new_pos in env.visited:
+        subrewards["revisit_penalty"] = w_revisit
+
+    # Path-follow reward
+    path = env.pathfinder.get_path_to_goal(start=old_pos)
+    if path and len(path) > 1:
+        expected_next = path[1]  # the next step D* suggests
+        if new_pos == expected_next:
+            subrewards["path_follow_reward"] = w_path_follow
+        else:
+            subrewards["path_follow_reward"] = w_path_deviation
 
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
