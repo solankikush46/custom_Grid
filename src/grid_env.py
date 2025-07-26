@@ -528,7 +528,7 @@ class GridWorldEnv(Env):
             dtype=np.float32
             )
 
-            return np.concatenate([blocked_flags, norm_pos, [last_action], [path_len], [dist_to_goal], battery_levels])
+            return np.concatenate([blocked_flags, norm_pos, [last_action], [path_len], battery_levels])
 
 
     def reset(self, seed=None, options = None):
