@@ -135,6 +135,7 @@ def get_reward_d(env, new_pos):
     '''
     reward c but with distance penalty, and no time penalty
     '''
+    # GOT RID OF BATTERY PENALTY FOR CNN TESTS
     if new_pos in env.goal_positions:
         subrewards = {
             "goal_reward": 1.0,
@@ -146,7 +147,7 @@ def get_reward_d(env, new_pos):
     else:
         inval_pen = -0.75 if not env.can_move_to(new_pos) else 0.0
         rev_pen = -0.25 if new_pos in env.visited else 0.0
-        bat_pen = -1.0 if env.current_battery_level <= 10 else 0.0
+        bat_pen = 0 # -1.0 if env.current_battery_level <= 10 else 0.0
         dist_pen = -2.0 * env._compute_min_distance_to_goal() # product of normalized euclidean distance to closest goal
 
         subrewards = {

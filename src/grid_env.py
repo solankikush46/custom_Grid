@@ -519,16 +519,14 @@ class GridWorldEnv(Env):
             norm_pos = np.array([r / (self.n_rows - 1), c / (self.n_cols - 1)], dtype=np.float32)
             last_action = self.last_action / 7.0 if self.last_action >= 0 else 0.0
 
-            # dist_to_goal = self._compute_min_distance_to_goal()
-            path = self.pathfinder.get_path_to_goal(start=(c, r))  # note (x, y) format if needed
-            path_len = len(path) - 1 if path and len(path) > 1 else 0
+            dist_to_goal = self._compute_min_distance_to_goal()
 
             battery_levels = np.array(
                 [self.sensor_batteries.get(pos, 0.0) / 100.0 for pos in self.sensor_batteries],
             dtype=np.float32
             )
 
-            return np.concatenate([blocked_flags, norm_pos, [last_action], [path_len], battery_levels])
+            return np.concatenate([blocked_flags, norm_pos, [last_action], [dist_to_goal], battery_levels])
 
 
     def reset(self, seed=None, options = None):
