@@ -207,21 +207,21 @@ def train_all_models(timesteps: int = 1_000_000):
             "is_att": False,
             "fallback": False,
             #"conf": 0.5,
-            "tag": "not_changed_obs_space"
+            "tag": "changed_obs_space"
         },
             {
             "grid_file": "mine_30x30.txt", "arch": None, "reward_fn": get_reward_follow_dstar, 
             "is_att": False,
             "fallback": False,
             #"conf": 0.5,
-            "tag": "not_changed_obs_space"
+            "tag": "changed_obs_space"
         },
             {
             "grid_file": "mine_50x50.txt", "arch": None, "reward_fn": get_reward_follow_dstar, 
             "is_att": False,
             "fallback": False,
             #"conf": 0.5,
-            "tag": "not_changed_obs_space"
+            "tag": "changed_obs_space"
         },
     ]
 
