@@ -303,10 +303,7 @@ def get_reward_e3(env, new_pos):
 
 def get_reward_6(env, old_pos):
     """
-    A proactive, path-informed reward function (Version 2).
-
-    This version guarantees that the returned 'subrewards' dictionary always
-    contains the same set of keys, preventing KeyErrors during data logging.
+    A proactive, path-informed reward function.
 
     Args:
         env: The environment object, which must contain the pathfinder.
@@ -385,7 +382,7 @@ def get_reward_pathlen(env, old_pos):
     #diagonal_length = 1.4 * (env.n_rows + env.n_cols)
     #alpha = np.log(k) / diagonal_length # base e ln
     #alpha = 0.03
-    target_penalty_at_halfway = 0.43 # try 0.6
+    target_penalty_at_halfway = 0.6 # try 0.6
     d_half = 0.5 * max(env.n_rows, env.n_cols)
     alpha = -np.log(1 - target_penalty_at_halfway) / d_half
     # try no invalid or revisit penalty,
