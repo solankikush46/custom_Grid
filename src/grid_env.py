@@ -477,7 +477,7 @@ class GridWorldEnv(Env):
         if normalize:
             return euclidean_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows)
         else:
-            return euclidean_distances(self.agent_pos, self.goal_positions, self.n_cols, self.n_rows)
+            return euclidean_distances(self.agent_pos, self.goal_positions)
 
     def get_observation(self):
         if self.is_cnn:
