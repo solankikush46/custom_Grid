@@ -15,8 +15,8 @@ def ensure_directories_exist():
 def main():
     #test_manual_control("mine_20x20.txt")
     #generate_all_plots(rolling_window=50_000)
-    train_all_models(1_000_000)
-    #evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=[])
+    #train_all_models(1_000_000)
+    evaluate_all_models(n_eval_episodes=10_000, render=False, verbose=False, dos=["mine_50x50__reward_6"])
     
 if __name__ == "__main__":
     ensure_directories_exist()

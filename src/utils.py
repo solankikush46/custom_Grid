@@ -3,6 +3,7 @@
 import os
 import numpy as np
 import math
+from constants import *
 
 ##==============================================================
 ## Helpers
@@ -106,3 +107,12 @@ def make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sens
     feature_matrix[3, :5] = sensor_batteries[:5]
     feature_matrix[4, :4] = sensor_batteries[5:9]
     return feature_matrix
+
+def count_miners_in_range(sensor_pos, miners, max_range=MAX_COMM_RANGE):
+    """
+    Returns the number of miners within max_range of the given sensor position.
+    """
+    return sum(
+        1 for miner_pos in miners
+        if euclidean_distance(sensor_pos, miner_pos) <= max_range
+    )
