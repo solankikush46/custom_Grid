@@ -499,7 +499,7 @@ class GridWorldEnv(Env):
                 obs[2, r, c] = 1.0
                 obs[3, r, c] = battery / 100.0  # normalized battery
 
-                # channel for counting the no of miners
+                # channel 5: for counting the no of miners
                 obs[5, r, c] = count_miners_in_range((r,c)) / len(self.miners) if self.miners else 0.0
 
             # Channel 4: goal

@@ -203,12 +203,13 @@ def train_all_models(timesteps: int = 1_000_000):
             
     models_to_train = [
         {
-            "grid_file": "mine_100x100.txt", "arch": "seq", "reward_fn": get_reward_d, 
+            "grid_file": "mine_50x50.txt", "arch": "seq", "reward_fn": get_reward_d, 
             "is_att": True,
             "fallback": False,
             #"conf": 0.5,
-            "tag": "new_cnn_channels"
+            "tag": "new_cnn_channel_for_miners"
         },
+
     ]
 
     attach_model_names(models_to_train)
