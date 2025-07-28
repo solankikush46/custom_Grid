@@ -481,8 +481,8 @@ class GridWorldEnv(Env):
 
     def get_observation(self):
         if self.is_cnn:
-            # 5 channels      
-            obs = np.zeros((5, self.n_rows, self.n_cols), dtype=np.float32)
+            # 6 channels      
+            obs = np.zeros((6, self.n_rows, self.n_cols), dtype=np.float32)
 
             # Channel 0: agent
             r, c = self.agent_pos
