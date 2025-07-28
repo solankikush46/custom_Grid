@@ -1,4 +1,5 @@
 # attention.py
+
 from src.cnn_feature_extractor import *
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import torch
@@ -40,7 +41,6 @@ class TemporalAttention(nn.Module):
         attn_weights = torch.softmax(self.pool(x_seq), dim=1)  # (B, T, 1)
         pooled = (x_seq * attn_weights).sum(dim=1)             # (B, D)
         return self.final_proj(pooled)      
-
 
 class AttentionCNNExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=128, grid_file=None, temporal_len=4):

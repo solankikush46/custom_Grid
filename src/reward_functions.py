@@ -303,10 +303,7 @@ def get_reward_e3(env, new_pos):
 
 def get_reward_6(env, old_pos):
     """
-    A proactive, path-informed reward function (Version 2).
-
-    This version guarantees that the returned 'subrewards' dictionary always
-    contains the same set of keys, preventing KeyErrors during data logging.
+    A proactive, path-informed reward function.
 
     Args:
         env: The environment object, which must contain the pathfinder.
@@ -318,13 +315,15 @@ def get_reward_6(env, old_pos):
     w_revisit = -0.25
     w_path_progress = 1.0
     w_dangerous = -1.0 # Penalty for moving to a state from which the pathfinder, with its knowledge of costs, can no longer find a viable or reasonable path to the goal
-    path_prog_norm = 201 # max battery penalty + cost of moving a square = 200 + 1
+    path_prog_norm = 101
+    w_time = -0.05
 
     subrewards = {
         "goal_reward": 0.0,
         "invalid_penalty": 0.0,
         "revisit_penalty": 0.0,
         "path_progress_reward": 0.0,
+        "time_penalty": 0.0
     }
     
     # Case 1: Goal is reached
@@ -334,7 +333,7 @@ def get_reward_6(env, old_pos):
         total_reward = sum(subrewards.values())
         return total_reward, subrewards
 
-    if not env.can_move_to(new_pos):
+    if old_pos == new_pos:
         subrewards["invalid_penalty"] = w_invalid
         total_reward = sum(subrewards.values())
         return total_reward, subrewards
@@ -345,7 +344,6 @@ def get_reward_6(env, old_pos):
     cost_from_old_pos = env.get_path_cost(old_pos)
     cost_from_new_pos = env.get_path_cost(new_pos)
 
-    
     if cost_from_new_pos == float('inf'):
         if cost_from_old_pos == float('inf'):
             path_reward = 0.0
@@ -355,60 +353,128 @@ def get_reward_6(env, old_pos):
         if cost_from_old_pos == float('inf'):
              path_reward = -w_dangerous
         else:
-            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) / path_prog_norm # scaled to [-1, 1]
+            path_reward = w_path_progress * (cost_from_old_pos - cost_from_new_pos) # scaled to [-1, 1] # try larger scale, or lower scale of other things?
 
-    subrewards["path_progress_reward"] = path_reward
+    subrewards["path_progress_reward"] = path_reward if subrewards["revisit_penalty"] == 0 else 0
+
+    subrewards["time_penalty"] = w_time
 
     total_reward = sum(subrewards.values())
     return total_reward, subrewards
 
-'''
-def get_reward_f(env, new_pos, w_battery = 10):
+def get_reward_pathlen(env, old_pos):
     """
-    Returns (reward, cost, info)
-    - reward: positive task progress (goal, distance)
-    - cost: penalties for constraints (invalid moves, revisits, battery)
-    - info: dictionary with individual components for debugging/logging
+    Path-length-based exponential penalty reward function.
+    
+    Penalizes based on the number of steps remaining to the goal
+    using the formula: - (1 - exp(-α * path_len))
+    
+    Args:
+        env: The environment with a pathfinder.
+        old_pos (tuple): Agent's position before the action.
     """
-    # Tunable weights
+    # --- Tunable parameters ---
     w_goal = 1.0
-    w_dist = 2.0
-    w_invalid = 0.75
-    w_revisit = 0.25
-    k_soft = 6.0  # sigmoid sharpness
-    battery_threshold = 10
+    w_invalid = -0.75
+    w_revisit = -0.25
+    w_battery = -1 # incorporate later
+    k = 3
+    #diagonal_length = 1.4 * (env.n_rows + env.n_cols)
+    #alpha = np.log(k) / diagonal_length # base e ln
+    #alpha = 0.03
+    target_penalty_at_halfway = 0.43 # try 0.6
+    d_half = 0.5 * max(env.n_rows, env.n_cols)
+    alpha = -np.log(1 - target_penalty_at_halfway) / d_half
+    # try no invalid or revisit penalty,
+    # just battery and pathlen penalty
 
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-k_soft * x))
-
-    # Reward components
-    if new_pos in env.goal_positions:
-        reward = w_goal
-        dist_pen = 0.0
-    else:
-        # Reward is negative distance to goal (encourages progress)
-        dist = env._compute_min_distance_to_goal()
-        dist_pen = -w_dist * dist
-        reward = dist_pen  # distance penalty treated as negative reward here
-
-    # Cost components (penalties for constraints)
-    inval_pen = w_invalid if not env.can_move_to(new_pos) else 0.0
-    rev_pen = w_revisit if new_pos in env.visited else 0.0
-    b = env.current_battery_level
-    bat_pen = w_battery * sigmoid((battery_threshold - b) / battery_threshold)
-
-    cost = inval_pen + rev_pen + bat_pen
-
-    info = {
-        "goal_reward": w_goal if new_pos in env.goal_positions else 0.0,
-        "distance_reward": dist_pen,
-        "invalid_cost": inval_pen,
-        "revisit_cost": rev_pen,
-        "battery_cost": bat_pen
+    subrewards = {
+        "goal_reward": 0.0,
+        "invalid_penalty": 0.0,
+        "revisit_penalty": 0.0,
+        "path_length_penalty": 0.0,
     }
 
-    return reward, cost, info
-'''
+    new_pos = tuple(env.agent_pos)
+
+    # Case 1: Reached goal
+    if new_pos in env.goal_positions:
+        subrewards["goal_reward"] = w_goal
+        return sum(subrewards.values()), subrewards
+
+    # Case 2: Invalid move (into wall, obstacle, etc.)
+    if not env.can_move_to(new_pos):
+        subrewards["invalid_penalty"] = w_invalid
+        return sum(subrewards.values()), subrewards
+
+    # Case 3: Revisit penalty
+    if new_pos in env.visited:
+        subrewards["revisit_penalty"] = w_revisit
+
+    # Case 4: Exponential penalty based on path length
+    path = env.pathfinder.get_path_to_goal()
+    path_len = len(path) - 1  # Exclude current position
+    penalty = -(1 - np.exp(-alpha * path_len))  # In range [-1, 0]
+    
+    subrewards["path_length_penalty"] = penalty
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
+
+def get_reward_follow_dstar(env, old_pos):
+    """
+    Rewards the agent for following the path provided by D* Lite.
+    Penalizes deviation from the optimal path.
+    
+    Args:
+        env: Environment with pathfinder and agent info
+        old_pos (tuple): Agent position before the action
+        
+    Returns:
+        total_reward: float
+        subrewards: dict with detailed components
+    """
+    # --- Tunable parameters ---
+    w_goal = 1.0
+    w_wall = -0.75
+    w_revisit = -0.25
+    w_path_follow = 0.3     # reward for correct next step
+    w_path_deviation = -0.2 # penalty for deviating from path
+    # try without path deviation penalty
+    subrewards = {
+        "goal_reward": 0.0,
+        "wall_penalty": 0.0,
+        "revisit_penalty": 0.0,
+        "path_follow_reward": 0.0,
+    }
+
+    new_pos = tuple(env.agent_pos)
+
+    # Reached goal
+    if new_pos in env.goal_positions:
+        subrewards["goal_reward"] = w_goal
+        return sum(subrewards.values()), subrewards
+
+    # Wall collision
+    if not env.can_move_to(new_pos):
+        subrewards["wall_penalty"] = w_wall
+        return sum(subrewards.values()), subrewards
+
+    # Revisit penalty
+    if new_pos in env.visited:
+        subrewards["revisit_penalty"] = w_revisit
+
+    # Path-follow reward
+    path = env.pathfinder.get_path_to_goal(start=old_pos)
+    if path and len(path) > 1:
+        expected_next = path[1]  # the next step D* suggests
+        if new_pos == expected_next:
+            subrewards["path_follow_reward"] = w_path_follow
+        else:
+            subrewards["path_follow_reward"] = w_path_deviation
+
+    total_reward = sum(subrewards.values())
+    return total_reward, subrewards
 
 def compute_reward(env, old_pos, reward_fn):
     old_pos = tuple(old_pos)
