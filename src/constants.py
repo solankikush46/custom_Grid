@@ -2,6 +2,66 @@
 import os
 import numpy as np
 
+import os
+
+# ===================================================================
+# --- Grid Symbol Definitions ---
+# ===================================================================
+
+# 1. Character symbols (for grid files and easy identification)
+EMPTY_CHAR = '.'
+OBSTACLE_CHAR = '#'
+GOAL_CHAR = 'G'
+SENSOR_CHAR = 'S'
+AGENT_CHAR = 'A'
+BASE_STATION_CHAR = 'B'
+MINER_CHAR = 'M'
+
+# 2. Integer IDs (for efficient internal NumPy array representation)
+EMPTY_ID = 0
+OBSTACLE_ID = 1
+SENSOR_ID = 2
+BASE_STATION_ID = 3
+AGENT_ID = 4
+GOAL_ID = 5
+MINER_ID = 6
+
+# 3. Mapping from characters to integer IDs (for loading grids)
+CHAR_TO_INT_MAP = {
+    EMPTY_CHAR: EMPTY_ID,
+    OBSTACLE_CHAR: OBSTACLE_ID,
+    GOAL_CHAR: GOAL_ID,
+    SENSOR_CHAR: SENSOR_ID,
+    AGENT_CHAR: AGENT_ID,
+    BASE_STATION_CHAR: BASE_STATION_ID,
+    MINER_CHAR: MINER_ID
+}
+
+# 4. RGB colors for pygame rendering (keys are the character symbols)
+RENDER_COLORS = {
+    EMPTY_CHAR: (255, 255, 255),
+    OBSTACLE_CHAR: (100, 100, 100),
+    GOAL_CHAR: (0, 255, 0),
+    SENSOR_CHAR: (255, 0, 0),
+    AGENT_CHAR: (0, 0, 255),
+    BASE_STATION_CHAR: (128, 0, 128),
+    MINER_CHAR: (255, 165, 0),
+}
+
+# ===================================================================
+# --- Other Constants ---
+# ===================================================================
+
+# Actions agent can take
+DIRECTION_MAP = {
+    0: (-1,  0), 1: (-1, +1), 2: (0, +1), 3: (+1, +1),
+    4: (+1,  0), 5: (+1, -1), 6: (0, -1), 7: (-1, -1),
+}
+
+# File paths
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+FIXED_GRID_DIR = os.path.join(BASE_DIR, "src", "saved_grids", "fixed")
+
 # grid symbols
 EMPTY = '.'
 OBSTACLE = '#'
