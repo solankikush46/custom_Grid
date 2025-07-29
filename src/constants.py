@@ -43,7 +43,11 @@ RENDER_COLORS = {
     GUIDED_MINER_CHAR: (0, 0, 255),
     BASE_STATION_CHAR: (128, 0, 128),
     MINER_CHAR: (0, 100, 0),
+    "TRAIL": (255, 255, 0),
+    "DSTAR": (30, 144, 255),
 }
+DSTAR_PATH_THICKNESS = 4
+TRAIL_PATH_THICKNESS = 4
 
 # ===================================================================
 # --- Other Constants ---

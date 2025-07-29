@@ -1,476 +1,258 @@
 # train.py
+
 import os
-import numpy as np
-import gym
-from stable_baselines3 import PPO, DQN, SAC
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
-from stable_baselines3.common.evaluation import evaluate_policy
-from torch.utils.tensorboard import SummaryWriter
 import time
-import datetime
-from src.constants import *
-from src.plot_metrics import *
-from src.cnn_feature_extractor import CustomGridCNNWrapper, GridCNNExtractor, AgentFeatureMatrixWrapper, FeatureMatrixCNNExtractor
-import src.reward_functions as reward_functions
-#import gymnasium as gym
-from src.attention import AttentionCNNExtractor
-from src.wrappers import TimeStackObservation
-from src.DStarFallbackWrapper import *
 import re
-from src.PPOFallback import *
+import numpy as np
+import matplotlib.pyplot as plt
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import BaseCallback
+from sb3_contrib import RecurrentPPO
 
-##==============================================================
-## Unified PPO Training Function
-##==============================================================
-def train_PPO_model(reward_fn,
-                    grid_file: str,
-                    timesteps: int,
-                    folder_name: str,
-                    use_hybrid_control: bool = False,
-                    confidence_threshold: float = 0.75,
-                    reset_kwargs: dict = {},
-                    arch: str | None = None,
-                    features_dim: int = 128,
-                    battery_truncation=False,
-                    is_att: bool = False,
-                    num_frames: int = 8
-                    ):
+from src.BatteryPredictorEnv import BatteryPredictorEnv
+from src.constants import FIXED_GRID_DIR, SAVE_DIR
 
-    # --- Step 1: Create the foundational environment ---
-    base_env = GridWorldEnv(
-        reward_fn=reward_fn,
-        grid_file=grid_file,
-        is_cnn=(arch is not None or is_att),
-        reset_kwargs=reset_kwargs,
-        battery_truncation=battery_truncation
+# ===================================================================
+# --- Custom Callback for Logging ---
+# ===================================================================
+
+class PredictorTensorboardCallback(BaseCallback):
+    """
+    A custom callback for logging the approximate Mean Absolute Error (MAE)
+    of the predictor's actions during training.
+    """
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        # Get rewards from the last rollout
+        rewards = self.locals['rewards']
+        # Approximate the MAE from the reward: R = exp(-|error| / C)
+        # This is a useful proxy for tracking learning progress.
+        if np.mean(rewards) > 0:
+            approx_mae_norm = -0.1 * np.log(np.mean(rewards))
+            approx_mae_percent = approx_mae_norm * 100
+            self.logger.record("custom/prediction_mae_percent", approx_mae_percent)
+        return True
+
+# ===================================================================
+# --- Unified PPO-LSTM Training Function ---
+# ===================================================================
+
+def train_predictor_model(grid_file: str,
+                          n_miners: int,
+                          timesteps: int,
+                          experiment_folder_name: str,
+                          n_envs: int = 4):
+    """
+    Initializes and trains the RecurrentPPO battery predictor model, saving all
+    artifacts into a structured experiment/run directory.
+
+    Args:
+        grid_file (str): The name of the grid file for the simulation.
+        n_miners (int): The number of autonomous miners in the simulation.
+        timesteps (int): The total number of training timesteps.
+        experiment_folder_name (str): The unique name for this experiment.
+        n_envs (int): The number of parallel environments to use for training.
+    """
+    # --- Step 1: Create the hierarchical directory structure ---
+    base_log_path = os.path.join(SAVE_DIR, experiment_folder_name)
+    os.makedirs(base_log_path, exist_ok=True)
+
+    # Find the next available run number (e.g., PPO_1, PPO_2)
+    run_num = 1
+    existing_runs = [d for d in os.listdir(base_log_path) if d.startswith("RecurrentPPO_")]
+    if existing_runs:
+        max_run = max([int(r.split('_')[-1]) for r in existing_runs])
+        run_num = max_run + 1
+    
+    # This is the final directory where everything for this run will be saved
+    log_dir = os.path.join(base_log_path, f"RecurrentPPO_{run_num}")
+    model_save_path = os.path.join(log_dir, "model.zip")
+    os.makedirs(log_dir, exist_ok=True)
+
+    # --- Step 2: Create the Vectorized Environment ---
+    vec_env = make_vec_env(
+        lambda: BatteryPredictorEnv(grid_file=grid_file, n_miners=n_miners),
+        n_envs=n_envs
     )
 
-    # --- Step 2: Apply observation wrappers ---
-    obs_wrapped_env = base_env
-    if (arch is not None) or is_att:
-        obs_wrapped_env = CustomGridCNNWrapper(obs_wrapped_env)
-    if is_att:
-        obs_wrapped_env = TimeStackObservation(obs_wrapped_env, num_frames=num_frames)
-
-    # --- Step 3: Define the policy and model kwargs ---
-    policy_kwargs = None
-    policy_name = "MlpPolicy"
-
-    if is_att:
-        print("INFO: Using AttentionCNNExtractor for 4D time-stacked observations.")
-        policy_kwargs = {
-            "features_extractor_class": AttentionCNNExtractor,
-            "features_extractor_kwargs": {
-                "features_dim": features_dim,
-                "grid_file": grid_file,
-                "temporal_len": num_frames
-            },
-            "net_arch": dict(pi=[64, 64], vf=[64, 64])
-        }
-    elif arch is not None:
-        print(f"INFO: Using GridCNNExtractor (backbone: {arch}) for 3D image observations.")
-        policy_kwargs = {
-            "features_extractor_class": GridCNNExtractor,
-            "features_extractor_kwargs": {
-                "features_dim": features_dim,
-                "grid_file": grid_file,
-                "backbone": arch.lower()
-            },
-            "net_arch": dict(pi=[64, 64], vf=[64, 64])
-        }
-    else:
-        print("INFO: Using default MLP for flat vector observations.")
-
-    # --- Step 4: Choose environment and model based on hybrid flag ---
-    if use_hybrid_control:
-        print(f"--- Applying D* Lite Fallback Wrapper (OUTERMOST) ---")
-        final_env = DStarFallbackWrapper(obs_wrapped_env, None, confidence_threshold)
-        vec_env = DummyVecEnv([lambda: final_env])
-        model = PPOFallback(
-            policy=policy_name,
-            env=vec_env,
-            ent_coef=0.1,
-            gae_lambda=0.90,
-            learning_rate=3e-4,
-            n_steps=2048,
-            batch_size=64,
-            n_epochs=10,
-            gamma=0.99,
-            clip_range=0.2,
-            clip_range_vf=0.5,
-            tensorboard_log=os.path.join("saved_experiments", folder_name),
-            verbose=1,
-            policy_kwargs=policy_kwargs
-        )
-        final_env.set_model(model)  # So the wrapper has access to the model for confidence
-    else:
-        vec_env = DummyVecEnv([lambda: obs_wrapped_env])
-        model = PPO(
-            policy=policy_name,
-            env=vec_env,
-            ent_coef=0.1,
-            gae_lambda=0.90,
-            learning_rate=3e-4,
-            n_steps=2048,
-            batch_size=64,
-            n_epochs=10,
-            gamma=0.99,
-            clip_range=0.2,
-            clip_range_vf=0.5,
-            tensorboard_log=os.path.join("saved_experiments", folder_name),
-            verbose=1,
-            policy_kwargs=policy_kwargs
-        )
-
-    # --- Step 5: Train ---
-    print("Starting model training...")
-    callback = CustomTensorboardCallback(verbose=1)
-    model.learn(total_timesteps=timesteps, callback=callback)
-
-    # --- Step 6: Save ---
-    log_dir = callback.logger.dir
-    model_save_path = os.path.join(log_dir, "model.zip")
-    model.save(model_save_path)
-    print(f"\nPPO training complete. Logs and model stored to {log_dir}")
-
-    # --- Step 7: Metrics ---
-    num_points = 50
-    plots = plot_all_metrics(log_dir=log_dir, num_points=num_points)
-    print("\n=== Metrics Plots Generated ===")
-    for csv_file, plot_list in plots.items():
-        print(f"\n{csv_file}:")
-        for p in plot_list:
-            print(f"  {p}")
-
-    return model
-
-'''
-def train_PPO_model(reward_fn,
-                    grid_file: str,
-                    timesteps: int,
-                    folder_name: str,
-                    reset_kwargs: dict = {},
-                    arch: str | None = None,
-                    features_dim: int = 128,
-                    battery_truncation=False,
-                    is_att = False,
-                    num_frames = 8
-                    ):
-
-    # Initialize environment
-    is_cnn = arch is not None
-    env = GridWorldEnv(reward_fn=reward_fn, grid_file=grid_file, is_cnn=is_cnn, reset_kwargs=reset_kwargs, battery_truncation=battery_truncation)
-    if is_cnn:
-        env = CustomGridCNNWrapper(env)
-    if is_att:
-        env = TimeStackObservation(env, num_frames = num_frames)
-
-    vec_env = DummyVecEnv([lambda: env])
-    base_log_path = os.path.join(SAVE_DIR, folder_name)
-
-    policy_kwargs = None
-    if is_cnn:
-        policy_kwargs = {
-            "features_extractor_class": GridCNNExtractor,
-            "features_extractor_kwargs": {
-                "features_dim": features_dim,
-                "grid_file": grid_file,
-                "backbone": arch.lower()
-            },
-            "net_arch": dict(pi=[64, 64], vf=[64, 64])
-        }
-    
-    elif is_att:
-        policy_kwargs = {
-            "features_extractor_class": AttentionCNNExtractor,
-            "features_extractor_kwargs": {
-                "features_dim": features_dim,
-                "grid_file": grid_file
-            },
-            "net_arch": dict(pi=[64, 64], vf=[64, 64])
-        }
-
-    model = PPO(
-        policy="MlpPolicy",
-        env=vec_env,
-        ent_coef=0.1,
-        gae_lambda=0.90,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
+    # --- Step 3: Define the RecurrentPPO Model ---
+    # With sb3-contrib, you pass the policy name string 'MlpLstmPolicy'
+    model = RecurrentPPO(
+        "MlpLstmPolicy",
+        vec_env,
+        n_steps=1024,
+        batch_size=64, # Note: batch_size for RecurrentPPO is per environment
         n_epochs=10,
         gamma=0.99,
+        learning_rate=3e-4,
         clip_range=0.2,
-        clip_range_vf=0.5,
-        tensorboard_log=base_log_path,
         verbose=1,
-        policy_kwargs=policy_kwargs
+        tensorboard_log=log_dir
     )
 
-    callback = CustomTensorboardCallback()
-    model.learn(total_timesteps=timesteps, callback=callback)
+    # --- Step 4: Train the Model ---
+    print(f"--- Starting Training ---")
+    print(f"All artifacts will be saved in: {log_dir}")
+    
+    callback = PredictorTensorboardCallback()
+    model.learn(total_timesteps=timesteps, callback=callback, progress_bar=True)
+    print("--- Training Complete ---")
 
-    log_dir = get_latest_run_dir(base_log_path)
-    model_save_path = os.path.join(log_dir, "model.zip")
+    # --- Step 5: Save the Final Model ---
     model.save(model_save_path)
-    print(f"\nPPO training complete. Logs and model stored to {log_dir}")
+    print(f"Model saved to {model_save_path}")
+    vec_env.close()
+    
+    return log_dir # Return the path to the run folder for evaluation
 
-    # generate graphs from csvs using chunked smoothing
-    grid_area = env.n_rows * env.n_cols
-    num_points = 50
-    #num_points = int(max(20, grid_area // 10))
-    plots = plot_all_metrics(log_dir=log_dir, num_points=num_points)
-
-    print("\n=== Metrics Plots Generated ===")
-    for csv_file, plot_list in plots.items():
-        print(f"\n{csv_file}:")
-        for p in plot_list:
-            print(f"  {p}")
-
-    return model
-'''
-
-def infer_reward_fn(experiment_name: str):
+def train_all_predictors(timesteps: int = 1_000_000):
     """
-    Extracts and returns the reward function used in a given experiment name.
-    Looks for parts like 'reward_d' in the experiment name (split by '__'),
-    then returns the corresponding function 'get_reward_d' from reward_functions.
+    Trains multiple RecurrentPPO predictor models using the current battery
+    prediction setup. Each configuration defines the grid, number of miners, etc.
     """
-    parts = experiment_name.split("__")
-    
-    for part in parts:
-        if part.startswith("reward_"):
-            reward_key = part.split("_")[0] + "_" + part.split("_")[1]  # "reward_d"
-            fn_name = f"get_{reward_key}"
-            if hasattr(reward_functions, fn_name):
-                return getattr(reward_functions, fn_name)
-            else:
-                raise ValueError(f"No reward function named {fn_name} in reward_functions.py")
-    
-    raise ValueError(f"No reward key found in experiment name: {experiment_name}")
+    def attach_run_folder_names(model_configs):
+        for config in model_configs:
+            grid_name = os.path.splitext(config["grid_file"])[0]
+            folder_parts = [grid_name, f"{config['n_miners']}miners"]
+            if config.get("tag"):
+                folder_parts.append(config["tag"])
+            config["experiment_folder_name"] = "_".join(folder_parts)
 
-def best_matching_grid(experiment_name: str, grid_dir: str) -> str:
-    grid_name = experiment_name.split("__")[0] + ".txt"
-    print(grid_name)
-    grid_file_path = os.path.join(grid_dir, grid_name)
-    if not os.path.exists(grid_file_path):
-        raise FileNotFoundError(f"Grid file not found: {grid_file_path}")
-    return grid_name
+    models_to_train = [
+        {
+            "grid_file": "mine_20x20.txt",
+            "n_miners": 5,
+        },
+        {
+            "grid_file": "mine_30x30.txt",
+            "n_miners": 10,
+        },
+        {
+            "grid_file": "mine_50x50.txt",
+            "n_miners": 20,
+        },
+        {
+            "grid_file": "mine_100x100.txt",
+            "n_miners": 40,
+        },
+    ]
 
-# training utils
-#-------------------------------------------------
-def evaluate_model(env, model, n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True,
-                   halfsplit=False):
+    attach_run_folder_names(models_to_train)
+
+    for config in models_to_train:
+        print(f"\n===== Training Predictor: {config['experiment_folder_name']} =====")
+        run_path = train_predictor_model(
+            grid_file=config["grid_file"],
+            n_miners=config["n_miners"],
+            timesteps=timesteps,
+            experiment_folder_name=config["experiment_folder_name"],
+            n_envs=4
+        )
+        print(f"===== Finished: {run_path} =====")
+
+# ===================================================================
+# --- Evaluation Functions for the Predictor ---
+# ===================================================================
+
+def evaluate_predictor(run_path: str, grid_file: str, n_miners: int, eval_steps: int = 500):
     """
-    Evaluate the model in the given environment for a number of episodes,
-    printing agent's position, reward, and action at every timestep, and summarizing performance.
+    Loads and evaluates a single trained predictor model from its run folder.
     """
-    total_reward_sum = 0.0
-    total_steps = 0
-    success_count = 0
-    total_collisions = 0
-    total_revisits = 0
-    total_battery_sum = 0.0
-    leq_10s = 0
-    leq_0s = 0
+    model_path = os.path.join(run_path, "model.zip")
+    print(f"\n--- Evaluating Predictor Model: {os.path.basename(run_path)} from experiment {os.path.basename(os.path.dirname(run_path))} ---")
+    if not os.path.exists(model_path):
+        print(f"Error: model.zip not found in {run_path}")
+        return
 
-    for ep in range(n_eval_episodes):
-        obs, _ = env.reset()
-        done = False
-        ep_reward = 0.0
-        ep_battery_sum = 0.0
-        step_num = 0
+    eval_env = BatteryPredictorEnv(grid_file=grid_file, n_miners=n_miners)
+    # Use RecurrentPPO to load the model
+    model = RecurrentPPO.load(model_path, env=eval_env)
 
-        while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(action)
-            ep_reward += reward
-            done = terminated or truncated
-
-            agent_pos = info.get('agent_pos', None)
-            subrewards = info.get('subrewards', {})
-            reached_exit = env.agent_reached_exit()
-            success_count += int(reached_exit)
-
-            # Track battery level at each step
-            curr_bat = info.get("current_battery", 0)
-            ep_battery_sum += curr_bat
-            if curr_bat <= 10:
-                leq_10s += 1
-                if curr_bat == 0:
-                    leq_0s += 1
-
-            # ===== Printout Info ===== #
-            if verbose:
-                action_dir = ACTION_NAMES.get(int(action), f"Unknown({action})")
-
-                # 1. Print the main step information
-                print(f"Step {step_num}: Pos={agent_pos}, Action={action_dir} ({action_dir}), Reward={reward:.2f}")
-
-                # 2. Print the confidence and decision information (if available)
-                if 'used_fallback' in info:
-                    confidence = info.get('confidence', 0)
-                    if info.get('used_fallback'):
-                        print(f"  └─ Decision: Agent uncertain (conf: {confidence:.3f}). Falling back to D* Lite.")
-                    else:
-                        print(f"  └─ Decision: Agent confident (conf: {confidence:.3f}). Using learned policy.")
-                
-                # 3. Print the subreward breakdown
-                for name, val in subrewards.items():
-                    print(f"  └─ {name}: {val:.2f}")
-            #===========================#
-
-            if render:
-                env.render_pygame()
-                time.sleep(sleep_time)
-
-            step_num += 1
-
-        # Episode-level stats
-        total_collisions += info.get("obstacle_hits", 0)
-        total_revisits += info.get("revisit_count", 0)
-        total_steps += step_num
-        total_reward_sum += ep_reward
-        total_battery_sum += (ep_battery_sum / step_num) if step_num > 0 else 0
-
-        if verbose:
-            print(f"Episode {ep + 1} complete: Total Reward = {ep_reward:.2f}")
-
-    # Aggregate stats
-    mean_reward = total_reward_sum / n_eval_episodes
-    success_rate = success_count / n_eval_episodes
-    mean_col = total_collisions / n_eval_episodes
-    avg_steps = total_steps / n_eval_episodes
-    avg_rev = total_revisits / n_eval_episodes
-    mean_battery = total_battery_sum / n_eval_episodes
+    all_predictions, all_actuals = [], []
+    obs, _ = eval_env.reset()
+    # For RecurrentPPO, we need to manage the LSTM state and done signals
+    lstm_states = None
+    dones = np.zeros((1,)) # Start with a single environment not being done
     
-    print("\n=== Evaluation Summary ===")
-    print(f"Total Episodes: {n_eval_episodes}")
-    print(f"Reached Exit: {success_count}/{n_eval_episodes} ({success_rate:.1%})")
-    print(f"Mean Reward per Episode: {mean_reward:.2f}")
-    print(f"Mean Obstacle Hits per Episode: {mean_col:.2f}")
-    print(f"Mean Steps per Episode: {avg_steps:.1f}")
-    print(f"Mean Revisits per Episode: {avg_rev:.1f}")
-    print(f"Mean Battery Level per Episode: {mean_battery:.1f}")
-    print(f"Timesteps Where Battery Level <= 10: {leq_10s}/{total_steps} ({leq_10s/total_steps * 100:.4f}%)")
-    print(f"Timesteps Where Battery Level <= 0: {leq_0s}/{total_steps} ({leq_0s/total_steps * 100:.4f}%)")
-
-def load_model(experiment_folder: str, 
-               experiment_name: str,
-               reset_kwargs: dict = {}):
-    """
-    Loads a PPO model and reconstructs its full environment stack.
-    It uses the provided 'experiment_name' to infer the configuration.
-    """
-    model_path = os.path.join(experiment_folder, "model.zip")
-    if not os.path.isfile(model_path):
-        raise FileNotFoundError(f"Model not found at {model_path}")
-
-    # --- 1. Parse the full configuration from the PROVIDED experiment_name ---
-    name_lower = experiment_name.lower()
-    
-    inferred_grid = best_matching_grid(experiment_name, FIXED_GRID_DIR)
-    
-    is_att = "att" in name_lower
-    is_cnn = "cnn" in name_lower and not is_att
-    
-    use_fallback = "fb_" in name_lower
-    confidence_threshold = 0.75 # Default
-    if use_fallback:
-        match = re.search(r'fb_(\d\.\d+)', name_lower)
-        if match:
-            confidence_threshold = float(match.group(1))
-
-    reward_fn = infer_reward_fn(experiment_name)
-    
-    print(f"\n--- Loading Model: {experiment_name} from folder {os.path.basename(experiment_folder)} ---")
-    print(f"  Grid: {inferred_grid}, Reward Fn: {reward_fn.__name__}")
-    print(f"  CNN: {is_cnn}, Attention: {is_att}, Fallback: {use_fallback} (conf={confidence_threshold})")
-    
-    # --- 2. Load the model weights FIRST to break the circular dependency ---
-    if use_fallback:
-        print("Loading PPOFallback model (with fallback support).")
-        model_class = PPOFallback
-    else:
-        print("Loading standard PPO model.")
-        model_class = PPO
-
-    model = model_class.load(model_path)
+    for step in range(eval_steps):
+        action, lstm_states = model.predict(
+            obs, state=lstm_states, episode_start=dones, deterministic=True
+        )
+        obs, reward, terminated, truncated, info = eval_env.step(action)
+        dones[0] = terminated or truncated
         
-    # --- 3. Build the full environment stack based on the parsed flags ---
-    num_frames = 8 # Assume this is a constant for your attention models
+        predicted_batteries = action * 100.0
+        actual_batteries = np.array(list(eval_env.simulator.sensor_batteries.values()))
+        all_predictions.append(predicted_batteries)
+        all_actuals.append(actual_batteries)
+        
+        if dones[0]:
+            obs, _ = eval_env.reset()
+            # The LSTM state is reset automatically when episode_start is True
+    eval_env.close()
 
-    base_env = GridWorldEnv(reward_fn=reward_fn, grid_file=inferred_grid, is_cnn=(is_cnn or is_att), reset_kwargs=reset_kwargs)
+    predictions_arr, actuals_arr = np.array(all_predictions), np.array(all_actuals)
+    mae = np.mean(np.abs(predictions_arr - actuals_arr))
+    rmse = np.sqrt(np.mean((predictions_arr - actuals_arr)**2))
 
-    obs_wrapped_env = base_env
-    if is_cnn or is_att:
-        obs_wrapped_env = CustomGridCNNWrapper(obs_wrapped_env)
-    if is_att:
-        obs_wrapped_env = TimeStackObservation(obs_wrapped_env, num_frames=num_frames)
+    print(f"  -> Mean Absolute Error (MAE): {mae:.3f}%")
+    print(f"  -> Root Mean Squared Error (RMSE): {rmse:.3f}%")
+
+    # Plotting Results and saving them to the run folder
+    plt.figure(figsize=(15, 8))
+    for i in range(min(4, eval_env.num_sensors)):
+        plt.subplot(2, 2, i + 1)
+        plt.plot(actuals_arr[:, i], label='Actual Battery', color='blue')
+        plt.plot(predictions_arr[:, i], label='Predicted Battery', color='red', linestyle='--')
+        plt.title(f'Sensor #{i+1} Prediction vs. Actual')
+        plt.xlabel('Timestep'); plt.ylabel('Battery %')
+        plt.legend(); plt.grid(True)
+    plt.tight_layout()
     
-    if use_fallback:
-        final_env = DStarFallbackWrapper(obs_wrapped_env, model, confidence_threshold)
-    else:
-        final_env = obs_wrapped_env
-
-    # --- 4. Connect the model to the final, fully-wrapped environment ---
-    vec_env = DummyVecEnv([lambda: final_env])
-    model.set_env(vec_env)
+    # Create a 'plots' subdirectory inside the run folder
+    plot_dir = os.path.join(run_path, "plots")
+    os.makedirs(plot_dir, exist_ok=True)
+    plot_save_path = os.path.join(plot_dir, "evaluation_plot.png")
     
-    return model
+    plt.savefig(plot_save_path)
+    print(f"  -> Evaluation plot saved to: {plot_save_path}")
+    plt.close()
 
-def load_model_and_evaluate(model_folder: str, grid_file: str, is_cnn: bool = False, reset_kwargs: dict = {},
-                            n_eval_episodes=20, sleep_time=0.1, render: bool = True, verbose: bool = True):
+def evaluate_all_predictors(base_dir="saved_experiments/predictor_experiments", eval_steps=500):
     """
-    Load a model by experiment folder and evaluate it in the matching environment.
+    Finds and evaluates all saved predictor models, parsing config from their
+    experiment folder names (e.g., 'mine_30x30_15miners_baseline').
     """
-    model = load_model(model_folder, grid_file, is_cnn, reset_kwargs)
-    evaluate_model(env=model.get_env().envs[0], model=model, n_eval_episodes=n_eval_episodes,
-                   sleep_time=sleep_time, render=render, verbose=verbose)
+    print(f"\n--- Evaluating All Predictor Models in: {base_dir} ---")
+    if not os.path.exists(base_dir):
+        print(f"Directory not found: {base_dir}")
+        return
 
-def get_halfsplit_battery_overrides(grid_path: str) -> dict:
-    """
-    Returns a battery override dictionary where:
-    - Top half of sensors have 100.0 battery
-    - Bottom half of sensors have 0.0 battery
-    """
-    sensor_positions = []
-    with open(grid_path, "r") as f:
-        lines = [line.strip() for line in f]
-        for r, line in enumerate(lines):
-            for c, char in enumerate(line):
-                if char == SENSOR:
-                    sensor_positions.append((r, c))
+    for experiment_name in os.listdir(base_dir):
+        experiment_path = os.path.join(base_dir, experiment_name)
+        if not os.path.isdir(experiment_path):
+            continue
+        
+        for run_name in os.listdir(experiment_path):
+            run_path = os.path.join(experiment_path, run_name)
+            if not os.path.isdir(run_path) or not os.path.exists(os.path.join(run_path, "model.zip")):
+                continue
 
-    if not sensor_positions:
-        raise ValueError(f"No sensors found in: {grid_path}")
-
-    n_rows = len(lines)
-    mid_row = n_rows // 2
-
-    battery_overrides = {
-        (r, c): 100.0 if r < mid_row else 0.0
-        for r, c in sensor_positions
-    }
-
-    return battery_overrides
-
-def train_quick_junk_model(grid_file: str, is_cnn: bool = False):
-    '''
-    Very small training for quick testing
-    '''
-    junk_folder_name = grid_file[0:len(grid_file) - 3] + "__" + "junk"
-    if is_cnn:
-        junk_folder_name += "_cnn"
-    timesteps = 500 
-    
-    model = train_PPO_model(
-        grid_file=grid_file,
-        timesteps=timesteps,
-        folder_name=junk_folder_name,
-        is_cnn=is_cnn
-    )
-    
-    print(f"Trained junk model '{junk_folder_name}' for {timesteps} timesteps.")
-    return junk_folder_name
+            try:
+                parts = experiment_name.split('_')
+                grid_file = f"{parts[0]}_{parts[1]}.txt"
+                miners_part = [p for p in parts if "miners" in p][0]
+                n_miners = int(re.search(r'(\d+)miners', miners_part).group(1))
+                
+                evaluate_single_predictor(
+                    run_path=run_path,
+                    grid_file=grid_file,
+                    n_miners=n_miners,
+                    eval_steps=eval_steps,
+                )
+                
+            except Exception as e:
+                print(f"Could not parse or evaluate run '{run_name}' in experiment '{experiment_name}'. Error: {e}")
+                continue
