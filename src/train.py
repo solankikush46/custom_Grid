@@ -196,9 +196,12 @@ def evaluate_predictor(run_path: str, grid_file: str, n_miners: int, eval_steps:
     predictions_arr, actuals_arr = np.array(all_predictions), np.array(all_actuals)
     mae = np.mean(np.abs(predictions_arr - actuals_arr))
     rmse = np.sqrt(np.mean((predictions_arr - actuals_arr)**2))
+    epsilon = 1e-12
+    mape = np.mean(np.abs((actuals_arr - predictions_arr) / (actuals_arr + epsilon))) * 100
 
     print(f"  -> Mean Absolute Error (MAE): {mae:.3f}%")
     print(f"  -> Root Mean Squared Error (RMSE): {rmse:.3f}%")
+    print(f"  -> Mean Absolute Percentage Error (MAPE): {mape:.3f}%")
 
     # Plotting Results and saving them to the run folder
     plt.figure(figsize=(15, 8))
