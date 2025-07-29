@@ -1,5 +1,4 @@
 # train.py
-from src.grid_env import *
 import os
 import numpy as np
 import gym

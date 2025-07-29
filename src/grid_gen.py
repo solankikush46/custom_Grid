@@ -1,7 +1,8 @@
 # grid_gen.py
+
 import numpy as np
 import random
-from src.constants import EMPTY, OBSTACLE, GOAL, SENSOR, AGENT, BASE_STATION, MINER
+from src.constants import *
 
 ##==============================================================
 ## Kush
@@ -271,43 +272,50 @@ def gen_and_save_grid(rows, cols, obstacle_percentage=0.3, n_sensors=5, place_ag
     )
     save_grid(grid, save_path)
     return grid, agent_pos, goal_positions, sensor_batteries
-    
+
 def load_grid(filename):
     """
-    Load grid from ASCII text file.
+    Load grid from ASCII text file, finding all entity positions.
 
     Returns:
-        grid (np.ndarray): 2D array of grid symbols (agent replaced with EMPTY)
-        agent_pos (tuple or None)
+        grid (np.ndarray): 2D array of grid symbols.
+        guided_miner_pos (tuple or None)
         goal_positions (list)
         sensor_batteries (dict)
+        base_station_positions (list)
+        obstacle_positions (list)  # <-- NEW RETURN VALUE
     """
     with open(filename, "r") as f:
         lines = [line.strip() for line in f if line.strip()]
 
-    n_rows = len(lines)
-    n_cols = len(lines[0])
-    grid = np.array([list(row) for row in lines], dtype='<U1')
+    if not lines:
+        raise ValueError(f"Grid file '{filename}' is empty.")
 
-    agent_pos = None
+    grid = np.array([list(row) for row in lines], dtype='<U1')
+    n_rows, n_cols = grid.shape
+
+    guided_miner_pos = None
     goal_positions = []
     sensor_batteries = {}
     base_station_positions = []
-
+    obstacle_positions = []
+    
     for r in range(n_rows):
         for c in range(n_cols):
             symbol = grid[r, c]
-            if symbol == AGENT:
-                agent_pos = (r, c)
-                grid[r, c] = EMPTY  # agent not part of static grid
-            elif symbol == GOAL:
+            if symbol == GUIDED_MINER_CHAR:
+                guided_miner_pos = (r, c)
+                grid[r, c] = EMPTY_CHAR  # The guided miner is not part of the static grid
+            elif symbol == GOAL_CHAR:
                 goal_positions.append((r, c))
-            elif symbol == SENSOR:
+            elif symbol == SENSOR_CHAR:
                 sensor_batteries[(r, c)] = 100.0
-            elif symbol == BASE_STATION:
+            elif symbol == BASE_STATION_CHAR:
                 base_station_positions.append((r, c))
+            elif symbol == OBSTACLE_CHAR: # <-- ADDED: Logic to find obstacles
+                obstacle_positions.append((r, c))
 
-    return grid, agent_pos, goal_positions, sensor_batteries, base_station_positions
+    return grid, guided_miner_pos, goal_positions, sensor_batteries, base_station_positions, obstacle_positions
 
 def generate_random_grid(n_rows=20, n_cols=20, obstacle_pct=0.15, seed=None):
     """

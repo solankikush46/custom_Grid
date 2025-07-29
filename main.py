@@ -1,9 +1,8 @@
 # main.py
 
-from src.test import *
-from src.plot_metrics import generate_all_plots
-from src.train import *
-from src.MineSimulator import *
+import random
+from src.MineSimulator import MineSimulator
+from src.constants import *
 
 def ensure_directories_exist():
     directories = [
@@ -12,14 +11,6 @@ def ensure_directories_exist():
     ]
     for d in directories:
         os.makedirs(d, exist_ok=True)
-
-import random
-from src.MineSimulator import MineSimulator
-from src.constants import FIXED_GRID_DIR
-
-import random
-from src.MineSimulator import MineSimulator
-from src.constants import FIXED_GRID_DIR
 
 def run_simulation_test():
     """
@@ -38,13 +29,13 @@ def run_simulation_test():
 
     # Reset returns the initial state
     initial_state = simulator.reset()
-    print(f"Simulator Initialized. Agent starts at: {initial_state['agent_pos']}")
+    print(f"Simulator Initialized. Guided Miner starts at: {initial_state['guided_miner_pos']}")
 
     running = True
     while running:
         # Game Logic
         random_action = random.randint(0, 7)
-        simulator.step(agent_action=random_action)
+        simulator.step(guided_miner_action=random_action)
 
         # Rendering is now a simple, self-contained call
         # It returns False if the user quits

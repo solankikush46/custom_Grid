@@ -2,7 +2,6 @@
 
 import time
 import os
-from src.grid_env import GridWorldEnv
 from src.constants import *
 import src.train as train
 import src.grid_gen as grid_gen

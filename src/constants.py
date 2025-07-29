@@ -1,10 +1,7 @@
 # constants.py
 import os
-import numpy as np
 
-import os
-
-# ===================================================================
+# ====================================================================
 # --- Grid Symbol Definitions ---
 # ===================================================================
 
@@ -13,16 +10,16 @@ EMPTY_CHAR = '.'
 OBSTACLE_CHAR = '#'
 GOAL_CHAR = 'G'
 SENSOR_CHAR = 'S'
-AGENT_CHAR = 'A'
+GUIDED_MINER_CHAR = 'M'
 BASE_STATION_CHAR = 'B'
-MINER_CHAR = 'M'
+MINER_CHAR = 'm'
 
 # 2. Integer IDs (for efficient internal NumPy array representation)
 EMPTY_ID = 0
 OBSTACLE_ID = 1
 SENSOR_ID = 2
 BASE_STATION_ID = 3
-AGENT_ID = 4
+GUIDED_MINER_ID = 4
 GOAL_ID = 5
 MINER_ID = 6
 
@@ -32,7 +29,7 @@ CHAR_TO_INT_MAP = {
     OBSTACLE_CHAR: OBSTACLE_ID,
     GOAL_CHAR: GOAL_ID,
     SENSOR_CHAR: SENSOR_ID,
-    AGENT_CHAR: AGENT_ID,
+    GUIDED_MINER_CHAR: GUIDED_MINER_ID,
     BASE_STATION_CHAR: BASE_STATION_ID,
     MINER_CHAR: MINER_ID
 }
@@ -43,52 +40,17 @@ RENDER_COLORS = {
     OBSTACLE_CHAR: (100, 100, 100),
     GOAL_CHAR: (0, 255, 0),
     SENSOR_CHAR: (255, 0, 0),
-    AGENT_CHAR: (0, 0, 255),
+    GUIDED_MINER_CHAR: (0, 0, 255),
     BASE_STATION_CHAR: (128, 0, 128),
-    MINER_CHAR: (255, 165, 0),
+    MINER_CHAR: (0, 100, 0),
 }
 
 # ===================================================================
 # --- Other Constants ---
 # ===================================================================
-
-# Actions agent can take
-DIRECTION_MAP = {
-    0: (-1,  0), 1: (-1, +1), 2: (0, +1), 3: (+1, +1),
-    4: (+1,  0), 5: (+1, -1), 6: (0, -1), 7: (-1, -1),
-}
-
 # File paths
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FIXED_GRID_DIR = os.path.join(BASE_DIR, "src", "saved_grids", "fixed")
-
-# grid symbols
-EMPTY = '.'
-OBSTACLE = '#'
-GOAL = 'G'
-SENSOR = 'S'
-AGENT = 'A'
-FINISHED = 'F'
-TRAIL_OUTSIDE = '*'
-TRAIL_INSIDE = 'T'
-# RADAR_BG = 'b'
-BASE_STATION = 'B'
-MINER = 'M'
-
-# rgb colors for pygame rendering
-RENDER_COLORS = {
-    EMPTY: (255, 255, 255),
-    OBSTACLE: (100, 100, 100),
-    TRAIL_OUTSIDE: (255, 255, 0),
-    AGENT: (0, 0, 255),
-    GOAL: (0, 255, 0),
-    FINISHED: (0, 255, 255),
-    SENSOR: (255, 0, 0),
-    TRAIL_INSIDE: (173, 216, 230),
-    # RADAR_BG: (255, 165, 0),
-    BASE_STATION: (128, 0, 128),
-    MINER: (0, 100, 0)
-}
 
 # actions agent can take (cardinal directions and diagonals)
 DIRECTION_MAP = {
