@@ -20,7 +20,7 @@ reset_venv rv:
 	@echo "Finished resetting logs"
 
 copy_all cpa:
-	scp -r cs3f7@mill.mst.edu:~/custom_Grid/saved_experiments /home/student/REU/custom_Grid/
+	scp -r kysp2d@mill.mst.edu:~/coles_custom_Grid/custom_grid/saved_experiments /home/student/REU/custom_Grid/
 
 tensorboard tb:
 	pkill tensorboard || true

@@ -1,34 +1,60 @@
 # constants.py
 import os
-import numpy as np
 
-# grid symbols
-EMPTY = '.'
-OBSTACLE = '#'
-GOAL = 'G'
-SENSOR = 'S'
-AGENT = 'A'
-FINISHED = 'F'
-TRAIL_OUTSIDE = '*'
-TRAIL_INSIDE = 'T'
-# RADAR_BG = 'b'
-BASE_STATION = 'B'
-MINER = 'M'
+# ====================================================================
+# --- Grid Symbol Definitions ---
+# ===================================================================
 
-# rgb colors for pygame rendering
-RENDER_COLORS = {
-    EMPTY: (255, 255, 255),
-    OBSTACLE: (100, 100, 100),
-    TRAIL_OUTSIDE: (255, 255, 0),
-    AGENT: (0, 0, 255),
-    GOAL: (0, 255, 0),
-    FINISHED: (0, 255, 255),
-    SENSOR: (255, 0, 0),
-    TRAIL_INSIDE: (173, 216, 230),
-    # RADAR_BG: (255, 165, 0),
-    BASE_STATION: (128, 0, 128),
-    MINER: (0, 100, 0)
+# 1. Character symbols (for grid files and easy identification)
+EMPTY_CHAR = '.'
+OBSTACLE_CHAR = '#'
+GOAL_CHAR = 'G'
+SENSOR_CHAR = 'S'
+GUIDED_MINER_CHAR = 'M'
+BASE_STATION_CHAR = 'B'
+MINER_CHAR = 'm'
+
+# 2. Integer IDs (for efficient internal NumPy array representation)
+EMPTY_ID = 0
+OBSTACLE_ID = 1
+SENSOR_ID = 2
+BASE_STATION_ID = 3
+GUIDED_MINER_ID = 4
+GOAL_ID = 5
+MINER_ID = 6
+
+# 3. Mapping from characters to integer IDs (for loading grids)
+CHAR_TO_INT_MAP = {
+    EMPTY_CHAR: EMPTY_ID,
+    OBSTACLE_CHAR: OBSTACLE_ID,
+    GOAL_CHAR: GOAL_ID,
+    SENSOR_CHAR: SENSOR_ID,
+    GUIDED_MINER_CHAR: GUIDED_MINER_ID,
+    BASE_STATION_CHAR: BASE_STATION_ID,
+    MINER_CHAR: MINER_ID
 }
+
+# 4. RGB colors for pygame rendering (keys are the character symbols)
+RENDER_COLORS = {
+    EMPTY_CHAR: (255, 255, 255),
+    OBSTACLE_CHAR: (100, 100, 100),
+    GOAL_CHAR: (0, 255, 0),
+    SENSOR_CHAR: (255, 0, 0),
+    GUIDED_MINER_CHAR: (0, 0, 255),
+    BASE_STATION_CHAR: (128, 0, 128),
+    MINER_CHAR: (0, 100, 0),
+    "TRAIL": (255, 255, 0),
+    "DSTAR": (30, 144, 255),
+}
+DSTAR_PATH_THICKNESS = 4
+TRAIL_PATH_THICKNESS = 4
+
+# ===================================================================
+# --- Other Constants ---
+# ===================================================================
+# File paths
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+FIXED_GRID_DIR = os.path.join(BASE_DIR, "src", "saved_grids", "fixed")
 
 # actions agent can take (cardinal directions and diagonals)
 DIRECTION_MAP = {

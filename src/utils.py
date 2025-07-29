@@ -24,27 +24,60 @@ def chebyshev_distances(pos, targets, grid_width, grid_height, normalize=True):
                 chebyshev_distance(x0, tx, y0, ty) for tx, ty in targets
             ], dtype=np.float32)
 
-def euclidean_distance(x0, x1, y0=None, y1=None):
-    if y0 is None and y1 is None:
-        # Assume (x0, x1) and (y0, y1) are 2D tuples
-        dx = x0[0] - x1[0]
-        dy = x0[1] - x1[1]
-    else:
-        dx = x0 - x1
-        dy = y0 - y1
-    return math.sqrt(dx * dx + dy * dy)
+def euclidean_distance(pos1, pos2):
+    """
+    Calculates the Euclidean distance between two points using NumPy.
+
+    This function is a more direct and efficient replacement for the original.
+    It assumes pos1 and pos2 are array-like (e.g., tuples, lists, or NumPy arrays).
+
+    Args:
+        pos1 (array-like): The first point, e.g., (x1, y1).
+        pos2 (array-like): The second point, e.g., (x2, y2).
+
+    Returns:
+        float: The Euclidean distance.
+    """
+    # np.linalg.norm calculates the length (L2 norm) of the vector difference,
+    # which is the Euclidean distance.
+    return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
 def euclidean_distances(pos, targets, grid_width=None, grid_height=None):
-    normalize = grid_width is not None and grid_height is not None
-    if normalize:
-        norm = euclidean_distance((0, 0), (grid_width - 1, grid_height - 1))
-        return np.array([
-            euclidean_distance(pos, target) / norm for target in targets
-        ], dtype=np.float32)
-    else:
-        return np.array([
-            euclidean_distance(pos, target) for target in targets
-        ], dtype=np.float32)
+    """
+    Calculates the Euclidean distance from a single position to an array of targets.
+    This version is vectorized for high performance.
+
+    Args:
+        pos (array-like): The single starting point, e.g., (x, y).
+        targets (array-like): A list or array of target points, e.g., [[x1, y1], [x2, y2], ...].
+        grid_width (int, optional): If provided, used for normalization.
+        grid_height (int, optional): If provided, used for normalization.
+
+    Returns:
+        np.ndarray: A 1D NumPy array of distances.
+    """
+    # Ensure inputs are NumPy arrays for vectorized operations
+    pos_arr = np.array(pos)
+    targets_arr = np.array(targets)
+
+    # Check if there are any targets to prevent errors with empty arrays
+    if targets_arr.shape[0] == 0:
+        return np.array([], dtype=np.float32)
+
+    # --- Vectorized Calculation ---
+    distances = np.linalg.norm(targets_arr - pos_arr, axis=1)
+
+    # --- Normalization ---
+    if grid_width is not None and grid_height is not None:
+        # The maximum possible distance is the diagonal of the grid
+        diagonal_vector = np.array([grid_width - 1, grid_height - 1])
+        max_dist = np.linalg.norm(diagonal_vector)
+        
+        # Avoid division by zero if the grid is just a single point
+        if max_dist > 0:
+            distances /= max_dist
+            
+    return distances.astype(np.float32)
 
 def load_obstacles_from_file(filename="obstacle_coords.txt"):
     obstacles = []
@@ -69,8 +102,6 @@ def load_sensors_with_batteries(filename="sensor_coords.txt"):
     except FileNotFoundError:
         print(f"[WARNING] Sensor file '{filename}' not found.")
     return sensors
-
-
 
 def get_c8_neighbors_status(grid, agent_pos, obstacle_val= ('#', 'S', 'B')):
     """
