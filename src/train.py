@@ -18,22 +18,55 @@ from src.constants import FIXED_GRID_DIR, SAVE_DIR
 
 class PredictorTensorboardCallback(BaseCallback):
     """
-    A custom callback for logging the approximate Mean Absolute Error (MAE)
-    of the predictor's actions during training.
+    Logs MAE, RMSE, and MAPE globally AND for first 4 sensors to TensorBoard and console.
     """
     def __init__(self, verbose=0):
         super().__init__(verbose)
+        self.all_predictions = []
+        self.all_actuals = []
+        self.num_sensors = None
 
     def _on_step(self) -> bool:
-        # Get rewards from the last rollout
-        rewards = self.locals['rewards']
-        # Approximate the MAE from the reward: R = exp(-|error| / C)
-        # This is a useful proxy for tracking learning progress.
-        if np.mean(rewards) > 0:
-            approx_mae_norm = -0.1 * np.log(np.mean(rewards))
-            approx_mae_percent = approx_mae_norm * 100
-            self.logger.record("custom/prediction_mae_percent", approx_mae_percent)
+        env = self.training_env.envs[0]
+        try:
+            predicted = env.last_predictions_norm * 100.0
+            actual = np.array([env.simulator.sensor_batteries[pos] for pos in env.simulator.sensor_positions])
+            self.all_predictions.append(predicted)
+            self.all_actuals.append(actual)
+            if self.num_sensors is None:
+                self.num_sensors = len(predicted)
+        except Exception:
+            pass
         return True
+
+    def _on_rollout_end(self):
+        if len(self.all_predictions) > 0 and len(self.all_actuals) > 0:
+            predictions_arr = np.array(self.all_predictions)
+            actuals_arr = np.array(self.all_actuals)
+            mae = np.mean(np.abs(predictions_arr - actuals_arr))
+            rmse = np.sqrt(np.mean((predictions_arr - actuals_arr)**2))
+            epsilon = 1e-12
+            mape = np.mean(np.abs((actuals_arr - predictions_arr) / (actuals_arr + epsilon))) * 100
+
+            # Log global metrics
+            self.logger.record("custom/MAE", mae)
+            self.logger.record("custom/RMSE", rmse)
+            self.logger.record("custom/MAPE", mape)
+
+            # Log for first 4 sensors (or all if fewer than 4)
+            if self.num_sensors is not None:
+                for i in range(min(self.num_sensors, 4)):
+                    sensor_mae = np.mean(np.abs(predictions_arr[:, i] - actuals_arr[:, i]))
+                    sensor_rmse = np.sqrt(np.mean((predictions_arr[:, i] - actuals_arr[:, i]) ** 2))
+                    sensor_mape = np.mean(np.abs((actuals_arr[:, i] - predictions_arr[:, i]) / (actuals_arr[:, i] + epsilon))) * 100
+
+                    self.logger.record(f"custom/MAE_sensor_{i}", sensor_mae)
+                    self.logger.record(f"custom/RMSE_sensor_{i}", sensor_rmse)
+                    self.logger.record(f"custom/MAPE_sensor_{i}", sensor_mape)
+
+            # Reset for next rollout
+            self.all_predictions = []
+            self.all_actuals = []  
 
 # ===================================================================
 # --- Unified PPO-LSTM Training Function ---
@@ -122,21 +155,9 @@ def train_all_predictors(timesteps: int = 1_000_000):
 
     models_to_train = [
         {
-            "grid_file": "mine_20x20.txt",
-            "n_miners": 5,
-        },
-        {
-            "grid_file": "mine_30x30.txt",
-            "n_miners": 10,
-        },
-        {
-            "grid_file": "mine_50x50.txt",
-            "n_miners": 20,
-        },
-        {
             "grid_file": "mine_100x100.txt",
             "n_miners": 40,
-        },
+        }
     ]
 
     attach_run_folder_names(models_to_train)
