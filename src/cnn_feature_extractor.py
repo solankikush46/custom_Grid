@@ -262,6 +262,8 @@ class GridCNNExtractor(BaseFeaturesExtractor):
     '''
     def __init__(self, observation_space, features_dim=128, grid_file=None, backbone="seq"):
         super().__init__(observation_space, features_dim)
+        if len(observation_space.shape) != 3:
+            raise ValueError(f"Observation space shape must be (channels, height, width), got {observation_space.shape}")
         n_input_channels, height, width = observation_space.shape
         dummy_input = torch.zeros(1, n_input_channels, height, width)
 

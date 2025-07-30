@@ -68,7 +68,7 @@ class BatteryPredictorEnv(gym.Env):
         # Stack and flatten into the final observation vector or pass the cnn_observation is it uses cnn
 
         if self.is_cnn:
-            return self._make_observation_grid(batteries_norm, miners_norm, error_norm)
+            return self.cnn_observation_grid(batteries_norm, miners_norm, error_norm)
         else:
             obs = np.stack([batteries_norm, miners_norm, error_norm], axis=1).flatten()
             return obs.astype(np.float32)
@@ -170,7 +170,7 @@ class BatteryPredictorEnv(gym.Env):
             error_grid[x, y] = error_norm[idx]
             sensor_mask_grid[x, y] = 1.0  # 1 if sensor exists, even if battery is 0
 
-        for (x, y) in self.simulator.obstacle_positions:
+        for (x, y) in self.simulator.impassable_positions:
             obstacles_grid[x, y] = 1.0
         for (x, y) in self.simulator.base_station_positions:
             base_station_grid[x, y] = 1.0

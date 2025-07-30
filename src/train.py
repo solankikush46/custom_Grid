@@ -70,8 +70,6 @@ def train_predictor_model(grid_file: str,
         experiment_folder_name (str): The unique name for this experiment.
         n_envs (int): The number of parallel environments to use for training.
     """
-    if is_cnn and "is_cnn" not in experiment_folder_name:
-        experiment_folder_name += "_cnn"
     
     # --- Step 1: Create the hierarchical directory structure ---
     base_log_path = os.path.join(SAVE_DIR, experiment_folder_name)
@@ -91,7 +89,7 @@ def train_predictor_model(grid_file: str,
 
     # --- Step 2: Create the Vectorized Environment ---
     vec_env = make_vec_env(
-        lambda: BatteryPredictorEnv(grid_file=grid_file, n_miners=n_miners),
+        lambda: BatteryPredictorEnv(grid_file=grid_file, n_miners=n_miners, is_cnn= is_cnn),
         n_envs=n_envs
     )
 
@@ -148,6 +146,8 @@ def train_all_predictors(timesteps: int = 1_000_000):
         for config in model_configs:
             grid_name = os.path.splitext(config["grid_file"])[0]
             folder_parts = [grid_name, f"{config['n_miners']}miners"]
+            if config.get("is_cnn"):
+                folder_parts.append("cnn")        
             if config.get("tag"):
                 folder_parts.append(config["tag"])
             config["experiment_folder_name"] = "_".join(folder_parts)
@@ -184,7 +184,8 @@ def train_all_predictors(timesteps: int = 1_000_000):
             n_miners=config["n_miners"],
             timesteps=timesteps,
             experiment_folder_name=config["experiment_folder_name"],
-            n_envs=4
+            n_envs=4,
+            is_cnn=config.get("is_cnn", False)
         )
         print(f"===== Finished: {run_path} =====")
 
