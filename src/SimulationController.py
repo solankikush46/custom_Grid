@@ -1,183 +1,173 @@
 # SimulationController.py
 
-import random
+import os
 import numpy as np
 
 from .MineSimulator import MineSimulator
 from .DStarLite import DStarLite
-from .constants import MOVE_TO_ACTION_MAP
-
-# ===================================================================
-# --- "Bridge" Logic: Functions that connect the Simulator and Planner ---
-# These functions translate the rich state of the simulator into the simple
-# numerical data that the pathfinder needs to operate.
-# ===================================================================
-
-def predict_battery(simulator, sensor_pos):
-    """
-    Placeholder for the future PPO-LSTM model.
-    For now, it acts as a simple bridge, returning the current, true battery
-    level directly from the simulator. When you train your model, you will
-
-    replace the body of this function with a call to `model.predict()`.
-    """
-    return simulator.sensor_batteries.get(sensor_pos, 0.0)
-
-def cost_function_for_dstar(simulator, pos_xy):
-    """
-    This is the most critical function for integration. It's the dynamic
-    cost function that D* Lite will call for any given cell to determine its
-    traversal cost.
-
-    Args:
-        simulator (MineSimulator): The instance of the live simulation.
-        pos_xy (tuple): The (x, y) or (col, row) coordinate from D* Lite.
-    
-    Returns:
-        float: The calculated traversal cost for that cell.
-    """
-    # D* Lite uses (x, y) coordinates, but the simulator uses (row, col). Convert them.
-    pos_rc = (pos_xy[1], pos_xy[0])
-    
-    # In your model, the cost of a cell is determined by its closest sensor.
-    if not simulator.sensor_positions:
-        return 0.0 # No sensors, no extra cost
-        
-    # Find the closest sensor to the given position
-    sensor_positions_rc = np.array(list(simulator.sensor_positions))
-    distances = np.linalg.norm(sensor_positions_rc - np.array(pos_rc), axis=1)
-    closest_sensor_pos = simulator.sensor_positions[np.argmin(distances)]
-
-    # Get the (predicted) battery level for that sensor.
-    battery_level = predict_battery(simulator, closest_sensor_pos)
-    
-    # Convert battery level into a cost. Lower battery = higher cost.
-    # This is a critical part you will tune later.
-    cost = 0.0
-    if battery_level <= 10:
-        cost = 200.0 # Extremely high cost for near-dead sensors
-    elif battery_level <= 30:
-        cost = 50.0  # High cost for low-battery sensors
-    elif battery_level <= 60:
-        cost = 10.0  # Moderate cost to discourage but not forbid
-        
-    return cost
-
-def get_action_from_move(current_pos_rc, next_pos_rc):
-    """
-    Converts a move from a start coordinate to a destination coordinate
-    into a simulator action ID (0-7).
-    """
-    # Calculate the vector of the move, e.g., (-1, 0) for UP
-    move_vector = (next_pos_rc[0] - current_pos_rc[0], next_pos_rc[1] - current_pos_rc[1])
-    # Look up the corresponding action ID in our constant map
-    return MOVE_TO_ACTION_MAP.get(move_vector)
-
-# ===================================================================
-# --- The Controller Class ---
-# ===================================================================
+from .constants import MOVE_TO_ACTION_MAP, SAVE_DIR
 
 class SimulationController:
     """
-    Acts as the Controller in an MVC-like pattern. It handles the main loop
-    and orchestrates the interaction between the MineSimulator (Model)
-    and the MineRenderer (View).
+    Controller integrating MineSimulator and a standard D* Lite planner.
+    The pathfinding cost is based on the current state of sensor batteries.
+    This controller is designed to run simulations back-to-back until shutdown.
     """
-    def __init__(self, grid_file: str, n_miners: int, render: bool = True):
+    def __init__(
+        self,
+        experiment_folder: str,
+        render: bool = True
+    ):
         """
-        Initializes the entire simulation system.
-        """
-        print("--- Initializing Simulation Controller ---")
-        render_mode = "human" if render else None
-        
-        # The Controller OWNS the Model (Simulator)
-        self.simulator = MineSimulator(grid_file=grid_file, n_miners=n_miners, render_mode=render_mode)
-        
-        # The Controller OWNS the Planner and tracks its state
-        self.pathfinder = None
-        self.dstar_path = [] # The FUTURE path calculated by D* Lite
-        self.path_history = [] # The PAST (traveled) path of the miner
-        self.is_running = False
+        Performs one-time setup of the simulation environment.
 
-        # Set up the pathfinder based on the simulator's initial state
-        self._setup_pathfinder()
+        Args:
+            experiment_folder: Name of the experiment folder under SAVE_DIR
+                               (e.g., 'mine_20x20_5miners').
+            render: Whether to render in human mode.
+        """
+        # --- This one-time setup is performed only when the class is created ---
+        exp_name = experiment_folder
+        parts = exp_name.split('_')
+        if len(parts) < 3 or not parts[-1].endswith('miners'):
+            raise ValueError(
+                f"Experiment folder '{exp_name}' must be like 'mine_<WxH>_<N>miners'."
+            )
+        grid_file = f"{parts[0]}_{parts[1]}.txt"
+        try:
+            n_miners = int(parts[-1].replace('miners',''))
+        except ValueError:
+            raise ValueError(
+                f"Cannot parse number of miners from '{parts[-1]}'."
+            )
+
+        # Initialize the simulator (this happens only once)
+        render_mode = 'human' if render else None
+        self.simulator = MineSimulator(
+            grid_file=grid_file,
+            n_miners=n_miners,
+            render_mode=render_mode
+        )
+
+        # Initialize state variables
+        self.pathfinder = None
+        self.path_history = []
+        self.is_running = False # Controls the loop for a single simulation
+        self.should_shutdown = False # Controls the outer loop for continuous runs
+
+    def _dstar_cost(self, pos_xy):
+        """
+        Cost callback for D* Lite, using current sensor battery levels.
+        A high cost is assigned to moving near a sensor with low battery.
+        """
+        if not self.simulator.sensor_positions:
+            return 0.0
+        
+        # Convert position to (row, col) for distance calculation
+        rc = (pos_xy[1], pos_xy[0])
+        sensors = list(self.simulator.sensor_positions)
+        
+        # Find the nearest sensor to the given position
+        distances = np.linalg.norm(np.array(sensors) - np.array(rc), axis=1)
+        nearest_sensor = sensors[int(np.argmin(distances))]
+        
+        # Get the current battery level of this sensor
+        batt = self.simulator.sensor_batteries[nearest_sensor]
+        
+        # Map battery level to a cost
+        if batt <= 10:   return 200.0  # Very high cost for critical battery
+        if batt <= 30:   return  50.0  # High cost for low battery
+        if batt <= 60:   return  10.0  # Moderate cost for medium battery
+        return 0.0 # No cost for healthy battery
 
     def _setup_pathfinder(self):
-        """Initializes the D* Lite planner and resets the path history."""
-        initial_state = self.simulator.reset()
-        
-        # The path history starts with just the initial spawn point.
-        self.path_history = [initial_state['guided_miner_pos']]
+        """
+        Resets the simulation environment and re-initializes D* Lite for a new run.
+        """
+        print("\n[SETUP] Resetting environment for new simulation run...")
+        state = self.simulator.reset()
+        self.path_history = [state['guided_miner_pos']]
 
-        # Create a simplified 0/1 grid for D* Lite's static obstacle map
-        dstar_grid = np.zeros((self.simulator.n_rows, self.simulator.n_cols), dtype=int)
+        # Create a static grid representing impassable obstacles
+        grid = np.zeros((self.simulator.n_rows, self.simulator.n_cols), dtype=int)
         for r, c in self.simulator.impassable_positions:
-             if self.simulator.in_bounds((r,c)):
-                dstar_grid[r, c] = 1
+            if self.simulator.in_bounds((r,c)):
+                grid[r, c] = 1
 
-        # Convert coordinates from simulator's (row, col) to D* Lite's (x, y)
-        start_pos_xy = (initial_state['guided_miner_pos'][1], initial_state['guided_miner_pos'][0])
-        goals_xy = [(pos[1], pos[0]) for pos in initial_state['goal_positions']]
-        
-        # Create the D* Lite instance, passing it a lambda for the dynamic cost function.
-        self.pathfinder = DStarLite(dstar_grid.tolist(), start_pos_xy, goals_xy,
-                                    lambda pos: cost_function_for_dstar(self.simulator, pos))
-        
-        print("Computing initial path...")
+        start = (state['guided_miner_pos'][1], state['guided_miner_pos'][0])
+        goals = [(y, x) for x, y in state['goal_positions']]
+
+        # Initialize D* Lite with the grid and the cost function
+        self.pathfinder = DStarLite(
+            grid.tolist(),
+            start,
+            goals,
+            lambda pos: self._dstar_cost(pos)
+        )
+        print("[INFO] Computing initial path...")
         self.pathfinder._compute_shortest_path()
-        
+
     def run(self):
-        """The main execution loop of the simulation."""
-        self.is_running = True
-        while self.is_running:
-            self.update_step()
+        """
+        Main loop that continuously resets and runs simulations until the
+        render window is closed or the program is interrupted.
+        """
+        while not self.should_shutdown:
+            # Setup a new simulation run (resets miner, goals, etc.)
+            self._setup_pathfinder()
+            self.is_running = True
+            
+            # Inner loop for the current simulation instance
+            while self.is_running:
+                self.update_step()
+
+        # This is called only once after the main loop has been exited
         self.shutdown()
 
     def update_step(self):
-        """Executes a single, complete step of the simulation logic."""
-        # --- 1. Plan based on the START of the step ---
-        # Get the path from the miner's current position.
-        current_pos_rc = self.simulator.guided_miner_pos
-        path_before_move = self.pathfinder.get_path_to_goal()
-        action_to_take = None
-        
-        # --- 2. Decide on the action ---
-        if path_before_move and len(path_before_move) > 1:
-            next_pos_xy = path_before_move[1]
-            next_pos_rc = (next_pos_xy[1], next_pos_xy[0])
-            action_to_take = get_action_from_move(current_pos_rc, next_pos_rc)
-        elif path_before_move and current_pos_rc in self.simulator.goal_positions:
-            print("Goal Reached!")
-            self.is_running = False
-            return
+        """Perform one step: step simulation, replan path, and render."""
+        pos = self.simulator.guided_miner_pos
+        path = self.pathfinder.get_path_to_goal()
 
-        # --- 3. Act: Update the Model's state ---
-        new_state = self.simulator.step(guided_miner_action=action_to_take)
+        # Determine the next action from the path
+        if path and len(path) > 1:
+            nxt = path[1]
+            move = (nxt[1] - pos[0], nxt[0] - pos[1])
+            act = MOVE_TO_ACTION_MAP.get(move)
+        elif pos in self.simulator.goal_positions:
+            print("[SUCCESS] Goal reached.")
+            self.is_running = False # End current run, the outer loop will start a new one
+            return
+        else:
+            # No path found or already at goal, stay put
+            act = None
+
+        # Step the simulator
+        new_state = self.simulator.step(guided_miner_action=act)
         self.path_history.append(new_state['guided_miner_pos'])
 
-        # --- 4. Update Planner with the new state ---
-        new_pos_xy = (new_state['guided_miner_pos'][1], new_state['guided_miner_pos'][0])
-        self.pathfinder.move_and_replan(new_pos_xy)
-        sensor_positions_xy = [(pos[1], pos[0]) for pos in self.simulator.sensor_positions]
-        self.pathfinder.update_costs(sensor_positions_xy)
+        # Replan the path based on the new miner position and updated environment
+        current_pos_rc = (new_state['guided_miner_pos'][1], new_state['guided_miner_pos'][0])
+        self.pathfinder.move_and_replan(current_pos_rc)
+        
+        # Inform D* Lite of any potential cost changes around the sensors
+        sensor_xy = [(y, x) for x, y in self.simulator.sensor_positions]
+        self.pathfinder.update_costs(sensor_xy)
 
-        # --- 5. Get the NEW Path for Rendering ---
-        # THE FIX: After the planner has been updated with the new position,
-        # we ask it for the path again. This path will correctly start
-        # from the miner's CURRENT position.
-        path_for_render = self.pathfinder.get_path_to_goal()
-
-        # --- 6. Render the final state of the world for this frame ---
-        if self.simulator.render_mode == "human":
-            render_status = self.simulator.render(
+        # Render the current state
+        if self.simulator.render_mode == 'human':
+            ok = self.simulator.render(
                 show_miners=False,
-                dstar_path=path_for_render, # Pass the NEW path
+                dstar_path=self.pathfinder.get_path_to_goal(),
                 path_history=self.path_history
             )
-            if not render_status:
+            if not ok:
+                # User closed the window, trigger a full shutdown.
+                print("[INFO] Render window closed by user.")
                 self.is_running = False
+                self.should_shutdown = True
 
     def shutdown(self):
-        """Safely closes all components."""
-        print("--- Simulation Finished ---")
+        """Clean up resources."""
+        print("--- Shutting Down All Simulations ---")
         self.simulator.close()
