@@ -71,7 +71,7 @@ def train_predictor_model(grid_file: str,
         n_envs (int): The number of parallel environments to use for training.
     """
     if is_cnn and "is_cnn" not in experiment_folder_name:
-        experiment_folder_name += "_is_cnn"
+        experiment_folder_name += "_cnn"
     
     # --- Step 1: Create the hierarchical directory structure ---
     base_log_path = os.path.join(SAVE_DIR, experiment_folder_name)
