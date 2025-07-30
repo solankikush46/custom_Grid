@@ -25,8 +25,9 @@ class BatteryPredictorEnv(gym.Env):
         self.num_sensors = self.simulator.n_sensors
         self.max_episode_steps = 1000 # End an episode after this many steps to avoid infinite loops
         self.is_cnn = is_cnn
-        H = self.simulator.grid_height
-        W = self.simulator.grid_width
+        self.grid_height = self.simulator.n_rows
+        self.grid_width = self.simulator.n_cols
+        H, W = self.grid_height, self.grid_width
 
         # --- Define Action and Observation Spaces (crucial for SB3) ---
 
@@ -152,34 +153,34 @@ class BatteryPredictorEnv(gym.Env):
         """Clean up resources, like the Pygame window if it was opened."""
         self.simulator.close()
 
-def cnn_observation_grid(self, batteries_norm, miners_norm, error_norm):
-    H, W = self.simulator.grid_height, self.simulator.grid_width
+    def cnn_observation_grid(self, batteries_norm, miners_norm, error_norm):
+        H, W = self.grid_height, self.grid_width
 
-    battery_grid = np.zeros((H, W), dtype=np.float32)
-    miners_grid = np.zeros((H, W), dtype=np.float32)
-    error_grid = np.zeros((H, W), dtype=np.float32)
-    obstacles_grid = np.zeros((H, W), dtype=np.float32)
-    base_station_grid = np.zeros((H, W), dtype=np.float32)
-    sensor_mask_grid = np.zeros((H, W), dtype=np.float32)
+        battery_grid = np.zeros((H, W), dtype=np.float32)
+        miners_grid = np.zeros((H, W), dtype=np.float32)
+        error_grid = np.zeros((H, W), dtype=np.float32)
+        obstacles_grid = np.zeros((H, W), dtype=np.float32)
+        base_station_grid = np.zeros((H, W), dtype=np.float32)
+        sensor_mask_grid = np.zeros((H, W), dtype=np.float32)
 
-    for idx, pos in enumerate(self.simulator.sensor_positions):
-        x, y = pos
-        battery_grid[x, y] = batteries_norm[idx]
-        miners_grid[x, y] = miners_norm[idx]
-        error_grid[x, y] = error_norm[idx]
-        sensor_mask_grid[x, y] = 1.0  # 1 if sensor exists, even if battery is 0
+        for idx, pos in enumerate(self.simulator.sensor_positions):
+            x, y = pos
+            battery_grid[x, y] = batteries_norm[idx]
+            miners_grid[x, y] = miners_norm[idx]
+            error_grid[x, y] = error_norm[idx]
+            sensor_mask_grid[x, y] = 1.0  # 1 if sensor exists, even if battery is 0
 
-    for (x, y) in self.simulator.obstacle_positions:
-        obstacles_grid[x, y] = 1.0
-    for (x, y) in self.simulator.base_station_positions:
-        base_station_grid[x, y] = 1.0
+        for (x, y) in self.simulator.obstacle_positions:
+            obstacles_grid[x, y] = 1.0
+        for (x, y) in self.simulator.base_station_positions:
+            base_station_grid[x, y] = 1.0
 
-    return np.stack([
-        battery_grid,
-        miners_grid,
-        error_grid,
-        obstacles_grid,
-        base_station_grid,
-        sensor_mask_grid
-    ], axis=0)  # shape: (6, H, W)
+        return np.stack([
+            battery_grid,
+            miners_grid,
+            error_grid,
+            obstacles_grid,
+            base_station_grid,
+            sensor_mask_grid
+        ], axis=0)  # shape: (6, H, W)
 
