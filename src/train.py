@@ -113,7 +113,7 @@ def train_predictor_model(grid_file: str,
     model = RecurrentPPO(
         "MlpLstmPolicy",
         vec_env,
-        policy_kwargs=policy_kwargs
+        policy_kwargs=policy_kwargs,
         n_steps=1024,
         batch_size=64, # Note: batch_size for RecurrentPPO is per environment
         n_epochs=10,
