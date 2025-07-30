@@ -29,26 +29,25 @@ class PredictorTensorboardCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         env = self.training_env.envs[0]
-        try:
-            predicted = env.last_predictions_norm * 100.0
-            actual = np.array([env.simulator.sensor_batteries[pos] for pos in env.simulator.sensor_positions])
-            self.all_predictions.append(predicted)
-            self.all_actuals.append(actual)
-
-            # --- Get reward from the last transition ---
-            # The last reward is stored in env.reward (in Gymnasium >=0.26), or can be tracked with info dict.
-            if hasattr(env, 'last_reward'):
-                reward = env.last_reward
-            elif hasattr(env, 'reward'):
-                reward = env.reward
-            else:
-                # Fallback for SB3: rewards are in self.locals['rewards'] (list, 1 per env)
-                reward = self.locals.get('rewards', [None])[0]
-            if reward is not None:
-                self.all_rewards.append(reward)
-        except Exception:
-            pass
+        infos = self.locals.get('infos', [{}])
+        if infos and isinstance(infos[0], dict):
+            # Print or log from info (e.g., every 100 steps)
+            if self.num_timesteps % 100 == 0:
+                mae = infos[0].get('mae')
+                rmse = infos[0].get('rmse')
+                mape = infos[0].get('mape')
+                mean_reward = infos[0].get('mean_reward')
+                # Also log them to SB3 logger with standard prefix for console table
+                if mae is not None:
+                    self.logger.record("custom/MAE", mae)
+                if rmse is not None:
+                    self.logger.record("custom/RMSE", rmse)
+                if mape is not None:
+                    self.logger.record("custom/MAPE", mape)
+                if mean_reward is not None:
+                    self.logger.record("custom/mean_reward", mean_reward)
         return True
+
 
     def _on_rollout_end(self):
         if self.all_predictions and self.all_actuals:
@@ -62,10 +61,10 @@ class PredictorTensorboardCallback(BaseCallback):
             mean_reward = np.mean(self.all_rewards) if self.all_rewards else 0.0
 
             # Log global metrics
-            self.logger.record("custom/MAE", mae)
-            self.logger.record("custom/RMSE", rmse)
-            self.logger.record("custom/MAPE", mape)
-            self.logger.record("custom/mean_reward", mean_reward)
+            self.logger.record("rollout/MAE", mae)
+            self.logger.record("rollout/RMSE", rmse)
+            self.logger.record("rollout/MAPE", mape)
+            self.logger.record("rollout/mean_reward", mean_reward)
 
             # Log for first 4 sensors
             if self.num_sensors is not None:
@@ -74,9 +73,9 @@ class PredictorTensorboardCallback(BaseCallback):
                     sensor_rmse = np.sqrt(np.mean((predictions_arr[:, i] - actuals_arr[:, i]) ** 2))
                     sensor_mape = np.mean(np.abs((actuals_arr[:, i] - predictions_arr[:, i]) / (actuals_arr[:, i] + epsilon))) * 100
 
-                    self.logger.record(f"custom/MAE_sensor_{i}", sensor_mae)
-                    self.logger.record(f"custom/RMSE_sensor_{i}", sensor_rmse)
-                    self.logger.record(f"custom/MAPE_sensor_{i}", sensor_mape)
+                    self.logger.record(f"rollout/MAE_sensor_{i}", sensor_mae)
+                    self.logger.record(f"rollout/RMSE_sensor_{i}", sensor_rmse)
+                    self.logger.record(f"rollout/MAPE_sensor_{i}", sensor_mape)
 
             # Reset lists for next rollout
             self.all_predictions = []
@@ -146,7 +145,7 @@ def train_predictor_model(grid_file: str,
     print(f"All artifacts will be saved in: {log_dir}")
     
     callback = PredictorTensorboardCallback()
-    model.learn(total_timesteps=timesteps, callback=callback)
+    model.learn(total_timesteps=timesteps, callback=callback, progress_bar= True)
     print("--- Training Complete ---")
 
     # --- Step 5: Save the Final Model ---

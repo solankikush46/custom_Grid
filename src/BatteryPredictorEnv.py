@@ -121,7 +121,13 @@ class BatteryPredictorEnv(gym.Env):
         self.last_predictions_norm = predicted_batteries_norm
         observation = self._get_observation(true_next_state)
         
-        info = {}
+        info = {
+                "errors": errors,  # per-sensor prediction errors (numpy array)
+                "mae": np.mean(errors),
+                "rmse": np.sqrt(np.mean(errors**2)),
+                "mape": np.mean(np.abs(errors / (true_next_batteries_norm + 1e-12))) * 100,
+                "mean_reward": np.mean(np.exp(-errors / 0.1))
+        }
 
         return observation, reward, terminated, truncated, info
 
