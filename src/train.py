@@ -172,7 +172,19 @@ def train_all_predictors(timesteps: int = 1_000_000):
         {
             "grid_file": "mine_100x100.txt",
             "n_miners": 40,
-        }
+        },
+        {
+            "grid_file": "mine_50x50.txt",
+            "n_miners": 20,
+        },
+            {
+            "grid_file": "mine_30x30.txt",
+            "n_miners": 10,
+        },
+        {
+            "grid_file": "mine_20x20.txt",
+            "n_miners": 5,
+        }    
     ]
 
     attach_run_folder_names(models_to_train)
