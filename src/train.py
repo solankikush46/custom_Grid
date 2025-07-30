@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import BaseCallback
 from sb3_contrib import RecurrentPPO
+from src.cnn_feature_extractor import GridCNNExtractor
 
 from src.BatteryPredictorEnv import BatteryPredictorEnv
 from src.constants import FIXED_GRID_DIR, SAVE_DIR
@@ -48,41 +49,6 @@ class PredictorTensorboardCallback(BaseCallback):
                     self.logger.record("custom/mean_reward", mean_reward)
         return True
 
-
-    def _on_rollout_end(self):
-        if self.all_predictions and self.all_actuals:
-            predictions_arr = np.array(self.all_predictions)
-            actuals_arr = np.array(self.all_actuals)
-            mae = np.mean(np.abs(predictions_arr - actuals_arr))
-            rmse = np.sqrt(np.mean((predictions_arr - actuals_arr) ** 2))
-            epsilon = 1e-12
-            mape = np.mean(np.abs((actuals_arr - predictions_arr) / (actuals_arr + epsilon))) * 100
-
-            mean_reward = np.mean(self.all_rewards) if self.all_rewards else 0.0
-
-            # Log global metrics
-            self.logger.record("rollout/MAE", mae)
-            self.logger.record("rollout/RMSE", rmse)
-            self.logger.record("rollout/MAPE", mape)
-            self.logger.record("rollout/mean_reward", mean_reward)
-
-            # Log for first 4 sensors
-            if self.num_sensors is not None:
-                for i in range(min(self.num_sensors, 4)):
-                    sensor_mae = np.mean(np.abs(predictions_arr[:, i] - actuals_arr[:, i]))
-                    sensor_rmse = np.sqrt(np.mean((predictions_arr[:, i] - actuals_arr[:, i]) ** 2))
-                    sensor_mape = np.mean(np.abs((actuals_arr[:, i] - predictions_arr[:, i]) / (actuals_arr[:, i] + epsilon))) * 100
-
-                    self.logger.record(f"rollout/MAE_sensor_{i}", sensor_mae)
-                    self.logger.record(f"rollout/RMSE_sensor_{i}", sensor_rmse)
-                    self.logger.record(f"rollout/MAPE_sensor_{i}", sensor_mape)
-
-            # Reset lists for next rollout
-            self.all_predictions = []
-            self.all_actuals = []
-            self.all_rewards = []
-  
-
 # ===================================================================
 # --- Unified PPO-LSTM Training Function ---
 # ===================================================================
@@ -91,7 +57,8 @@ def train_predictor_model(grid_file: str,
                           n_miners: int,
                           timesteps: int,
                           experiment_folder_name: str,
-                          n_envs: int = 4):
+                          n_envs: int = 4,
+                          is_cnn: bool = False):
     """
     Initializes and trains the RecurrentPPO battery predictor model, saving all
     artifacts into a structured experiment/run directory.
@@ -103,6 +70,9 @@ def train_predictor_model(grid_file: str,
         experiment_folder_name (str): The unique name for this experiment.
         n_envs (int): The number of parallel environments to use for training.
     """
+    if is_cnn and "is_cnn" not in experiment_folder_name:
+        experiment_folder_name += "_is_cnn"
+    
     # --- Step 1: Create the hierarchical directory structure ---
     base_log_path = os.path.join(SAVE_DIR, experiment_folder_name)
     os.makedirs(base_log_path, exist_ok=True)
@@ -127,9 +97,23 @@ def train_predictor_model(grid_file: str,
 
     # --- Step 3: Define the RecurrentPPO Model ---
     # With sb3-contrib, you pass the policy name string 'MlpLstmPolicy'
+
+    if is_cnn:
+        policy_kwargs = dict(
+            features_extractor_class=GridCNNExtractor,
+            features_extractor_kwargs=dict(
+                features_dim=128,        # adjust as needed
+                grid_file=grid_file,     # to let CNN arch auto-adapt
+                backbone="seq"           # use seq by default
+            )
+        )
+    else:
+        policy_kwargs = {}
+
     model = RecurrentPPO(
         "MlpLstmPolicy",
         vec_env,
+        policy_kwargs=policy_kwargs
         n_steps=1024,
         batch_size=64, # Note: batch_size for RecurrentPPO is per environment
         n_epochs=10,
@@ -172,18 +156,22 @@ def train_all_predictors(timesteps: int = 1_000_000):
         {
             "grid_file": "mine_100x100.txt",
             "n_miners": 40,
+            "is_cnn": True
         },
         {
             "grid_file": "mine_50x50.txt",
             "n_miners": 20,
+            "is_cnn": True
         },
             {
             "grid_file": "mine_30x30.txt",
             "n_miners": 10,
+            "is_cnn": True
         },
         {
             "grid_file": "mine_20x20.txt",
             "n_miners": 5,
+            "is_cnn": True
         }    
     ]
 

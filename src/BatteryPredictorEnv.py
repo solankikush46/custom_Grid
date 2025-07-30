@@ -16,7 +16,7 @@ class BatteryPredictorEnv(gym.Env):
     - Observation: The current state of all sensors (battery, miners, last prediction error).
     - Reward: How close the prediction was to the actual next-state battery level.
     """
-    def __init__(self, grid_file: str, n_miners: int):
+    def __init__(self, grid_file: str, n_miners: int, is_cnn: bool = False):
         super().__init__()
         
         # The environment contains an instance of the underlying physics simulation
@@ -24,6 +24,9 @@ class BatteryPredictorEnv(gym.Env):
         self.simulator = MineSimulator(grid_file=grid_file, n_miners=n_miners)
         self.num_sensors = self.simulator.n_sensors
         self.max_episode_steps = 1000 # End an episode after this many steps to avoid infinite loops
+        self.is_cnn = is_cnn
+        H = self.simulator.grid_height
+        W = self.simulator.grid_width
 
         # --- Define Action and Observation Spaces (crucial for SB3) ---
 
@@ -37,10 +40,13 @@ class BatteryPredictorEnv(gym.Env):
         # 2. Number of Miners connected (normalized 0-1)
         # 3. Prediction Error from the last step (Δm, normalized -1 to 1)
         # We flatten this into a single vector of size num_sensors * 3.
-        num_features = 3
-        self.observation_space = spaces.Box(
-            low=-1, high=1, shape=(self.num_sensors * num_features,), dtype=np.float32
-        )
+        if self.is_cnn:
+            self.observation_space = spaces.Box(low =-1, high=1, shape=(6, H, W), dtype=np.float32)
+        else:
+            num_features = 3
+            self.observation_space = spaces.Box(
+                low=-1, high=1, shape=(self.num_sensors * num_features,), dtype=np.float32
+            )
 
     def _get_observation(self, simulator_state):
         """Constructs the observation vector from the simulator's raw state."""
@@ -58,9 +64,13 @@ class BatteryPredictorEnv(gym.Env):
         # Prediction error: Δm = (actual_t - predicted_{t-1})
         error_norm = batteries_norm - self.last_predictions_norm
 
-        # Stack and flatten into the final observation vector
-        obs = np.stack([batteries_norm, miners_norm, error_norm], axis=1).flatten()
-        return obs.astype(np.float32)
+        # Stack and flatten into the final observation vector or pass the cnn_observation is it uses cnn
+
+        if self.is_cnn:
+            return self._make_observation_grid(batteries_norm, miners_norm, error_norm)
+        else:
+            obs = np.stack([batteries_norm, miners_norm, error_norm], axis=1).flatten()
+            return obs.astype(np.float32)
 
     def _get_connections(self, simulator_state):
         """Helper to count miners connected to each sensor."""
@@ -120,12 +130,19 @@ class BatteryPredictorEnv(gym.Env):
         # The prediction just made becomes the "last prediction" for the next step's error calculation.
         self.last_predictions_norm = predicted_batteries_norm
         observation = self._get_observation(true_next_state)
+
+        epsilon = 1e-12
+        mask = np.abs(true_next_batteries_norm) > 0.05  # ignore sensors with <5% battery
+        if np.any(mask):
+            mape = np.mean(np.abs(errors[mask] / (true_next_batteries_norm[mask] + epsilon))) * 100
+        else:
+            mape = 0.0  # or np.nan
         
         info = {
                 "errors": errors,  # per-sensor prediction errors (numpy array)
                 "mae": np.mean(errors),
                 "rmse": np.sqrt(np.mean(errors**2)),
-                "mape": np.mean(np.abs(errors / (true_next_batteries_norm + 1e-12))) * 100,
+                "mape": mape,
                 "mean_reward": np.mean(np.exp(-errors / 0.1))
         }
 
@@ -134,3 +151,35 @@ class BatteryPredictorEnv(gym.Env):
     def close(self):
         """Clean up resources, like the Pygame window if it was opened."""
         self.simulator.close()
+
+def cnn_observation_grid(self, batteries_norm, miners_norm, error_norm):
+    H, W = self.simulator.grid_height, self.simulator.grid_width
+
+    battery_grid = np.zeros((H, W), dtype=np.float32)
+    miners_grid = np.zeros((H, W), dtype=np.float32)
+    error_grid = np.zeros((H, W), dtype=np.float32)
+    obstacles_grid = np.zeros((H, W), dtype=np.float32)
+    base_station_grid = np.zeros((H, W), dtype=np.float32)
+    sensor_mask_grid = np.zeros((H, W), dtype=np.float32)
+
+    for idx, pos in enumerate(self.simulator.sensor_positions):
+        x, y = pos
+        battery_grid[x, y] = batteries_norm[idx]
+        miners_grid[x, y] = miners_norm[idx]
+        error_grid[x, y] = error_norm[idx]
+        sensor_mask_grid[x, y] = 1.0  # 1 if sensor exists, even if battery is 0
+
+    for (x, y) in self.simulator.obstacle_positions:
+        obstacles_grid[x, y] = 1.0
+    for (x, y) in self.simulator.base_station_positions:
+        base_station_grid[x, y] = 1.0
+
+    return np.stack([
+        battery_grid,
+        miners_grid,
+        error_grid,
+        obstacles_grid,
+        base_station_grid,
+        sensor_mask_grid
+    ], axis=0)  # shape: (6, H, W)
+
