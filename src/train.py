@@ -18,12 +18,13 @@ from src.constants import FIXED_GRID_DIR, SAVE_DIR
 
 class PredictorTensorboardCallback(BaseCallback):
     """
-    Logs MAE, RMSE, and MAPE globally AND for first 4 sensors to TensorBoard and console.
+    Logs MAE, RMSE, MAPE, and mean reward globally and for first 4 sensors to TensorBoard and console.
     """
     def __init__(self, verbose=0):
         super().__init__(verbose)
         self.all_predictions = []
         self.all_actuals = []
+        self.all_rewards = []
         self.num_sensors = None
 
     def _on_step(self) -> bool:
@@ -33,27 +34,40 @@ class PredictorTensorboardCallback(BaseCallback):
             actual = np.array([env.simulator.sensor_batteries[pos] for pos in env.simulator.sensor_positions])
             self.all_predictions.append(predicted)
             self.all_actuals.append(actual)
-            if self.num_sensors is None:
-                self.num_sensors = len(predicted)
+
+            # --- Get reward from the last transition ---
+            # The last reward is stored in env.reward (in Gymnasium >=0.26), or can be tracked with info dict.
+            if hasattr(env, 'last_reward'):
+                reward = env.last_reward
+            elif hasattr(env, 'reward'):
+                reward = env.reward
+            else:
+                # Fallback for SB3: rewards are in self.locals['rewards'] (list, 1 per env)
+                reward = self.locals.get('rewards', [None])[0]
+            if reward is not None:
+                self.all_rewards.append(reward)
         except Exception:
             pass
         return True
 
     def _on_rollout_end(self):
-        if len(self.all_predictions) > 0 and len(self.all_actuals) > 0:
+        if self.all_predictions and self.all_actuals:
             predictions_arr = np.array(self.all_predictions)
             actuals_arr = np.array(self.all_actuals)
             mae = np.mean(np.abs(predictions_arr - actuals_arr))
-            rmse = np.sqrt(np.mean((predictions_arr - actuals_arr)**2))
+            rmse = np.sqrt(np.mean((predictions_arr - actuals_arr) ** 2))
             epsilon = 1e-12
             mape = np.mean(np.abs((actuals_arr - predictions_arr) / (actuals_arr + epsilon))) * 100
+
+            mean_reward = np.mean(self.all_rewards) if self.all_rewards else 0.0
 
             # Log global metrics
             self.logger.record("custom/MAE", mae)
             self.logger.record("custom/RMSE", rmse)
             self.logger.record("custom/MAPE", mape)
+            self.logger.record("custom/mean_reward", mean_reward)
 
-            # Log for first 4 sensors (or all if fewer than 4)
+            # Log for first 4 sensors
             if self.num_sensors is not None:
                 for i in range(min(self.num_sensors, 4)):
                     sensor_mae = np.mean(np.abs(predictions_arr[:, i] - actuals_arr[:, i]))
@@ -64,9 +78,11 @@ class PredictorTensorboardCallback(BaseCallback):
                     self.logger.record(f"custom/RMSE_sensor_{i}", sensor_rmse)
                     self.logger.record(f"custom/MAPE_sensor_{i}", sensor_mape)
 
-            # Reset for next rollout
+            # Reset lists for next rollout
             self.all_predictions = []
-            self.all_actuals = []  
+            self.all_actuals = []
+            self.all_rewards = []
+  
 
 # ===================================================================
 # --- Unified PPO-LSTM Training Function ---
@@ -130,7 +146,7 @@ def train_predictor_model(grid_file: str,
     print(f"All artifacts will be saved in: {log_dir}")
     
     callback = PredictorTensorboardCallback()
-    model.learn(total_timesteps=timesteps, callback=callback, progress_bar=True)
+    model.learn(total_timesteps=timesteps, callback=callback)
     print("--- Training Complete ---")
 
     # --- Step 5: Save the Final Model ---
