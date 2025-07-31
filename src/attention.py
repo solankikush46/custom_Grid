@@ -70,3 +70,52 @@ class AttentionCNNExtractor(BaseFeaturesExtractor):
         x = x.view(B, T, -1)
         x = self.temporal_att(x)
         return self.out(x)
+
+class SpatialChannelAttention(nn.Module):
+    """
+    CBAM-inspired channel and spatial attention for feature maps.
+    - Channel attention focuses on "what" is important.
+    - Spatial attention focuses on "where" is important.
+    """
+    def __init__(self, in_channels, reduction=16):
+        super().__init__()
+        # ---- Channel attention (Squeeze-and-Excitation style) ----
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.channel_mlp = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels // reduction, kernel_size=1, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(in_channels // reduction, in_channels, kernel_size=1, bias=False)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+        # ---- Spatial attention ----
+        self.spatial = nn.Sequential(
+            nn.Conv2d(2, 1, kernel_size=7, stride=1, padding=3, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        # Ensure x is 4D: [B, C, H, W]
+        if x.dim() == 2:
+            # Example: [batch, channels] → [batch, channels, 1, 1]
+            x = x.unsqueeze(-1).unsqueeze(-1)
+        elif x.dim() == 3:
+            # Example: [batch, channels, H] → [batch, channels, H, 1]
+            x = x.unsqueeze(-1)
+
+        # --- Channel attention ---
+        avg_out = self.avg_pool(x)
+        max_out = self.max_pool(x)
+        avg_out = self.channel_mlp(avg_out)
+        max_out = self.channel_mlp(max_out)
+        channel_att = self.sigmoid(avg_out + max_out)
+        x = x * channel_att
+
+        # --- Spatial attention ---
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        spatial_att = self.spatial(torch.cat([avg_out, max_out], dim=1))
+        x = x * spatial_att
+
+        return x

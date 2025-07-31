@@ -58,7 +58,8 @@ def train_predictor_model(grid_file: str,
                           timesteps: int,
                           experiment_folder_name: str,
                           n_envs: int = 4,
-                          is_cnn: bool = False):
+                          is_cnn: bool = False,
+                          backbone: str = "seq"):
     """
     Initializes and trains the RecurrentPPO battery predictor model, saving all
     artifacts into a structured experiment/run directory.
@@ -102,7 +103,7 @@ def train_predictor_model(grid_file: str,
             features_extractor_kwargs=dict(
                 features_dim=128,        # adjust as needed
                 grid_file=grid_file,     # to let CNN arch auto-adapt
-                backbone="seq"           # use seq by default
+                backbone=backbone           # use seq by default
             )
         )
     else:
@@ -156,22 +157,30 @@ def train_all_predictors(timesteps: int = 1_000_000):
         {
             "grid_file": "mine_100x100.txt",
             "n_miners": 40,
-            "is_cnn": True
+            "is_cnn": True,
+            "backbone": "attn",
+            "tag": "attn"
         },
         {
             "grid_file": "mine_50x50.txt",
             "n_miners": 20,
-            "is_cnn": True
+            "is_cnn": True,
+            "backbone": "attn",
+            "tag": "attn"
         },
             {
             "grid_file": "mine_30x30.txt",
             "n_miners": 10,
-            "is_cnn": True
+            "is_cnn": True,
+            "backbone": "attn",
+            "tag": "attn"
         },
         {
             "grid_file": "mine_20x20.txt",
             "n_miners": 5,
-            "is_cnn": True
+            "is_cnn": True,
+            "backbone": "attn",
+            "tag": "attn"
         }    
     ]
 
@@ -185,7 +194,8 @@ def train_all_predictors(timesteps: int = 1_000_000):
             timesteps=timesteps,
             experiment_folder_name=config["experiment_folder_name"],
             n_envs=4,
-            is_cnn=config.get("is_cnn", False)
+            is_cnn=config.get("is_cnn", False),
+            backbone=config.get("backbone", "seq")
         )
         print(f"===== Finished: {run_path} =====")
 
@@ -193,7 +203,7 @@ def train_all_predictors(timesteps: int = 1_000_000):
 # --- Evaluation Functions for the Predictor ---
 # ===================================================================
 
-def evaluate_predictor(run_path: str, grid_file: str, n_miners: int, eval_steps: int = 500):
+def evaluate_predictor(run_path: str, grid_file: str, n_miners: int, eval_steps: int = 500, backbone: str = "seq"):
     """
     Loads and evaluates a single trained predictor model from its run folder.
     """
@@ -291,6 +301,8 @@ def evaluate_all_predictors(base_dir="saved_experiments/predictor_experiments", 
                     grid_file=grid_file,
                     n_miners=n_miners,
                     eval_steps=eval_steps,
+                    is_cnn=is_cnn,
+                    backbone=backbone
                 )
                 
             except Exception as e:
