@@ -1,9 +1,8 @@
-# SimulationController.py
-
 import os
+import numpy as np
 
 from .MineSimulator import MineSimulator
-from .DStarLite import DStarLite
+from .DStarLite.DStarLite import DStarLite  # C++ pybind11 module
 from .constants import MOVE_TO_ACTION_MAP
 
 # evaluation metrics
@@ -19,9 +18,8 @@ def sensor_cost_tier(batt):
 
 class SimulationController:
     """
-    Integrates MineSimulator with D* Lite.
-    Chooses the closest/safest of multiple goals,
-    and only repairs the planner on cells whose sensor-tier changed.
+    Integrates MineSimulator with the C++ D* Lite planner.
+    Uses precomputed cost map and incremental updates via updateStart and updateVertex.
     """
     def __init__(self, experiment_folder: str, render: bool = True):
         parts = experiment_folder.split('_')
@@ -50,34 +48,35 @@ class SimulationController:
         # 2) init previous tiers
         for s_pos, batt in self.simulator.sensor_batteries.items():
             self.sensor_previous_costs[s_pos] = sensor_cost_tier(batt)
-        # 3) build static obstacle set
-        static_obs = { (c, r) for (r, c) in self.simulator.impassable_positions }
-        W, H     = self.simulator.n_cols, self.simulator.n_rows
-        # 4) start in (x,y)
+
+        # 3) build cost map (H x W) row-major: cost_map[y][x]
+        H, W = self.simulator.n_rows, self.simulator.n_cols
+        cost_map = np.zeros((H, W), dtype=np.float64)
+        for y in range(H):
+            for x in range(W):
+                sensor = self.simulator.cell_to_sensor[(x, y)]
+                batt   = self.simulator.sensor_batteries[sensor]
+                cost_map[y, x] = sensor_cost_tier(batt)
+
+        # 4) build static obstacle list
+        static_obs = [(x, y) for (y, x) in self.simulator.impassable_positions]
+
+        # 5) start in (x,y)
         sr, sc   = state['guided_miner_pos']
-        start    = (sc, sr)
-        # 5) ALL goals as list of (x,y)
-        goals    = [ (c, r) for (r, c) in state['goal_positions'] ]
+        start_x, start_y = sc, sr
 
-        # 6) init D* Lite with multi-goal support
+        # 6) goals as list of (x,y)
+        goals = [(c, r) for (r, c) in state['goal_positions']]
+
+        # 7) init C++ D* Lite planner
         self.pathfinder = DStarLite(
-            width=W,
-            height=H,
-            start=start,
-            goal=goals,
-            cost_function=self._battery_cost,
-            known_obstacles=static_obs,
-            heuristic=None
+            W, H,
+            start_x, start_y,
+            goals,
+            cost_map,
+            static_obs
         )
-        self.pathfinder.compute_shortest_path()
-
-    def _battery_cost(self, cell_xy):
-        """
-        O(1) lookup: cell_xy→owner sensor→battery→cost tier
-        """
-        sensor = self.simulator.cell_to_sensor[cell_xy]
-        batt   = self.simulator.sensor_batteries[sensor]
-        return sensor_cost_tier(batt)
+        self.pathfinder.computeShortestPath()
 
     def run(self):
         while not self.should_shutdown:
@@ -90,7 +89,7 @@ class SimulationController:
     def update_step(self):
         # 1) Choose next move
         pos_r, pos_c = self.simulator.guided_miner_pos
-        path = self.pathfinder.get_shortest_path() or []
+        path = self.pathfinder.getShortestPath() or []
         if len(path) > 1:
             nx, ny = path[1]
             move   = (ny - pos_r, nx - pos_c)
@@ -106,38 +105,36 @@ class SimulationController:
         new_state = self.simulator.step(guided_miner_action=act)
         self.path_history.append(new_state['guided_miner_pos'])
 
-        # 3) Update D* Lite’s start & km
-        old = self.pathfinder.start
+        # 3) Update planner's start
+        old_pos = (pos_c, pos_r)
         nr, nc = new_state['guided_miner_pos']
-        new = (nc, nr)
-        if new != old:
-            self.pathfinder.start = new
-            self.pathfinder.km   += self.pathfinder.h(old, new)
+        new_pos = (nc, nr)
+        if new_pos != old_pos:
+            self.pathfinder.updateStart(new_pos[0], new_pos[1])
 
-        # 4) Detect which sensors crossed a tier boundary
+        # 4) Detect sensors crossing a tier boundary
         dirty_cells = []
         for s_pos, batt in self.simulator.sensor_batteries.items():
-            old_tier = self.sensor_previous_costs[s_pos]
-            new_tier = sensor_cost_tier(batt)
-            if new_tier != old_tier:
-                # mark all cells that belong to this sensor
+            old_t = self.sensor_previous_costs[s_pos]
+            new_t = sensor_cost_tier(batt)
+            if new_t != old_t:
                 dirty_cells.extend(self.simulator.sensor_cell_map[s_pos])
-                self.sensor_previous_costs[s_pos] = new_tier
+                self.sensor_previous_costs[s_pos] = new_t
 
-        # 5) Repair only those vertices
-        for cell in dirty_cells:
-            self.pathfinder.update_vertex(cell)
-            for p in self.pathfinder.pred(cell):
-                self.pathfinder.update_vertex(p)
+        # 5) Repair those vertices
+        for (x, y) in dirty_cells:
+            self.pathfinder.updateVertex(x, y)
+            for (nx, ny) in self.pathfinder.neighbors(x, y):
+                self.pathfinder.updateVertex(nx, ny)
 
         # 6) Replan
-        self.pathfinder.compute_shortest_path()
+        self.pathfinder.computeShortestPath()
 
         # 7) Render if needed
         if self.simulator.render_mode == 'human':
             ok = self.simulator.render(
                 show_miners=False,
-                dstar_path=self.pathfinder.get_shortest_path(),
+                dstar_path=self.pathfinder.getShortestPath(),
                 path_history=self.path_history
             )
             if not ok:

@@ -1,6 +1,24 @@
 .ONESHELL:
 
-run r:
+# -----------------------------------------------------------------------------
+# pybind11 DStarLite build
+# -----------------------------------------------------------------------------
+PYTHON_INCLUDES := $(shell python3.12-config --includes) $(shell python3 -m pybind11 --includes)
+EXT_SUFFIX      := $(shell python3-config --extension-suffix)
+DSTAR_SRC       := src/DStarLite/DStarLite.cpp
+DSTAR_HDR       := src/DStarLite/DStarLite.h
+DSTAR_OUT       := src/DStarLite/DStarLite$(EXT_SUFFIX)
+
+CXXFLAGS       += -O3 -std=c++17 -fPIC -Isrc/DStarLite $(PYTHON_INCLUDES)
+LDFLAGS        += -shared
+
+dstar: $(DSTAR_OUT)
+
+$(DSTAR_OUT): $(DSTAR_SRC) $(DSTAR_HDR) src/DStarLite/__init__.py
+	@echo "Building C++ D* Lite extension $@"
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $< -o $@
+
+run r: dstar
 	source venv/bin/activate && python main.py
 
 git g:
