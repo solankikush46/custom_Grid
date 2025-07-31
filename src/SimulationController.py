@@ -64,15 +64,20 @@ class SimulationController:
         start = (start_c, start_r)
 
         # First goal (row,col) → (x,y)
-        goal_r, goal_c = state['goal_positions'][0]
-        goal = (goal_c, goal_r)
+        #goal_r, goal_c = state['goal_positions'][0]
+        #goal = (goal_c, goal_r)
+
+        goals = []
+        for (rg, cg) in state['goal_positions']:
+            goals.append((cg, rg))
+        #print("goals", goals)
 
         # Initialize D* Lite with external cost function
         self.pathfinder = DStarLite(
             width=W,
             height=H,
             start=start,
-            goal=goal,
+            goal=goals,
             cost_function=self._battery_cost,
             known_obstacles={(c, r) for (r, c) in static_obs},
             heuristic=None
