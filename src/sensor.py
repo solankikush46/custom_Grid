@@ -9,7 +9,7 @@ from .constants import (
 )
 
 # ===============================================
-# === Core Energy Model (from your old logic) ===
+# === Core Energy Model                       ===
 # ===============================================
 
 def transmission_energy(k_bits, distance):

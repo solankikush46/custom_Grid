@@ -4,7 +4,6 @@ import os
 import random
 import numpy as np
 
-# --- Relative imports from other modules within the 'src' package ---
 from . import grid_gen
 from .MineRenderer import MineRenderer
 from .sensor import update_all_sensor_batteries
@@ -12,7 +11,41 @@ from .constants import (
     EMPTY_ID, OBSTACLE_ID,
     CHAR_TO_INT_MAP, DIRECTION_MAP, FIXED_GRID_DIR
 )
+from .utils import *
 
+def get_closest_sensor(cell, sensor_positions):
+    """
+    Return the (row, col) sensor in sensor_positions that is nearest to `cell`,
+    using squared-distance comparisons (no sqrt).
+
+    Args:
+        cell:       Tuple (row, col) of the query cell.
+        sensor_positions: Iterable of (row, col) sensor coords.
+
+    Returns:
+        The (row, col) of the nearest sensor.
+
+    Raises:
+        ValueError: if sensor_positions is empty.
+    """
+    best = None
+    best_d2 = None
+
+    cr, cc = cell
+    for sr, sc in sensor_positions:
+        dr = sr - cr
+        dc = sc - cc
+        d2 = dr*dr + dc*dc
+
+        if best is None or d2 < best_d2:
+            best = (sr, sc)
+            best_d2 = d2
+
+    return best
+
+##==============================================================
+## MineSimulator
+##=============================================================
 class MineSimulator:
     """
     Manages the state and physics of the mine simulation.
@@ -87,14 +120,27 @@ class MineSimulator:
         self.original_sensor_batteries = sensors
         self.n_sensors = len(self.sensor_positions)
         self.sensor_batteries = {} # This will be populated during reset()
+
+        # sensor to cell map
+        self.sensor_cell_map = {pos: [] for pos in self.sensor_positions}
+
+        for r in range(self.n_rows):
+            for c in range(self.n_cols):
+                nearest = get_closest_sensor((r, c), self.sensor_positions)
+                # store as (x, y) for D* Lite
+                self.sensor_cell_map[nearest].append((c, r))
+
+        # cell to sensor map
+        self.cell_to_sensor = {}
+        for sensor_pos, cells in self.sensor_cell_map.items():
+            for cell_xy in cells:
+                self.cell_to_sensor[cell_xy] = sensor_pos
         
         # --- Step 4: Build the Optimized Set for Collision Checking ---
         # The impassable_positions set is the single source of truth for movement validation.
-        # It combines all types of "walls" into one highly efficient data structure.
         self.impassable_positions = set(obstacles).union(self.sensor_positions, self.base_station_positions)
         
         print(f"\n[Grid Init] Built impassable_positions set with {len(self.impassable_positions)} total items.")
-        # Showing a small sample can be useful for debugging without flooding the console.
         print(f"  - Example impassable positions: {list(self.impassable_positions)[:5]}")
         
         print("--- Grid Initialization Complete ---")
