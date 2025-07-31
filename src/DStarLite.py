@@ -3,139 +3,144 @@
 import heapq
 import math
 
+INF = float('inf')
+SQRT2 = math.sqrt(2)
+
 class DStarLite:
     """
-    An optimized D* Lite pathfinding algorithm that supports dynamic edge costs
-    and multiple goal destinations.
+    Standalone D* Lite supporting 8-way movement (4 cardinals + 4 diagonals),
+    with customizable edge-costs via an external cost_function.
     """
-    def __init__(self, grid, start, goals, cost_function):
-        if not goals:
-            raise ValueError("Goals list cannot be empty.")
 
-        self.grid = grid
-        self.width = len(grid[0])
-        self.height = len(grid)
+    def __init__(self, width, height, start, goal, cost_function, known_obstacles=None, heuristic=None):
+        # Grid dimensions and start/goal positions
+        self.width  = width
+        self.height = height
+        self.start  = start    # (x,y)
+        self.goal   = goal     # (x,y)
+
+        # External cost function: cost_function(u,v) -> float
         self.cost_function = cost_function
 
-        self.real_goals = goals
-        self.s_start = start
-        self.s_last = start
-        self.k_m = 0.0
-        self.g = {}
-        self.rhs = {}
-        
-        self.U = []
-        self.U_members = set()
+        # obstacle set: cells with infinite cost (static impassables)
+        self.obstacles = set(known_obstacles) if known_obstacles else set()
 
-        for r in range(self.height):
-            for c in range(self.width):
-                self.g[(c, r)] = float('inf')
-                self.rhs[(c, r)] = float('inf')
-        
-        for goal in self.real_goals:
-            self.rhs[goal] = 0
-            heapq.heappush(self.U, (self._calculate_key(goal), goal))
-            self.U_members.add(goal)
+        # Heuristic: default = Chebyshev distance (admissible for 8-way costs)
+        if heuristic:
+            self.h = heuristic
+        else:
+            self.h = lambda a, b: max(abs(a[0]-b[0]), abs(a[1]-b[1]))
 
-    def _heuristic(self, s1, s2):
-        """
-        Calculates the Euclidean distance heuristic between two points.
-        """
-        dx = s1[0] - s2[0]
-        dy = s1[1] - s2[1]
-        return math.sqrt(dx * dx + dy * dy)
+        # g & rhs arrays
+        self.g   = { (x,y): INF for x in range(width) for y in range(height) }
+        self.rhs = { (x,y): INF for x in range(width) for y in range(height) }
 
-    def _calculate_key(self, s):
-        g_s = self.g.get(s, float('inf'))
-        rhs_s = self.rhs.get(s, float('inf'))
-        min_g_rhs = min(g_s, rhs_s)
-        return (min_g_rhs + self._heuristic(self.s_start, s) + self.k_m, min_g_rhs)
+        # priority queue & key modifier
+        self.U       = []   # heap of (key, state)
+        self.U_entry = {}   # maps state -> key for lazy removal
+        self.km      = 0
 
-    def _update_node(self, u):
-        is_consistent = self.g.get(u, float('inf')) == self.rhs.get(u, float('inf'))
-        is_in_queue = u in self.U_members
+        # initialize goal
+        self.rhs[self.goal] = 0
+        self._push(self.goal, self._calc_key(self.goal))
 
-        if not is_consistent and u in self.U_members:
-            # Re-prioritize in the heap
-            self.U = [(self._calculate_key(v), v) for k, v in self.U if v == u] + \
-                     [(k, v) for k, v in self.U if v != u]
-            heapq.heapify(self.U)
-        elif not is_consistent and not is_in_queue:
-            heapq.heappush(self.U, (self._calculate_key(u), u))
-            self.U_members.add(u)
-        elif is_consistent and is_in_queue:
-            self.U_members.remove(u)
-            self.U = [(k, v) for k, v in self.U if v != u]
-            heapq.heapify(self.U)
+    def _calc_key(self, s):
+        g_rhs = min(self.g[s], self.rhs[s])
+        return ( g_rhs + self.h(self.start, s) + self.km, g_rhs )
 
-    def _compute_shortest_path(self):
-        while (self.U and
-               (heapq.nsmallest(1, self.U)[0][0] < self._calculate_key(self.s_start) or
-            self.rhs.get(self.s_start, float('inf')) != self.g.get(self.s_start, float('inf')))):
-            
-            k_old, u = heapq.heappop(self.U)
-            self.U_members.remove(u)
+    def _push(self, s, key):
+        heapq.heappush(self.U, (key, s))
+        self.U_entry[s] = key
 
-            if self.g.get(u, float('inf')) > self.rhs.get(u, float('inf')):
-                self.g[u] = self.rhs.get(u, float('inf'))
-                for s_prime in self._get_neighbors(u):
-                    self.rhs[s_prime] = min(self.rhs.get(s_prime, float('inf')),
-                                          self._get_edge_cost(s_prime, u) + self.g.get(u, float('inf')))
-                    self._update_node(s_prime)
+    def _pop(self):
+        while self.U:
+            key, s = heapq.heappop(self.U)
+            if self.U_entry.get(s) == key:
+                del self.U_entry[s]
+                return s
+        return None
+
+    def _top_key(self):
+        while self.U:
+            key, s = self.U[0]
+            if self.U_entry.get(s) != key:
+                heapq.heappop(self.U)
+                continue
+            return key
+        return (INF, INF)
+
+    def in_bounds(self, s):
+        x,y = s
+        return 0 <= x < self.width and 0 <= y < self.height
+
+    def neighbors(self, s):
+        # 8 directions
+        dirs = [(1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)]
+        result = []
+        for dx,dy in dirs:
+            nb = (s[0]+dx, s[1]+dy)
+            if self.in_bounds(nb) and nb not in self.obstacles:
+                result.append(nb)
+        return result
+
+    def cost(self, u, v):
+        # ∞ if OOB or static obstacle
+        if not (self.in_bounds(u) and self.in_bounds(v)):
+            return INF
+        if u in self.obstacles or v in self.obstacles:
+            return INF
+        # move cost: 1 or sqrt2
+        base = SQRT2 if (u[0]!=v[0] and u[1]!=v[1]) else 1.0
+        # external cost at destination v
+        return base + self.cost_function(v)
+
+    def succ(self, s):
+        return self.neighbors(s)
+
+    def pred(self, s):
+        return self.neighbors(s)
+
+    def update_vertex(self, u):
+        if u != self.goal:
+            nbrs = self.succ(u)
+            self.rhs[u] = min((self.cost(u, sp) + self.g[sp]) for sp in nbrs) if nbrs else INF
+        if u in self.U_entry:
+            del self.U_entry[u]
+        if self.g[u] != self.rhs[u]:
+            self._push(u, self._calc_key(u))
+
+    def compute_shortest_path(self):
+        while (self._top_key() < self._calc_key(self.start) or
+               self.rhs[self.start] != self.g[self.start]):
+            u = self._pop()
+            if u is None:
+                break
+            if self.g[u] > self.rhs[u]:
+                self.g[u] = self.rhs[u]
+                for p in self.pred(u):
+                    self.update_vertex(p)
             else:
-                self.g[u] = float('inf')
-                for s_prime in self._get_neighbors(u) + [u]:
-                    if self.rhs.get(s_prime, float('inf')) == self._get_edge_cost(s_prime, u) + self.g.get(u, float('inf')):
-                         if s_prime not in self.real_goals:
-                            min_rhs = float('inf')
-                            for s_hat in self._get_neighbors(s_prime):
-                                min_rhs = min(min_rhs, self._get_edge_cost(s_prime, s_hat) + self.g.get(s_hat, float('inf')))
-                            self.rhs[s_prime] = min_rhs
-                    self._update_node(s_prime)
+                self.g[u] = INF
+                for p in self.pred(u) + [u]:
+                    self.update_vertex(p)
 
-    def _get_neighbors(self, u):
-        neighbors = []
-        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0), (-1,-1), (-1,1), (1,-1), (1,1)]: # 8-way
-            nx, ny = u[0] + dx, u[1] + dy
-            if 0 <= nx < self.width and 0 <= ny < self.height and self.grid[ny][nx] == 0:
-                neighbors.append((nx, ny))
-        return neighbors
+    def set_obstacle(self, cell):
+        if cell not in self.obstacles:
+            self.obstacles.add(cell)
+            for p in self.pred(cell) + [cell]:
+                self.update_vertex(p)
 
-    def _get_edge_cost(self, u, v):
-        # Cost includes move distance + destination cost
-        move_cost = math.sqrt((u[0] - v[0])**2 + (u[1] - v[1])**2) # Diagonal moves cost more
-        return move_cost + self.cost_function(v)
-
-    def move_and_replan(self, new_start):
-        if new_start == self.s_start: return
-        self.k_m += self._heuristic(self.s_last, new_start)
-        self.s_last = new_start
-        self.s_start = new_start
-        self._compute_shortest_path()
-
-    def update_costs(self, changed_nodes):
-        for u in changed_nodes:
-            # Re-calculate rhs for neighbors of changed nodes
-            for s_prime in self._get_neighbors(u):
-                min_rhs = float('inf')
-                for s_hat in self._get_neighbors(s_prime):
-                    min_rhs = min(min_rhs, self._get_edge_cost(s_prime, s_hat) + self.g.get(s_hat, float('inf')))
-                self.rhs[s_prime] = min_rhs
-                self._update_node(s_prime)
-        self._compute_shortest_path()
-
-    def get_path_to_goal(self):
-        if self.g.get(self.s_start, float('inf')) == float('inf'): return []
-        path, curr = [self.s_start], self.s_start
-        
-        while curr not in self.real_goals:
-            min_cost, next_node = float('inf'), None
-            for s_prime in self._get_neighbors(curr):
-                cost = self._get_edge_cost(curr, s_prime) + self.g.get(s_prime, float('inf'))
-                if cost < min_cost:
-                    min_cost, next_node = cost, s_prime
-            
-            if next_node is None or next_node in path: return [] # No path or stuck in loop
-            path.append(next_node)
-            curr = next_node
+    def get_shortest_path(self):
+        if self.g[self.start] == INF:
+            return []
+        path = [self.start]
+        s = self.start
+        while s != self.goal:
+            nbrs = self.succ(s)
+            if not nbrs:
+                return []
+            s = min(nbrs, key=lambda sp: self.cost(s, sp) + self.g[sp])
+            if s in path:
+                return []
+            path.append(s)
         return path

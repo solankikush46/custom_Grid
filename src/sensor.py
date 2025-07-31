@@ -46,7 +46,7 @@ def compute_sensor_energy_loss(sensor_pos, connected_miners_pos, base_stations_p
                 total_energy_loss += transmission_energy(K_TO_BASE, nearest_dist)
                 total_energy_loss += reception_energy(K_TO_BASE)
             
-    return total_energy_loss
+    return 10 * total_energy_loss
 
 # ====================================================================
 # === Master Battery Update Function (replaces the old logic) ===
