@@ -6,6 +6,11 @@ from .MineSimulator import MineSimulator
 from .DStarLite import DStarLite
 from .constants import MOVE_TO_ACTION_MAP
 
+# evaluation metrics
+# - path len
+# - number of timesteps connected to depleted sensor
+#   (guided miner's randomized pos should be in non-depleted zone)
+
 def sensor_cost_tier(batt):
     if batt <= 5:    return 400.0
     if batt <= 10:   return 200.0
