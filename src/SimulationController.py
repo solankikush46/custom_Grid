@@ -1,3 +1,5 @@
+# SimulationController.py
+
 import os
 import numpy as np
 
@@ -51,12 +53,12 @@ class SimulationController:
 
         # 3) build cost map (H x W) row-major: cost_map[y][x]
         H, W = self.simulator.n_rows, self.simulator.n_cols
-        cost_map = np.zeros((H, W), dtype=np.float64)
+        self.cost_map = np.zeros((H, W), dtype=np.float64)
         for y in range(H):
             for x in range(W):
                 sensor = self.simulator.cell_to_sensor[(x, y)]
                 batt   = self.simulator.sensor_batteries[sensor]
-                cost_map[y, x] = sensor_cost_tier(batt)
+                self.cost_map[y, x] = sensor_cost_tier(batt)
 
         # 4) build static obstacle list
         static_obs = [(x, y) for (y, x) in self.simulator.impassable_positions]
@@ -73,7 +75,7 @@ class SimulationController:
             W, H,
             start_x, start_y,
             goals,
-            cost_map,
+            self.cost_map,
             static_obs
         )
         self.pathfinder.computeShortestPath()
@@ -123,6 +125,9 @@ class SimulationController:
 
         # 5) Repair those vertices
         for (x, y) in dirty_cells:
+            sensor = self.simulator.cell_to_sensor[(x,y)]
+            new_cost = sensor_cost_tier(self.simulator.sensor_batteries[sensor])
+            self.cost_map[y, x] = new_cost 
             self.pathfinder.updateVertex(x, y)
             for (nx, ny) in self.pathfinder.neighbors(x, y):
                 self.pathfinder.updateVertex(nx, ny)
