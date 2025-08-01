@@ -167,21 +167,7 @@ def train_all_predictors(timesteps: int = 1_000_000):
             "is_cnn": True,
             "backbone": "attn",
             "tag": "attn"
-        },
-            {
-            "grid_file": "mine_30x30.txt",
-            "n_miners": 10,
-            "is_cnn": True,
-            "backbone": "attn",
-            "tag": "attn"
-        },
-        {
-            "grid_file": "mine_20x20.txt",
-            "n_miners": 5,
-            "is_cnn": True,
-            "backbone": "attn",
-            "tag": "attn"
-        }    
+        }   
     ]
 
     attach_run_folder_names(models_to_train)
