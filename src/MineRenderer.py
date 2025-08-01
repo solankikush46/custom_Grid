@@ -49,7 +49,7 @@ class MineRenderer:
 
         # The clock is used to control the frame rate
         self.clock = pygame.time.Clock()
-        self.render_fps = 4
+        self.render_fps = 60
 
     def render(self, static_grid, world_state, show_miners=True,
                dstar_path=None, path_history=None, predicted_battery_map=None):

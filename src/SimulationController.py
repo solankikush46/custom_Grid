@@ -246,7 +246,7 @@ class SimulationController:
                 self.should_shutdown = True
                 
         # pause for debug
-        x = input("[PAUSE]")
+        #x = input("[PAUSE]")
         
     def shutdown(self):
         print("--- Shutting down simulations ---")
