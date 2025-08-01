@@ -186,15 +186,25 @@ class MineSimulator:
 
         # 3. Update all sensor batteries based on proximity to any mover
         all_movers = self.miners + [self.guided_miner_pos]
+        prev_batts = self.sensor_batteries.copy()
         self.sensor_batteries = update_all_sensor_batteries(
             self.sensor_positions,
             self.sensor_batteries,
             all_movers,
             self.base_station_positions
         )
-        
+
+        # Compute per-sensor depletion delta (clipped to >=0)
+        battery_deltas = {
+            pos: max(prev_batts[pos] - self.sensor_batteries[pos], 0.0)
+            for pos in self.sensor_positions
+            if prev_batts.get(pos, 0.0) > 0.0
+        }
+
         # Return the new world state
-        return self.get_state_snapshot()
+        snapshot = self.get_state_snapshot()
+        snapshot["battery_deltas"] = battery_deltas
+        return snapshot
     
     def get_state_snapshot(self):
         """

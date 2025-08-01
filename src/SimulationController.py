@@ -2,11 +2,13 @@
 
 import os
 import numpy as np
+import json
 from sb3_contrib import RecurrentPPO
+from collections import defaultdict
 
 from .MineSimulator import MineSimulator
-from .DStarLite.DStarLite import DStarLite  # C++ pybind11 module
-from .constants import MOVE_TO_ACTION_MAP
+from .DStarLite.DStarLite import DStarLite
+from .constants import *
 
 ##==============================================================
 ## Helpers
@@ -15,10 +17,14 @@ def sensor_cost_tier(batt: float) -> float:
     """
     Maps a raw battery level (0–100) to a movement penalty cost.
     """
-    if batt <= 5:    return 400.0
-    if batt <= 10:   return 200.0
-    if batt <= 20:   return 100.0
-    if batt <= 30:   return 50.0
+    if batt <= 5:
+        return 400.0
+    if batt <= 10:
+        return 200.0
+    if batt <= 20:
+        return 100.0
+    if batt <= 30:
+        return 50.0
     return 0.0
 
 ##==============================================================
@@ -26,41 +32,51 @@ def sensor_cost_tier(batt: float) -> float:
 ##==============================================================
 class SimulationController:
     """
-    Integrates MineSimulator with the C++ D* Lite planner and optional battery
-    forecasting. Modes:
-      - 'static': use current battery only, no future lookahead.
-      - 'constant_rate': use a constant depletion rate to project future battery.
-      - 'model': use a learned recurrent model to roll out future battery.
+    Integrates MineSimulator with D* Lite planner and battery forecasting.
+
+    Modes:
+      - 'static': use current battery only.
+      - 'constant_rate': load per-sensor average depletion rates from JSON.
+      - 'model': use recurrent model to forecast battery.
+
+    If get_average_depletion=True, runs num_episodes to collect deltas,
+    then saves avg_sensor_depletion.json & battery_deltas.json.
     """
+
     def __init__(
         self,
         experiment_folder: str,
         render: bool = True,
         show_miners: bool = False,
         show_predicted: bool = True,
-        mode: str = "static",  # one of: 'static', 'constant_rate', 'model'
-        predicted_depletion_rate: float = None,  # only for constant_rate
+        mode: str = "static",
+        get_average_depletion: bool = False,
+        num_episodes: int = 1
     ):
-        """
-        Args:
-            experiment_folder: e.g. "mine_50x50_20miners"
-            render: if True, create a Pygame window
-            show_predicted: if True, overlay predicted battery percentages
-            mode: planning mode: 'static', 'constant_rate', or 'model'
-            predicted_depletion_rate: required if mode == 'constant_rate'
-        """
+        # Validate mode
         if mode not in ("static", "constant_rate", "model"):
-            raise ValueError(f"Unsupported mode '{mode}'; choose from 'static','constant_rate','model'.")
+            raise ValueError(f"Unsupported mode '{mode}'")
 
-        if mode == "constant_rate" and predicted_depletion_rate is None:
-            raise ValueError("predicted_depletion_rate must be provided when mode is 'constant_rate'.")
+        if get_average_depletion and num_episodes < 1:
+            raise ValueError(
+                "num_episodes must be >= 1 when collecting averages"
+            )
 
+        # Settings
+        self.experiment_folder     = experiment_folder
+        self.show_predicted        = show_predicted
+        self.show_miners           = show_miners
+        self.mode                  = mode
+        self.get_average_depletion = get_average_depletion
+        self.num_episodes          = num_episodes
+
+        # Parse grid file & miners
         parts       = experiment_folder.split('_')
         grid_file   = f"{parts[0]}_{parts[1]}.txt"
         n_miners    = int(parts[-1].replace('miners',''))
         render_mode = 'human' if render else None
 
-        # 1) Core simulator
+        # Core simulator
         self.simulator = MineSimulator(
             grid_file=grid_file,
             n_miners=n_miners,
@@ -68,31 +84,51 @@ class SimulationController:
             show_predicted=show_predicted
         )
 
-        # Sensor → index for quick lookup
+        # Sensor indexing
         self.sensor_index = {
-            pos: i for i, pos in enumerate(self.simulator.sensor_positions)
+            pos: i
+            for i, pos in enumerate(self.simulator.sensor_positions)
         }
         self.num_sensors = len(self.simulator.sensor_positions)
 
-        # Predictor only if needed
-        self.mode = mode
-        self.predicted_depletion_rate = predicted_depletion_rate
+        # If constant_rate, load rates from JSON
+        self.constant_rates = {}
+        if self.mode == 'constant_rate':
+            path = os.path.join(
+                SAVE_DIR,
+                experiment_folder,
+                'avg_sensor_depletion.json'
+            )
+            if not os.path.isfile(path):
+                raise RuntimeError(f"Average depletion file not found at {path}")
+
+            with open(path, 'r') as f:
+                data = json.load(f)
+
+            # parse keys "r,c" -> (r,c)
+            for k, v in data.items():
+                r, c = map(int, k.split(','))
+                self.constant_rates[(r, c)] = float(v)
+
+        # Predictor for 'model'
         self.predictor = None
-        if self.mode == "model":
-            base = os.path.join("saved_experiments", experiment_folder)
-            try:
-                runs = sorted(
-                    d for d in os.listdir(base) if d.startswith("RecurrentPPO_")
-                )
-            except FileNotFoundError:
-                raise RuntimeError(f"No such experiment folder: {base}")
+        if self.mode == 'model':
+            base = os.path.join(SAVE_DIR, experiment_folder)
+            runs = sorted(
+                d for d in os.listdir(base)
+                if d.startswith('RecurrentPPO_')
+            )
             if not runs:
-                raise RuntimeError(f"No RecurrentPPO runs in {base}")
-            model_dir  = runs[-1]
-            model_path = os.path.join(base, model_dir, "model.zip")
+                raise RuntimeError(f"No model runs in {base}")
+
+            model_path = os.path.join(
+                base,
+                runs[-1],
+                'model.zip'
+            )
             self.predictor = RecurrentPPO.load(model_path)
 
-        # Internal state
+        # Planning state
         self.pathfinder            = None
         self.cost_map              = None
         self.path_history          = []
@@ -100,138 +136,201 @@ class SimulationController:
         self.should_shutdown       = False
         self.sensor_previous_costs = {}
         self.last_pred_norm        = None
-        self.current_start         = None  # (x, y)
-        self.show_predicted        = show_predicted
-        self.show_miners           = show_miners
+        self.current_start         = None
+
+        # Data collection
+        self.battery_deltas = {
+            pos: []
+            for pos in self.simulator.sensor_positions
+        }
+
 
     def _setup_pathfinder(self):
+        # Reset simulator
         state = self.simulator.reset()
         self.path_history = [state['guided_miner_pos']]
 
-        # Initialize prediction state: for static/constant, last_pred_norm is current
-        init_batts = [state['sensor_batteries'][pos]
-                      for pos in self.simulator.sensor_positions]
-        self.last_pred_norm = np.array(init_batts, dtype=np.float32) / 100.0
+        # Initialize normalized battery vector
+        init_batts = [
+            state['sensor_batteries'][pos]
+            for pos in self.simulator.sensor_positions
+        ]
+        self.last_pred_norm = (
+            np.array(init_batts, dtype=np.float32) / 100.0
+        )
 
-        # Record initial tiers
+        # Record previous cost tiers
         for pos, batt in state['sensor_batteries'].items():
             self.sensor_previous_costs[pos] = sensor_cost_tier(batt)
 
-        # Initialize cost map (H x W)
+        # Build cost map
         H, W = self.simulator.n_rows, self.simulator.n_cols
         self.cost_map = np.zeros((H, W), dtype=np.float64)
+        static_obs = [
+            (x, y)
+            for (y, x) in self.simulator.impassable_positions
+        ]
 
-        # Static obstacles
-        static_obs = [(x, y) for (y, x) in self.simulator.impassable_positions]
-
-        # Start & goals
+        # Setup planner
         r0, c0 = state['guided_miner_pos']
-        start_x, start_y = c0, r0
-        self.current_start = (start_x, start_y)
-        goals = [(c, r) for (r, c) in state['goal_positions']]
+        self.current_start = (c0, r0)
+        goals = [
+            (c, r)
+            for (r, c) in state['goal_positions']
+        ]
 
-        # Create D* Lite planner
         self.pathfinder = DStarLite(
-            W, H,
-            start_x, start_y,
+            W,
+            H,
+            c0,
+            r0,
             goals,
             self.cost_map,
             static_obs
         )
         self.pathfinder.computeShortestPath()
 
+
     def run(self):
+        eps = 0
         while not self.should_shutdown:
+            eps += 1
             self._setup_pathfinder()
             self.is_running = True
+
             while self.is_running:
                 self.update_step()
+
+            if (
+                self.get_average_depletion and
+                eps >= self.num_episodes
+            ):
+                break
+
         self.shutdown()
 
+
     def update_step(self):
-        # 1) Choose next move from D* Lite
+        # Choose action
         r0, c0 = self.simulator.guided_miner_pos
         path = self.pathfinder.getShortestPath() or []
+
         if len(path) > 1:
             nx, ny = path[1]
             move   = (ny - r0, nx - c0)
             act    = MOVE_TO_ACTION_MAP.get(move)
+
         elif (r0, c0) in self.simulator.goal_positions:
             self.is_running = False
             return
+
         else:
             act = None
 
-        # 2) Step simulator
-        new_state = self.simulator.step(guided_miner_action=act)
-        self.path_history.append(new_state['guided_miner_pos'])
+        # Step simulator
+        new_state = self.simulator.step(
+            guided_miner_action=act
+        )
+        self.path_history.append(
+            new_state['guided_miner_pos']
+        )
 
-        # 3) Build observation pieces
-        batts_norm = np.array([
-            new_state['sensor_batteries'][pos]
+        # Collect deltas
+        if (
+            self.get_average_depletion and
+            'battery_deltas' in new_state
+        ):
+            for pos, delta in new_state['battery_deltas'].items():
+                self.battery_deltas[pos].append(float(delta))
+
+        # Build features
+        batts_norm = (
+            np.array([
+                new_state['sensor_batteries'][pos]
+                for pos in self.simulator.sensor_positions
+            ], dtype=np.float32) / 100.0
+        )
+
+        conns = {
+            pos: 0
             for pos in self.simulator.sensor_positions
-        ], dtype=np.float32) / 100.0
+        }
+        for mv in (
+            new_state['miner_positions'] +
+            [new_state['guided_miner_pos']]
+        ):
+            conns[self.simulator.cell_to_sensor[mv]] += 1
 
-        # Connection counts
-        conns = {pos: 0 for pos in self.simulator.sensor_positions}
-        movers = new_state['miner_positions'] + [new_state['guided_miner_pos']]
-        for mv in movers:
-            sensor = self.simulator.cell_to_sensor[mv]
-            conns[sensor] += 1
-        miner_norm = np.array(
-            [conns[pos] for pos in self.simulator.sensor_positions],
-            dtype=np.float32
-        ) / self.simulator.n_miners
+        miner_norm = (
+            np.array([
+                conns[pos]
+                for pos in self.simulator.sensor_positions
+            ], dtype=np.float32) / self.simulator.n_miners
+        )
 
         err_norm = batts_norm - self.last_pred_norm
-        obs = np.stack([batts_norm, miner_norm, err_norm], axis=1).flatten()
+        obs      = np.stack([
+            batts_norm,
+            miner_norm,
+            err_norm
+        ], axis=1).flatten()
 
-        # 4) Compute Chebyshev distances from start
+        # Compute distance map
         H, W = self.simulator.n_rows, self.simulator.n_cols
-        sx, sy = self.current_start
-        ys = np.arange(H)[:, None]
-        xs = np.arange(W)[None, :]
-        D  = np.maximum(np.abs(xs - sx), np.abs(ys - sy)).astype(int)  # shape (H,W)
-        maxD = D.max()
+        ys    = np.arange(H)[:, None]
+        xs    = np.arange(W)[None, :]
+        D     = np.maximum(
+            np.abs(xs - self.current_start[0]),
+            np.abs(ys - self.current_start[1])
+        ).astype(int)
+        maxD  = D.max()
 
-        # 5) Forecast or estimate future battery on free cells
+        # Build battery map
         batt_map = np.zeros((H, W), dtype=np.float32)
-
-        if self.mode == "model":
-            # learned predictor rollout
-            S = self.num_sensors
+        if self.mode == 'model':
+            S     = self.num_sensors
             preds = np.zeros((S, maxD + 1), dtype=np.float32)
             preds[:, 0] = batts_norm
-            last = preds[:, 0]
+            last        = preds[:, 0]
+
             for t in range(1, maxD + 1):
-                obs_t = np.stack([last, miner_norm, np.zeros_like(last)], axis=1).flatten()
-                next_norm, _ = self.predictor.predict(obs_t, deterministic=True)
+                obs_t     = np.stack([
+                    last,
+                    miner_norm,
+                    np.zeros_like(last)
+                ], axis=1).flatten()
+                next_norm, _ = self.predictor.predict(
+                    obs_t, deterministic=True
+                )
                 preds[:, t] = next_norm
-                last = next_norm
+                last        = next_norm
+
             self.last_pred_norm = batts_norm
 
             for y, x in self.simulator.free_cells:
-                sensor = self.simulator.cell_to_sensor[(x, y)]
-                idx    = self.sensor_index[sensor]
+                idx            = self.sensor_index[
+                    self.simulator.cell_to_sensor[(x, y)]
+                ]
                 batt_map[y, x] = float(preds[idx, D[y, x]] * 100.0)
 
-        elif self.mode == "constant_rate":
-            rate = self.predicted_depletion_rate
-            for y, x in self.simulator.free_cells:
-                sensor       = self.simulator.cell_to_sensor[(x, y)]
-                idx          = self.sensor_index[sensor]
-                batt_current = batts_norm[idx] * 100.0
-                d            = D[y, x]
-                batt_map[y, x] = max(batt_current - rate * d, 0.0)
-
-        else:  # static
-            # no future lookahead; use current battery uniformly for cells belonging to each sensor
+        elif self.mode == 'constant_rate':
+            rates = self.constant_rates
             for y, x in self.simulator.free_cells:
                 sensor = self.simulator.cell_to_sensor[(x, y)]
-                idx    = self.sensor_index[sensor]
-                batt_map[y, x] = float(batts_norm[idx] * 100.0)
+                rate   = rates.get(sensor, 0.0)
+                curr   = batts_norm[
+                    self.sensor_index[sensor]
+                ] * 100.0
+                batt_map[y, x] = max(curr - rate * D[y, x], 0.0)
 
-        # 6) Update cost_map & collect dirty cells only on free cells
+        else:
+            for y, x in self.simulator.free_cells:
+                sensor = self.simulator.cell_to_sensor[(x, y)]
+                batt_map[y, x] = float(
+                    batts_norm[self.sensor_index[sensor]] * 100.0
+                )
+
+        # Update cost map
         dirty = []
         for y, x in self.simulator.free_cells:
             tier = sensor_cost_tier(batt_map[y, x])
@@ -239,22 +338,21 @@ class SimulationController:
                 self.cost_map[y, x] = tier
                 dirty.append((x, y))
 
-        # 7) Notify D* Lite of cost changes
         for x, y in dirty:
             self.pathfinder.updateVertex(x, y)
             for nx, ny in self.pathfinder.neighbors(x, y):
                 self.pathfinder.updateVertex(nx, ny)
 
-        # 8) If miner moved, update start
+        # Update start if moved
         r1, c1 = new_state['guided_miner_pos']
         if (c1, r1) != (c0, r0):
             self.pathfinder.updateStart(c1, r1)
             self.current_start = (c1, r1)
 
-        # 9) Replan
+        # Replan
         self.pathfinder.computeShortestPath()
 
-        # 10) Render
+        # Render
         if self.simulator.render_mode == 'human':
             ok = self.simulator.render(
                 show_miners           = self.show_miners,
@@ -262,81 +360,65 @@ class SimulationController:
                 path_history          = self.path_history,
                 predicted_battery_map = batt_map if self.show_predicted else None
             )
+
             if not ok:
                 print("[INFO] Window closed by user.")
                 self.is_running       = False
                 self.should_shutdown = True
 
+
+    def compute_average_depletion(self):
+        return {
+            pos: (sum(vals)/len(vals) if vals else 0.0)
+            for pos, vals in self.battery_deltas.items()
+        }
+
+
+    def get_sensor_delta_series(self):
+        return self.battery_deltas
+
+
     def shutdown(self):
+        if self.get_average_depletion:
+            try:
+                avg = self.compute_average_depletion()
+                base = os.path.join(
+                    SAVE_DIR,
+                    self.experiment_folder
+                )
+                os.makedirs(base, exist_ok=True)
+                avg_path = os.path.join(
+                    base,
+                    'avg_sensor_depletion.json'
+                )
+                with open(avg_path, 'w') as f:
+                    json.dump(
+                        {f"{p[0]},{p[1]}": v for p, v in avg.items()},
+                        f,
+                        indent=2
+                    )
+                print(f"[INFO] Saved average depletion to {avg_path}")
+
+            except Exception as e:
+                print(f"[ERROR] Saving average depletion failed: {e}")
+
+            try:
+                deltas_path = os.path.join(
+                    SAVE_DIR,
+                    self.experiment_folder,
+                    'battery_deltas.json'
+                )
+                with open(deltas_path, 'w') as f:
+                    json.dump(
+                        {f"{p[0]},{p[1]}": vals for p, vals in self.battery_deltas.items()},
+                        f,
+                        indent=2
+                    )
+                print(f"[INFO] Saved raw battery deltas to {deltas_path}")
+
+            except Exception as e:
+                print(f"[ERROR] Saving raw battery deltas failed: {e}")
+
         print("--- Shutting down simulations ---")
-        self.simulator.close()
-
-
-##==============================================================
-## Utility functions for depletion estimation
-##==============================================================
-def estimate_sensor_depletion_rate(experiment_folder: str,
-                                   n_episodes: int = 100,
-                                   mode: str = "static",
-                                   predicted_depletion_rate: float = None):
-    """
-    Run `n_episodes` headless simulations under the given `experiment_folder`,
-    with the specified mode, track each sensor's battery drop per timestep, and return:
-       mean_rate : float   average % depletion per step (across sensors & episodes)
-       std_rate  : float   sample‐stddev of the per‐episode averages
-       rates      : np.ndarray  length‐n_episodes list of per‐episode avg rates
-    """
-    rates = []
-
-    for ep in range(1, n_episodes + 1):
-        ctrl = SimulationController(
-            experiment_folder,
-            render=False,
-            show_miners=False,
-            show_predicted=False,
-            mode=mode,
-            predicted_depletion_rate=predicted_depletion_rate
-        )
-        ctrl._setup_pathfinder()
-        ctrl.is_running = True
-
-        sim = ctrl.simulator
-
-        history = {pos: [b] for pos, b in sim.sensor_batteries.items()}
-
-        while ctrl.is_running:
-            ctrl.update_step()
-            for pos in history:
-                history[pos].append(sim.sensor_batteries[pos])
-
-        T = len(next(iter(history.values()))) - 1
-        if T <= 0:
-            continue
-
-        sensor_rates = [
-            (vals[0] - vals[-1]) / T
-            for vals in history.values()
-        ]
-        ep_rate = np.mean(sensor_rates)
-        rates.append(ep_rate)
-        print(f"[Episode {ep}/{n_episodes}] avg depletion = {ep_rate:.3f}%/step")
-
-    rates = np.array(rates, dtype=float)
-    mean_rate = float(rates.mean()) if rates.size > 0 else 0.0
-    std_rate  = float(rates.std(ddof=1)) if rates.size > 1 else 0.0
-    return mean_rate, std_rate, rates
-
-def report_depletion_rate(experiment_folder: str, n_episodes: int = 100, mode: str = "static", predicted_depletion_rate: float = None):
-    """
-    Runs `n_episodes` and prints a tidy summary of the mean ± std depletion rate.
-    """
-    mean_rate, std_rate, all_rates = estimate_sensor_depletion_rate(
-        experiment_folder,
-        n_episodes=n_episodes,
-        mode=mode,
-        predicted_depletion_rate=predicted_depletion_rate
-    )
-    print(f"\n=== RESULTS over {n_episodes} episodes on '{experiment_folder}' (mode={mode}) ===")
-    print(f"Mean depletion rate: {mean_rate:.3f}% per step")
-    print(f"Std  deviation     : {std_rate:.3f}% per step")
-    return mean_rate, std_rate, all_rates
+        if self.simulator:
+            self.simulator.close()
