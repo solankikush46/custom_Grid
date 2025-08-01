@@ -73,49 +73,47 @@ class AttentionCNNExtractor(BaseFeaturesExtractor):
 
 class SpatialChannelAttention(nn.Module):
     """
-    CBAM-inspired channel and spatial attention for feature maps.
-    - Channel attention focuses on "what" is important.
-    - Spatial attention focuses on "where" is important.
+    Improved CBAM with residual, stronger channel & spatial blocks,
+    and optional use of coordinate channels (for grid tasks).
     """
-    def __init__(self, in_channels, reduction=16):
+    def __init__(self, in_channels, height, width, reduction=16, use_coords=True):
         super().__init__()
-        # ---- Channel attention (Squeeze-and-Excitation style) ----
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
-        self.channel_mlp = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // reduction, kernel_size=1, bias=False),
-            nn.ReLU(),
-            nn.Conv2d(in_channels // reduction, in_channels, kernel_size=1, bias=False)
-        )
-        self.sigmoid = nn.Sigmoid()
+        self.use_coords = use_coords
 
-        # ---- Spatial attention ----
-        self.spatial = nn.Sequential(
-            nn.Conv2d(2, 1, kernel_size=7, stride=1, padding=3, bias=False),
+        # Channel attention (SE block)
+        self.channel_fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_channels, in_channels // reduction, 1, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(in_channels // reduction, in_channels, 1, bias=False),
             nn.Sigmoid()
         )
+        # Spatial attention (CBAM spatial)
+        spatial_in_channels = 2 + (2 if use_coords else 0)  # avg + max + (x,y)
+        self.spatial_conv = nn.Sequential(
+            nn.Conv2d(spatial_in_channels, 1, kernel_size=7, padding=3, bias=False),
+            nn.Sigmoid()
+        )
+        # Precompute coordinate maps if needed
+        if use_coords:
+            yy, xx = torch.meshgrid(torch.linspace(0, 1, height), torch.linspace(0, 1, width), indexing="ij")
+            self.register_buffer("coord_x", xx.unsqueeze(0).unsqueeze(0))  # (1,1,H,W)
+            self.register_buffer("coord_y", yy.unsqueeze(0).unsqueeze(0))
 
     def forward(self, x):
-        # Ensure x is 4D: [B, C, H, W]
-        if x.dim() == 2:
-            # Example: [batch, channels] → [batch, channels, 1, 1]
-            x = x.unsqueeze(-1).unsqueeze(-1)
-        elif x.dim() == 3:
-            # Example: [batch, channels, H] → [batch, channels, H, 1]
-            x = x.unsqueeze(-1)
+        # Channel attention
+        ch_att = self.channel_fc(x)
+        x_ca = x * ch_att
 
-        # --- Channel attention ---
-        avg_out = self.avg_pool(x)
-        max_out = self.max_pool(x)
-        avg_out = self.channel_mlp(avg_out)
-        max_out = self.channel_mlp(max_out)
-        channel_att = self.sigmoid(avg_out + max_out)
-        x = x * channel_att
+        # Spatial attention (use both CA output and original features for strong residual)
+        avg_out = torch.mean(x_ca, dim=1, keepdim=True)
+        max_out, _ = torch.max(x_ca, dim=1, keepdim=True)
+        spatial_input = [avg_out, max_out]
+        if self.use_coords:
+            spatial_input += [self.coord_x.expand(x.size(0), -1, -1, -1), self.coord_y.expand(x.size(0), -1, -1, -1)]
+        spatial_in = torch.cat(spatial_input, dim=1)
+        sp_att = self.spatial_conv(spatial_in)
+        x_out = x_ca * sp_att
 
-        # --- Spatial attention ---
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        spatial_att = self.spatial(torch.cat([avg_out, max_out], dim=1))
-        x = x * spatial_att
-
-        return x
+        # Residual: add input back in (stabilizes gradients, helps small-data)
+        return x_out + x
