@@ -57,38 +57,61 @@ class AttentionCNNExtractor(BaseFeaturesExtractor):
 
 class SpatialChannelAttention(nn.Module):
     """
-    Improved CBAM-style attention with coordinate channels and full shape safety.
-    Works with any batch size, any grid size, and handles n_envs > 1.
+    CBAM-style attention for RL: safe for SB3 dummy input probing,
+    includes learnable gating, coordinates, and is robust to all batch/grid shapes.
     """
-    def __init__(self, in_channels, height, width, reduction=16, use_coords=True):
+    def __init__(
+        self,
+        in_channels,
+        height,
+        width,
+        reduction=16,
+        use_coords=True,
+        use_channel=True,
+        use_spatial=True,
+        dropout=0.15
+    ):
         super().__init__()
+        self.use_channel = use_channel
+        self.use_spatial = use_spatial
         self.use_coords = use_coords
 
+        # --- Always use Identity for normalization for SB3 compatibility
+        self.norm = nn.Identity()
+
         # Channel attention (Squeeze-and-Excitation)
-        self.channel_fc = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(in_channels, in_channels // reduction, 1, bias=False),
-            nn.ReLU(),
-            nn.Conv2d(in_channels // reduction, in_channels, 1, bias=False),
-            nn.Sigmoid()
-        )
-        # Spatial attention (CBAM spatial block)
-        spatial_in_channels = 2 + (2 if use_coords else 0)  # avg + max + (x,y)
-        self.spatial_conv = nn.Sequential(
-            nn.Conv2d(spatial_in_channels, 1, kernel_size=7, padding=3, bias=False),
-            nn.Sigmoid()
-        )
-        # Precompute coordinate maps if needed
-        if use_coords:
-            yy, xx = torch.meshgrid(
-                torch.linspace(0, 1, height), torch.linspace(0, 1, width), indexing="ij"
+        if use_channel:
+            self.channel_fc = nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),
+                nn.Conv2d(in_channels, in_channels // reduction, 1, bias=False),
+                nn.ReLU(),
+                nn.Conv2d(in_channels // reduction, in_channels, 1, bias=False),
+                nn.Sigmoid()
             )
-            self.register_buffer("coord_x", xx.unsqueeze(0).unsqueeze(0))  # [1,1,H,W]
-            self.register_buffer("coord_y", yy.unsqueeze(0).unsqueeze(0))
+
+        # Spatial attention (CBAM spatial block)
+        if use_spatial:
+            spatial_in_channels = 2 + (2 if use_coords else 0)  # avg + max + (x,y)
+            self.spatial_conv = nn.Sequential(
+                nn.Conv2d(spatial_in_channels, 1, kernel_size=7, padding=3, bias=False),
+                nn.Sigmoid()
+            )
+            if use_coords:
+                yy, xx = torch.meshgrid(
+                    torch.linspace(0, 1, height),
+                    torch.linspace(0, 1, width),
+                    indexing="ij"
+                )
+                self.register_buffer("coord_x", xx.unsqueeze(0).unsqueeze(0))  # [1,1,H,W]
+                self.register_buffer("coord_y", yy.unsqueeze(0).unsqueeze(0))
+
+        # Learnable gate (blends attention output and skip connection)
+        self.gate = nn.Parameter(torch.tensor(0.5))
+        self.drop = nn.Dropout2d(dropout)
 
     def forward(self, x):
-        # Defensive: x must be [B, C, H, W]
         orig_shape = x.shape
+        # Make sure input is [B, C, H, W]
         if x.dim() == 2:
             x = x.unsqueeze(-1).unsqueeze(-1)
         elif x.dim() == 3:
@@ -96,34 +119,45 @@ class SpatialChannelAttention(nn.Module):
         if x.dim() != 4:
             raise RuntimeError(f"Input to attention block must be 4D, got {orig_shape} expanded to {x.shape}")
 
-        # --- Channel attention ---
-        ch_att = self.channel_fc(x)
-        x_ca = x * ch_att
+        x_norm = self.norm(x)
+        attn_in = x_norm
 
-        # --- Spatial attention ---
-        avg_out = torch.mean(x_ca, dim=1, keepdim=True)    # [B,1,H,W]
-        max_out, _ = torch.max(x_ca, dim=1, keepdim=True)  # [B,1,H,W]
-        spatial_input = [avg_out, max_out]
-        if self.use_coords:
-            B, _, H, W = x_ca.shape
-            coord_x = self.coord_x
-            coord_y = self.coord_y
-            # Interpolate if grid shape changed (dummy vs real)
-            if coord_x.shape[2:] != (H, W):
-                coord_x = torch.nn.functional.interpolate(coord_x, size=(H, W), mode='nearest')
-                coord_y = torch.nn.functional.interpolate(coord_y, size=(H, W), mode='nearest')
-            if coord_x.shape[0] != B:
-                coord_x = coord_x.expand(B, -1, -1, -1)
-                coord_y = coord_y.expand(B, -1, -1, -1)
-            spatial_input += [coord_x, coord_y]
-        for i, t in enumerate(spatial_input):
-            if t.shape != (x_ca.size(0), 1, x_ca.size(2), x_ca.size(3)):
-                t = t.expand(x_ca.size(0), -1, x_ca.size(2), x_ca.size(3))
-                spatial_input[i] = t
+        # Channel attention
+        if self.use_channel:
+            ch_att = self.channel_fc(attn_in)
+            x_ca = attn_in * ch_att
+        else:
+            x_ca = attn_in
 
-        spatial_in = torch.cat(spatial_input, dim=1)
-        sp_att = self.spatial_conv(spatial_in)
-        x_out = x_ca * sp_att
+        # Spatial attention
+        if self.use_spatial:
+            avg_out = torch.mean(x_ca, dim=1, keepdim=True)    # [B,1,H,W]
+            max_out, _ = torch.max(x_ca, dim=1, keepdim=True)  # [B,1,H,W]
+            spatial_input = [avg_out, max_out]
+            if self.use_coords:
+                B, _, H, W = x_ca.shape
+                coord_x = self.coord_x
+                coord_y = self.coord_y
+                # Safely interpolate coords if needed (for SB3 dummy probe)
+                if coord_x.shape[2:] != (H, W):
+                    coord_x = torch.nn.functional.interpolate(coord_x, size=(H, W), mode='nearest')
+                    coord_y = torch.nn.functional.interpolate(coord_y, size=(H, W), mode='nearest')
+                if coord_x.shape[0] != B:
+                    coord_x = coord_x.expand(B, -1, -1, -1)
+                    coord_y = coord_y.expand(B, -1, -1, -1)
+                spatial_input += [coord_x, coord_y]
+            for i, t in enumerate(spatial_input):
+                if t.shape != (x_ca.size(0), 1, x_ca.size(2), x_ca.size(3)):
+                    t = t.expand(x_ca.size(0), -1, x_ca.size(2), x_ca.size(3))
+                    spatial_input[i] = t
+            spatial_in = torch.cat(spatial_input, dim=1)
+            sp_att = self.spatial_conv(spatial_in)
+            x_att = x_ca * sp_att
+        else:
+            x_att = x_ca
 
-        # Residual connection for stability
-        return x_out + x
+        # Dropout for regularization
+        x_att = self.drop(x_att)
+        # Gated skip connection (learnable blend)
+        out = self.gate * x_att + (1 - self.gate) * x
+        return out
