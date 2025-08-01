@@ -14,33 +14,18 @@ from .constants import (
 from .utils import *
 
 def get_closest_sensor(cell, sensor_positions):
-    """
-    Return the (row, col) sensor in sensor_positions that is nearest to `cell`,
-    using squared-distance comparisons (no sqrt).
-
-    Args:
-        cell:       Tuple (row, col) of the query cell.
-        sensor_positions: Iterable of (row, col) sensor coords.
-
-    Returns:
-        The (row, col) of the nearest sensor.
-
-    Raises:
-        ValueError: if sensor_positions is empty.
-    """
-    best = None
-    best_d2 = None
-
     cr, cc = cell
+    best = None
+    best_d = None
+
     for sr, sc in sensor_positions:
-        dr = sr - cr
-        dc = sc - cc
-        d2 = dr*dr + dc*dc
+        d = max(abs(sr - cr), abs(sc - cc))
+        if best is None or d < best_d:
+            best   = (sr, sc)
+            best_d = d
 
-        if best is None or d2 < best_d2:
-            best = (sr, sc)
-            best_d2 = d2
-
+    #print(f"[DEBUG get_closest_sensor] cell={cell} → sensor={best} (cheb_d={best_d})")
+    
     return best
 
 ##==============================================================
@@ -139,6 +124,13 @@ class MineSimulator:
         
         # --- Step 4: Build impassable set ---
         self.impassable_positions = set(obstacles).union(self.sensor_positions, self.base_station_positions)
+
+        self.free_cells = [
+            (r, c)
+            for r in range(self.n_rows)
+            for c in range(self.n_cols)
+            if (r, c) not in self.impassable_positions and not (r, c) in self.goal_positions
+        ]
         
         #print(f"\n[Grid Init] Built impassable_positions set with {len(self.impassable_positions)} total items.")
         #print(f"  - Example impassable positions: {list(self.impassable_positions)[:5]}")

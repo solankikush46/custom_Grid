@@ -32,18 +32,21 @@ class MineRenderer:
         self.n_cols = n_cols
         self.show_predicted = show_predicted
 
-        # --- Window and Asset Initialization ---
-        # Calculate the size of each grid cell to fit the window on the screen
+        # --- Calculate cell size and font ---
         MAX_WIDTH, MAX_HEIGHT = 1000, 750
         self.cell_size = int(min(MAX_WIDTH / self.n_cols, MAX_HEIGHT / self.n_rows))
-        
-        # Create the main display surface
-        self.screen = pygame.display.set_mode((self.n_cols * self.cell_size, self.n_rows * self.cell_size))
-        pygame.display.set_caption("Mine Simulator")
-        
-        # Initialize the font for drawing text (e.g., battery levels)
         self.font = pygame.font.SysFont("Arial", max(10, self.cell_size // 3))
-        
+
+        # --- Margins for indices ---
+        self.margin_left = self.font.get_height() + 4
+        self.margin_top = self.font.get_height() + 4
+
+        # Create the main display surface with margins
+        total_width = self.margin_left + self.n_cols * self.cell_size
+        total_height = self.margin_top + self.n_rows * self.cell_size
+        self.screen = pygame.display.set_mode((total_width, total_height))
+        pygame.display.set_caption("Mine Simulator")
+
         # The clock is used to control the frame rate
         self.clock = pygame.time.Clock()
         self.render_fps = 4
@@ -51,179 +54,157 @@ class MineRenderer:
     def render(self, static_grid, world_state, show_miners=True,
                dstar_path=None, path_history=None, predicted_battery_map=None):
         """
-        The main rendering loop for a single frame. It calls helper functions
-        to draw each component of the scene in a specific order to create layers.
-
-        Args:
-            static_grid (np.ndarray): The grid containing permanent terrain obstacles.
-            world_state (dict): The dictionary from simulator.get_state_snapshot().
-            show_miners (bool): If True, the autonomous miners will be rendered.
-            dstar_path (list, optional): The future path calculated by the planner.
-            path_history (list, optional): The historical path the miner has traveled.
-            predicted_battery_map (2D list/array, optional): Predicted battery % per cell.
+        Render a single frame, drawing indices outside the grid.
         """
-        # --- The order of these calls determines the layering of the final image ---
-
-        # Layer 1: The static background (terrain, goals, grid lines)
+        self.screen.fill((255, 255, 255))
+        # Draw indices first so they appear under the grid lines
+        self._draw_indices()
+        # Draw grid and overlays with offset
         self._draw_base_grid(static_grid, world_state.get('goal_positions', []))
-        
-        # Optional Layer: Predicted battery levels overlay
         if self.show_predicted and predicted_battery_map is not None:
             self._draw_predicted(predicted_battery_map)
-        
-        # Layer 2: The historical trail of where the miner has been
         self._draw_path_history(path_history)
-        
-        # Layer 3: The future path calculated by D* Lite
         self._draw_dstar_path(dstar_path)
-        
-        # Layer 4: The other "NPC" entities (base stations, autonomous miners)
         self._draw_entities(world_state, show_miners)
-        
-        # Layer 5: The player-controlled miner (drawn on top of most other things)
         self._draw_guided_miner(world_state.get('guided_miner_pos'))
-        
-        # Layer 6: Overlays like sensor icons and text (drawn on top of everything)
         self._draw_overlays(world_state.get('sensor_batteries', {}))
-        
-        # After all drawing is complete, update the display to show the new frame
         pygame.display.flip()
         self.clock.tick(self.render_fps)
-        
-        # Check for user input (like closing the window) and return status
         return self.handle_events()
 
+    def _draw_indices(self):
+        """Draw row labels on left margin and column labels on top margin."""
+        # Column indices
+        for c in range(self.n_cols):
+            label = self.font.render(str(c), True, (0, 0, 0))
+            x = self.margin_left + c * self.cell_size + self.cell_size // 2
+            y = self.margin_top // 2
+            self.screen.blit(label, label.get_rect(center=(x, y)))
+        # Row indices
+        for r in range(self.n_rows):
+            label = self.font.render(str(r), True, (0, 0, 0))
+            x = self.margin_left // 2
+            y = self.margin_top + r * self.cell_size + self.cell_size // 2
+            self.screen.blit(label, label.get_rect(center=(x, y)))
+
     def _draw_base_grid(self, static_grid, goal_positions):
-        """Draws the background, static obstacles, goals, and grid lines."""
-        self.screen.fill(RENDER_COLORS[EMPTY_CHAR])
+        """Draws obstacles, goals, and grid lines with offset."""
         for r in range(self.n_rows):
             for c in range(self.n_cols):
-                # The logic check uses the efficient Integer ID
+                x0 = self.margin_left + c * self.cell_size
+                y0 = self.margin_top + r * self.cell_size
                 if static_grid[r, c] == OBSTACLE_ID:
-                    # The drawing lookup uses the human-readable Character symbol
                     pygame.draw.rect(
                         self.screen,
                         RENDER_COLORS[OBSTACLE_CHAR],
-                        (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size)
+                        (x0, y0, self.cell_size, self.cell_size)
                     )
                 elif (r, c) in goal_positions:
                     pygame.draw.rect(
                         self.screen,
                         RENDER_COLORS[GOAL_CHAR],
-                        (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size)
+                        (x0, y0, self.cell_size, self.cell_size)
                     )
-                # Draw a black border for every cell to create the grid effect
                 pygame.draw.rect(
                     self.screen,
                     (0, 0, 0),
-                    (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size),
+                    (x0, y0, self.cell_size, self.cell_size),
                     1
                 )
 
     def _draw_predicted(self, batt_map):
-        """
-        Draws predicted battery percentages at each cell center.
-
-        Args:
-            batt_map (2D array): Same shape as grid, values 0–100.
-        """
         for r in range(self.n_rows):
             for c in range(self.n_cols):
                 try:
                     txt = f"{int(batt_map[r][c])}"
-                except:
+                except Exception:
                     continue
-                label = self.font.render(txt, True, (0,0,0))
-                cx = c*self.cell_size + self.cell_size//2
-                cy = r*self.cell_size + self.cell_size//2
+                label = self.font.render(txt, True, (0, 0, 0))
+                cx = self.margin_left + c * self.cell_size + self.cell_size // 2
+                cy = self.margin_top + r * self.cell_size + self.cell_size // 2
                 self.screen.blit(label, label.get_rect(center=(cx, cy)))
 
     def _draw_entities(self, world_state, show_miners):
-        """Draws non-controllable entities like base stations and autonomous miners."""
         for r, c in world_state.get('base_station_positions', []):
+            x0 = self.margin_left + c * self.cell_size
+            y0 = self.margin_top + r * self.cell_size
             pygame.draw.rect(
                 self.screen,
                 RENDER_COLORS[BASE_STATION_CHAR],
-                (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size)
+                (x0, y0, self.cell_size, self.cell_size)
             )
-        
-        # Conditionally draw the autonomous miners based on the `show_miners` flag
         if show_miners:
             for r, c in world_state.get('miner_positions', []):
+                x0 = self.margin_left + c * self.cell_size
+                y0 = self.margin_top + r * self.cell_size
                 pygame.draw.rect(
                     self.screen,
                     RENDER_COLORS[MINER_CHAR],
-                    (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size)
+                    (x0, y0, self.cell_size, self.cell_size)
                 )
 
     def _draw_path_history(self, path_history):
-        """Draws the guided miner's historical trail as a series of connected lines."""
         if path_history and len(path_history) > 1:
-            path_points = [
-                (c*self.cell_size + self.cell_size//2,
-                 r*self.cell_size + self.cell_size//2)
+            pts = [
+                (self.margin_left + c * self.cell_size + self.cell_size // 2,
+                 self.margin_top  + r * self.cell_size + self.cell_size // 2)
                 for r, c in path_history
             ]
             pygame.draw.lines(
                 self.screen,
                 RENDER_COLORS["TRAIL"],
                 False,
-                path_points,
+                pts,
                 TRAIL_PATH_THICKNESS
             )
-            
+
     def _draw_dstar_path(self, path):
-        """Draws the future planned path calculated by D* Lite."""
         if path and len(path) > 1:
-            path_points = [
-                (x*self.cell_size + self.cell_size//2,
-                 y*self.cell_size + self.cell_size//2)
+            pts = [
+                (self.margin_left + x * self.cell_size + self.cell_size // 2,
+                 self.margin_top  + y * self.cell_size + self.cell_size // 2)
                 for x, y in path
             ]
             pygame.draw.lines(
                 self.screen,
                 RENDER_COLORS["DSTAR"],
                 False,
-                path_points,
+                pts,
                 DSTAR_PATH_THICKNESS
             )
-            
+
     def _draw_guided_miner(self, guided_miner_pos):
-        """Draws the single controllable guided miner."""
         if guided_miner_pos:
             r, c = guided_miner_pos
+            x0 = self.margin_left + c * self.cell_size
+            y0 = self.margin_top  + r * self.cell_size
             pygame.draw.rect(
                 self.screen,
                 RENDER_COLORS[GUIDED_MINER_CHAR],
-                (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size)
+                (x0, y0, self.cell_size, self.cell_size)
             )
 
     def _draw_overlays(self, sensor_batteries):
-        """Draws elements that should appear on top of everything, like sensor icons and text."""
         for (r, c), battery in sensor_batteries.items():
+            x0 = self.margin_left + c * self.cell_size
+            y0 = self.margin_top  + r * self.cell_size
             pygame.draw.rect(
                 self.screen,
                 RENDER_COLORS[SENSOR_CHAR],
-                (c*self.cell_size, r*self.cell_size, self.cell_size, self.cell_size)
+                (x0, y0, self.cell_size, self.cell_size)
             )
             label = self.font.render(f"{int(battery)}", True, (0, 0, 0))
-            self.screen.blit(
-                label,
-                label.get_rect(center=(
-                    c*self.cell_size + self.cell_size//2,
-                    r*self.cell_size + self.cell_size//2
-                ))
-            )
+            cx = x0 + self.cell_size // 2
+            cy = y0 + self.cell_size // 2
+            self.screen.blit(label, label.get_rect(center=(cx, cy)))
 
     def handle_events(self):
-        """Handles user input, like closing the window. Returns False if user quits."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT or \
                (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 self.close()
-                return False  # Signal to the main loop to stop
-        return True  # Signal to continue
-    
+                return False
+        return True
+
     def close(self):
-        """Shuts down the Pygame window properly."""
         pygame.quit()

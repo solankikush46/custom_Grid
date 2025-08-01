@@ -11,34 +11,19 @@ from .constants import MOVE_TO_ACTION_MAP
 ##==============================================================
 ## Helpers
 ##==============================================================
-def sensor_cost_tier(batt):
-    if batt <= 5:    return 400.0
-    if batt <= 10:   return 200.0
-    if batt <= 30:   return 50.0
-    return 0.0
-
-##==============================================================
-## SimulationController Class
-##==============================================================
-# SimulationController.py
-
-import os
-import numpy as np
-from sb3_contrib import RecurrentPPO
-
-from .MineSimulator import MineSimulator
-from .DStarLite.DStarLite import DStarLite  # C++ pybind11 module
-from .constants import MOVE_TO_ACTION_MAP
-
 def sensor_cost_tier(batt: float) -> float:
     """
     Maps a raw battery level (0–100) to a movement penalty cost.
     """
     if batt <= 5:    return 400.0
     if batt <= 10:   return 200.0
+    if batt <= 20:   return 100.0
     if batt <= 30:   return 50.0
     return 0.0
 
+##==============================================================
+## SimulationController Class
+##==============================================================
 class SimulationController:
     """
     Integrates MineSimulator with the C++ D* Lite planner and an optional SB3 battery predictor.
@@ -69,7 +54,8 @@ class SimulationController:
         self.simulator = MineSimulator(
             grid_file=grid_file,
             n_miners=n_miners,
-            render_mode=render_mode
+            render_mode=render_mode,
+            show_predicted=show_predicted
         )
 
         # Sensor → index for quick lookup
@@ -194,7 +180,7 @@ class SimulationController:
         D  = np.maximum(np.abs(xs - sx), np.abs(ys - sy)).astype(int)  # shape (H,W)
         maxD = D.max()
 
-        # 5) Forecast or constant‐drain
+        # 5) Forecast or constant-drain over only non-impassable cells
         S = self.num_sensors
         batt_map = np.zeros((H, W), dtype=np.float32)
         if self.predicted_depletion_rate is None:
@@ -208,31 +194,28 @@ class SimulationController:
                 preds[:, t] = next_norm
                 last = next_norm
             self.last_pred_norm = batts_norm
-            # Build batt_map from preds
-            for y in range(H):
-                for x in range(W):
-                    sensor = self.simulator.cell_to_sensor[(x, y)]
-                    idx = self.sensor_index[sensor]
-                    batt_map[y, x] = float(preds[idx, D[y, x]] * 100.0)
+
+            for y, x in self.simulator.free_cells:
+                sensor = self.simulator.cell_to_sensor[(x, y)]
+                idx    = self.sensor_index[sensor]
+                batt_map[y, x] = float(preds[idx, D[y, x]] * 100.0)
         else:
             # simple constant drain: batt_pred = max(current - rate * dist, 0)
-            for y in range(H):
-                for x in range(W):
-                    sensor = self.simulator.cell_to_sensor[(x, y)]
-                    idx = self.sensor_index[sensor]
-                    batt_current = batts_norm[idx] * 100.0
-                    batt_pred = max(batt_current - self.predicted_depletion_rate * D[y, x], 0.0)
-                    batt_map[y, x] = batt_pred
-            # last_pred_norm not used in this mode
+            rate = self.predicted_depletion_rate
+            for y, x in self.simulator.free_cells:
+                sensor       = self.simulator.cell_to_sensor[(x, y)]
+                idx          = self.sensor_index[sensor]
+                batt_current = batts_norm[idx] * 100.0
+                d            = D[y, x]
+                batt_map[y, x] = max(batt_current - rate * d, 0.0)
 
-        # 6) Update cost_map & collect dirty cells
+        # 6) Update cost_map & collect dirty cells only on free cells
         dirty = []
-        for y in range(H):
-            for x in range(W):
-                tier = sensor_cost_tier(batt_map[y, x])
-                if self.cost_map[y, x] != tier:
-                    self.cost_map[y, x] = tier
-                    dirty.append((x, y))
+        for y, x in self.simulator.free_cells:
+            tier = sensor_cost_tier(batt_map[y, x])
+            if self.cost_map[y, x] != tier:
+                self.cost_map[y, x] = tier
+                dirty.append((x, y))
 
         # 7) Notify D* Lite of cost changes
         for x, y in dirty:
@@ -261,7 +244,10 @@ class SimulationController:
                 print("[INFO] Window closed by user.")
                 self.is_running       = False
                 self.should_shutdown = True
-
+                
+        # pause for debug
+        x = input("[PAUSE]")
+        
     def shutdown(self):
         print("--- Shutting down simulations ---")
         self.simulator.close()
