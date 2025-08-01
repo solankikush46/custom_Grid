@@ -3,6 +3,7 @@
 import os
 import numpy as np
 import math
+import re
 
 ##==============================================================
 ## Helpers
@@ -137,3 +138,12 @@ def make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sens
     feature_matrix[3, :5] = sensor_batteries[:5]
     feature_matrix[4, :4] = sensor_batteries[5:9]
     return feature_matrix
+
+def extract_grid_hw_from_filename(grid_file):
+    # Match patterns like mine_100x100.txt or mine_30x30.txt
+    m = re.search(r'_(\d+)x(\d+)', grid_file)
+    if m:
+        height, width = int(m.group(1)), int(m.group(2))
+        return height, width
+    # Default/fallback
+    return 100, 100

@@ -159,14 +159,14 @@ def train_all_predictors(timesteps: int = 1_000_000):
             "n_miners": 40,
             "is_cnn": True,
             "backbone": "attn",
-            "tag": "attn"
+            "tag": "impr_attn"
         },
         {
             "grid_file": "mine_50x50.txt",
             "n_miners": 20,
             "is_cnn": True,
             "backbone": "attn",
-            "tag": "attn"
+            "tag": "impr_attn"
         }   
     ]
 

@@ -9,6 +9,7 @@ from gym import ObservationWrapper, spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from src.utils import get_c8_neighbors_status, make_agent_feature_matrix
 from src.attention import SpatialChannelAttention
+from src.utils import *
 
 class CustomGridCNNWrapper(ObservationWrapper):
     '''
@@ -254,8 +255,10 @@ def build_default_cnn(in_channels, grid_file):
 
 def build_attention_cnn(in_channels, grid_file):
     cnn = build_default_cnn(in_channels, grid_file)
-    attn = SpatialChannelAttention(in_channels=256)
+    height, width = extract_grid_hw_from_filename(grid_file)
+    attn = SpatialChannelAttention(in_channels=256, height=height, width=width)
     return nn.Sequential(cnn, attn)
+
     
 class GridCNNExtractor(BaseFeaturesExtractor):
     '''
