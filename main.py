@@ -1,16 +1,15 @@
 # main.py
 
 import os
-from src.constants import *
+import numpy as np
+
+from src.constants import SAVE_DIR, FIXED_GRID_DIR
 from src.SimulationController import *
+from src.utils import *
 
 def ensure_directories_exist():
     """Create necessary directories if they don't exist."""
-    directories = [
-        SAVE_DIR,
-        FIXED_GRID_DIR
-    ]
-    for d in directories:
+    for d in (SAVE_DIR, FIXED_GRID_DIR):
         os.makedirs(d, exist_ok=True)
 
 def render_test():
@@ -24,21 +23,20 @@ def render_test():
     experiment_folder = "mine_50x50_20miners"
     
     print(f"[INFO] Initializing controller for experiment: '{experiment_folder}'")
-    print("The controller will run simulations continuously. Close the render window to exit.")
     
     ctrl = SimulationController(
         experiment_folder=experiment_folder, 
-        render=True
+        render=True, show_predicted=True, 
     )
     
     # The run() method now contains the loop to run simulations continuously.
     # It will only return when the program is meant to shut down.
     ctrl.run()
-    
+
 def main():
-    """Main function to start the simulation runner."""
+    #report_depletion_rate("mine_50x50_20miners", n_episodes=100)
     render_test()
-    
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     ensure_directories_exist()
     main()

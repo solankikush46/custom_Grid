@@ -49,7 +49,7 @@ def compute_sensor_energy_loss(sensor_pos, connected_miners_pos, base_stations_p
     return 10 * total_energy_loss
 
 # ====================================================================
-# === Master Battery Update Function (replaces the old logic) ===
+# === Master Battery Update Function                               ===
 # ====================================================================
 def update_all_sensor_batteries(sensor_positions, current_batteries, all_movers_pos, base_stations_pos):
     """
