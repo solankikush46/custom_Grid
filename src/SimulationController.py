@@ -26,25 +26,35 @@ def sensor_cost_tier(batt: float) -> float:
 ##==============================================================
 class SimulationController:
     """
-    Integrates MineSimulator with the C++ D* Lite planner and an optional SB3 battery predictor.
-    Implements a time-dependent cost map: for each cell, costs are based on either
-    (a) the predictor's forecast at the Chebyshev-distance arrival time, or
-    (b) a constant drain_rate * distance if `predicted_depletion_rate` is provided.
+    Integrates MineSimulator with the C++ D* Lite planner and optional battery
+    forecasting. Modes:
+      - 'static': use current battery only, no future lookahead.
+      - 'constant_rate': use a constant depletion rate to project future battery.
+      - 'model': use a learned recurrent model to roll out future battery.
     """
     def __init__(
         self,
         experiment_folder: str,
         render: bool = True,
+        show_miners: bool = False,
         show_predicted: bool = True,
-        predicted_depletion_rate: float = None
+        mode: str = "static",  # one of: 'static', 'constant_rate', 'model'
+        predicted_depletion_rate: float = None,  # only for constant_rate
     ):
         """
         Args:
             experiment_folder: e.g. "mine_50x50_20miners"
             render: if True, create a Pygame window
             show_predicted: if True, overlay predicted battery percentages
-            predicted_depletion_rate: if not None, use batt_pred = batt_current - predicted_depletion_rate * distance
+            mode: planning mode: 'static', 'constant_rate', or 'model'
+            predicted_depletion_rate: required if mode == 'constant_rate'
         """
+        if mode not in ("static", "constant_rate", "model"):
+            raise ValueError(f"Unsupported mode '{mode}'; choose from 'static','constant_rate','model'.")
+
+        if mode == "constant_rate" and predicted_depletion_rate is None:
+            raise ValueError("predicted_depletion_rate must be provided when mode is 'constant_rate'.")
+
         parts       = experiment_folder.split('_')
         grid_file   = f"{parts[0]}_{parts[1]}.txt"
         n_miners    = int(parts[-1].replace('miners',''))
@@ -64,19 +74,23 @@ class SimulationController:
         }
         self.num_sensors = len(self.simulator.sensor_positions)
 
-        # 2) Load the latest RecurrentPPO battery predictor
-        base = os.path.join("saved_experiments", experiment_folder)
-        try:
-            runs = sorted(
-                d for d in os.listdir(base) if d.startswith("RecurrentPPO_")
-            )
-        except FileNotFoundError:
-            raise RuntimeError(f"No such experiment folder: {base}")
-        if not runs:
-            raise RuntimeError(f"No RecurrentPPO runs in {base}")
-        model_dir  = runs[-1]
-        model_path = os.path.join(base, model_dir, "model.zip")
-        self.predictor = RecurrentPPO.load(model_path)
+        # Predictor only if needed
+        self.mode = mode
+        self.predicted_depletion_rate = predicted_depletion_rate
+        self.predictor = None
+        if self.mode == "model":
+            base = os.path.join("saved_experiments", experiment_folder)
+            try:
+                runs = sorted(
+                    d for d in os.listdir(base) if d.startswith("RecurrentPPO_")
+                )
+            except FileNotFoundError:
+                raise RuntimeError(f"No such experiment folder: {base}")
+            if not runs:
+                raise RuntimeError(f"No RecurrentPPO runs in {base}")
+            model_dir  = runs[-1]
+            model_path = os.path.join(base, model_dir, "model.zip")
+            self.predictor = RecurrentPPO.load(model_path)
 
         # Internal state
         self.pathfinder            = None
@@ -88,13 +102,13 @@ class SimulationController:
         self.last_pred_norm        = None
         self.current_start         = None  # (x, y)
         self.show_predicted        = show_predicted
-        self.predicted_depletion_rate        = predicted_depletion_rate
+        self.show_miners           = show_miners
 
     def _setup_pathfinder(self):
         state = self.simulator.reset()
         self.path_history = [state['guided_miner_pos']]
 
-        # Perfect first prediction (error = 0)
+        # Initialize prediction state: for static/constant, last_pred_norm is current
         init_batts = [state['sensor_batteries'][pos]
                       for pos in self.simulator.sensor_positions]
         self.last_pred_norm = np.array(init_batts, dtype=np.float32) / 100.0
@@ -152,7 +166,7 @@ class SimulationController:
         new_state = self.simulator.step(guided_miner_action=act)
         self.path_history.append(new_state['guided_miner_pos'])
 
-        # 3) Build RL predictor observation
+        # 3) Build observation pieces
         batts_norm = np.array([
             new_state['sensor_batteries'][pos]
             for pos in self.simulator.sensor_positions
@@ -180,11 +194,12 @@ class SimulationController:
         D  = np.maximum(np.abs(xs - sx), np.abs(ys - sy)).astype(int)  # shape (H,W)
         maxD = D.max()
 
-        # 5) Forecast or constant-drain over only non-impassable cells
-        S = self.num_sensors
+        # 5) Forecast or estimate future battery on free cells
         batt_map = np.zeros((H, W), dtype=np.float32)
-        if self.predicted_depletion_rate is None:
+
+        if self.mode == "model":
             # learned predictor rollout
+            S = self.num_sensors
             preds = np.zeros((S, maxD + 1), dtype=np.float32)
             preds[:, 0] = batts_norm
             last = preds[:, 0]
@@ -199,8 +214,8 @@ class SimulationController:
                 sensor = self.simulator.cell_to_sensor[(x, y)]
                 idx    = self.sensor_index[sensor]
                 batt_map[y, x] = float(preds[idx, D[y, x]] * 100.0)
-        else:
-            # simple constant drain: batt_pred = max(current - rate * dist, 0)
+
+        elif self.mode == "constant_rate":
             rate = self.predicted_depletion_rate
             for y, x in self.simulator.free_cells:
                 sensor       = self.simulator.cell_to_sensor[(x, y)]
@@ -208,6 +223,13 @@ class SimulationController:
                 batt_current = batts_norm[idx] * 100.0
                 d            = D[y, x]
                 batt_map[y, x] = max(batt_current - rate * d, 0.0)
+
+        else:  # static
+            # no future lookahead; use current battery uniformly for cells belonging to each sensor
+            for y, x in self.simulator.free_cells:
+                sensor = self.simulator.cell_to_sensor[(x, y)]
+                idx    = self.sensor_index[sensor]
+                batt_map[y, x] = float(batts_norm[idx] * 100.0)
 
         # 6) Update cost_map & collect dirty cells only on free cells
         dirty = []
@@ -235,7 +257,7 @@ class SimulationController:
         # 10) Render
         if self.simulator.render_mode == 'human':
             ok = self.simulator.render(
-                show_miners           = False,
+                show_miners           = self.show_miners,
                 dstar_path            = self.pathfinder.getShortestPath(),
                 path_history          = self.path_history,
                 predicted_battery_map = batt_map if self.show_predicted else None
@@ -244,23 +266,22 @@ class SimulationController:
                 print("[INFO] Window closed by user.")
                 self.is_running       = False
                 self.should_shutdown = True
-                
-        # pause for debug
-        #x = input("[PAUSE]")
-        
+
     def shutdown(self):
         print("--- Shutting down simulations ---")
         self.simulator.close()
 
+
 ##==============================================================
-##
+## Utility functions for depletion estimation
 ##==============================================================
 def estimate_sensor_depletion_rate(experiment_folder: str,
-                                   n_episodes: int = 100):
+                                   n_episodes: int = 100,
+                                   mode: str = "static",
+                                   predicted_depletion_rate: float = None):
     """
-    Run `n_episodes` headless simulations (reset→goal) under the given
-    `experiment_folder`, track each sensor's battery drop per timestep,
-    and return:
+    Run `n_episodes` headless simulations under the given `experiment_folder`,
+    with the specified mode, track each sensor's battery drop per timestep, and return:
        mean_rate : float   average % depletion per step (across sensors & episodes)
        std_rate  : float   sample‐stddev of the per‐episode averages
        rates      : np.ndarray  length‐n_episodes list of per‐episode avg rates
@@ -268,51 +289,54 @@ def estimate_sensor_depletion_rate(experiment_folder: str,
     rates = []
 
     for ep in range(1, n_episodes + 1):
-        ctrl = SimulationController(experiment_folder, render=False)
+        ctrl = SimulationController(
+            experiment_folder,
+            render=False,
+            show_miners=False,
+            show_predicted=False,
+            mode=mode,
+            predicted_depletion_rate=predicted_depletion_rate
+        )
         ctrl._setup_pathfinder()
+        ctrl.is_running = True
+
         sim = ctrl.simulator
 
-        # initialize per-sensor history
-        history = { pos: [b] for pos, b in sim.sensor_batteries.items() }
+        history = {pos: [b] for pos, b in sim.sensor_batteries.items()}
 
-        # run until goal reached
-        while True:
+        while ctrl.is_running:
             ctrl.update_step()
             for pos in history:
                 history[pos].append(sim.sensor_batteries[pos])
-            if not ctrl.is_running:
-                break
 
-        # total steps in this episode
         T = len(next(iter(history.values()))) - 1
         if T <= 0:
             continue
 
-        # compute per‐sensor depletion rate = (start−end)/T
         sensor_rates = [
             (vals[0] - vals[-1]) / T
             for vals in history.values()
         ]
-        # average over sensors
         ep_rate = np.mean(sensor_rates)
         rates.append(ep_rate)
         print(f"[Episode {ep}/{n_episodes}] avg depletion = {ep_rate:.3f}%/step")
 
     rates = np.array(rates, dtype=float)
-    mean_rate = float(rates.mean())
-    std_rate  = float(rates.std(ddof=1)) if len(rates) > 1 else 0.0
+    mean_rate = float(rates.mean()) if rates.size > 0 else 0.0
+    std_rate  = float(rates.std(ddof=1)) if rates.size > 1 else 0.0
     return mean_rate, std_rate, rates
 
-def report_depletion_rate(experiment_folder: str, n_episodes: int = 100):
+def report_depletion_rate(experiment_folder: str, n_episodes: int = 100, mode: str = "static", predicted_depletion_rate: float = None):
     """
     Runs `n_episodes` and prints a tidy summary of the mean ± std depletion rate.
-    Returns the tuple (mean_rate, std_rate, all_rates) if you need to inspect it.
     """
     mean_rate, std_rate, all_rates = estimate_sensor_depletion_rate(
-        experiment_folder, n_episodes=n_episodes
+        experiment_folder,
+        n_episodes=n_episodes,
+        mode=mode,
+        predicted_depletion_rate=predicted_depletion_rate
     )
-    print(f"\n=== RESULTS over {n_episodes} episodes on '{experiment_folder}' ===")
+    print(f"\n=== RESULTS over {n_episodes} episodes on '{experiment_folder}' (mode={mode}) ===")
     print(f"Mean depletion rate: {mean_rate:.3f}% per step")
     print(f"Std  deviation     : {std_rate:.3f}% per step")
     return mean_rate, std_rate, all_rates
-

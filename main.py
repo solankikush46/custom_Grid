@@ -26,7 +26,8 @@ def render_test():
     
     ctrl = SimulationController(
         experiment_folder=experiment_folder, 
-        render=True, show_predicted=True, predicted_depletion_rate=0.712
+        render=True, show_predicted=True, predicted_depletion_rate=0.712,
+        show_miners=True, mode="constant_rate",
     )
     
     # The run() method now contains the loop to run simulations continuously.

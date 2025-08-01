@@ -230,7 +230,7 @@ class MineSimulator:
 
     def _move_miners_randomly(self):
         """
-        Moves autonomous miners randomly, ensuring valid, non‐colliding moves.
+        Moves autonomous miners randomly, ensuring valid, non-colliding moves.
         """
         shuffled = random.sample(self.miners, len(self.miners))
         occupied = {self.guided_miner_pos}
@@ -245,6 +245,10 @@ class MineSimulator:
                 new_positions.append(m)
                 occupied.add(m)
         self.miners = new_positions
+
+    def at_goal(self) -> bool:
+        """True if the guided miner is currently on one of its goal cells."""
+        return self.guided_miner_pos in self.goal_positions
 
     ##==============================================================
     ## PyGame Rendering Delegation
@@ -271,7 +275,7 @@ class MineSimulator:
                 show_miners,
                 dstar_path,
                 path_history,
-                predicted_battery_map  # now accepted
+                predicted_battery_map
             )
         return True
 
