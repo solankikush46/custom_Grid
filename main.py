@@ -67,7 +67,7 @@ def test_depletion_averages(n_episodes: int = 20,
     
 def main():
     #test_depletion_averages(500, "mine_20x20_5miners")
-    render_test("mine_100x100_40miners")
+    render_test("mine_50x50_20miners")
 
 if __name__ == "__main__":
     ensure_directories_exist()
