@@ -66,7 +66,7 @@ def test_depletion_averages(n_episodes: int = 20,
           f"saved_experiments/{experiment_folder}/avg_sensor_depletion.json")
     
 def main():
-    #test_depletion_averages(10_000, "mine_100x100_40miners")
+    #test_depletion_averages(500, "mine_20x20_5miners")
     render_test("mine_100x100_40miners")
 
 if __name__ == "__main__":
