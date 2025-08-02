@@ -17,15 +17,7 @@ def sensor_cost_tier(batt: float) -> float:
     """
     Maps a raw battery level (0–100) to a movement penalty cost.
     """
-    if batt <= 5:
-        return 400.0
-    if batt <= 10:
-        return 200.0
-    if batt <= 20:
-        return 100.0
-    if batt <= 30:
-        return 50.0
-    return 0.0
+    return COST_TABLE[int(batt)] # cost tier of floored battery level
 
 ##==============================================================
 ## SimulationController Class
