@@ -46,7 +46,8 @@ def test_depletion_averages(n_episodes: int = 20,
     # Headless, static mode, collect deltas
     ctrl = SimulationController(
         experiment_folder=experiment_folder,
-        render=False,
+        render=True,
+        show_miners=True,
         show_predicted=False,
         mode="static",
         get_average_depletion=True,
@@ -66,8 +67,8 @@ def test_depletion_averages(n_episodes: int = 20,
           f"saved_experiments/{experiment_folder}/avg_sensor_depletion.json")
     
 def main():
-    #test_depletion_averages(500, "mine_20x20_5miners")
-    render_test("mine_50x50_20miners")
+    test_depletion_averages(2, "mine_1000x1000_80miners")
+    render_test("mine_1000x1000_80miners")
 
 if __name__ == "__main__":
     ensure_directories_exist()
