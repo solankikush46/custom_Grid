@@ -116,6 +116,15 @@ K_BROADCAST = 10_000 # Sensor-to-Sensor
 K_TO_MINER = 5_000 # Miner-to-Sensor
 K_TO_BASE = 2_000  # Sensor-to-base
 
+##==============================================================
+## Lookup table for use in SimulationController::sensor_cost_tier
+##==============================================================
+COST_TABLE = [0.0] * 101
+for i in range(0,  6):   COST_TABLE[i] = 400.0
+for i in range(6, 11):   COST_TABLE[i] = 200.0
+for i in range(11, 21):  COST_TABLE[i] = 100.0
+for i in range(21, 31):  COST_TABLE[i] =  50.0
+
 
 
 

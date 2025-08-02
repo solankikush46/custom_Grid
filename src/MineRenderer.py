@@ -65,8 +65,9 @@ class MineRenderer:
         self.show_predicted = show_predicted
 
         MAX_WIDTH, MAX_HEIGHT = 1000, 750
-        self.base_cell_size = int(min(MAX_WIDTH / n_cols, MAX_HEIGHT / n_rows))
-
+        raw_size = min(MAX_WIDTH / n_cols, MAX_HEIGHT / n_rows)
+        self.base_cell_size = max(1, int(raw_size))
+        
         base_size = max(10, self.base_cell_size // 3)
         self.font = pygame.font.SysFont("Arial", base_size)
         self.small_font = pygame.font.SysFont("Arial", max(12, base_size // 2))
@@ -221,3 +222,7 @@ class MineRenderer:
                 factor = 1.1 if ev.y > 0 else 0.9
                 self.camera.change_zoom(factor, mx, my)
         return True
+
+    def close(self):
+        """Shuts down the Pygame window and quits."""
+        pygame.quit()
