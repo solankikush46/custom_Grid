@@ -308,6 +308,8 @@ class SimulationController:
             if not ok:
                 print("[INFO] Window closed by user."); self.is_running=False; self.should_shutdown=True
 
+        x = input("[PAUSE] Type Any Key to Continue")
+
 
     def compute_average_depletion(self):
         """
