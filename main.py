@@ -8,6 +8,7 @@ import math
 from src.constants import SAVE_DIR, FIXED_GRID_DIR
 from src.SimulationController import *
 from src.utils import *
+from src.train import *
 
 def ensure_directories_exist():
     """Create necessary directories if they don't exist."""
@@ -68,7 +69,9 @@ def test_depletion_averages(n_episodes: int = 20,
     
 def main():
     #test_depletion_averages(2, "mine_1000x1000_80miners")
-    render_test("mine_50x50_20miners")
+    #render_test("mine_50x50_20miners")
+    test_train_and_reload_ppo("mine_50x50_12miners", total_timesteps=20_000, mode="static")
+
 
 if __name__ == "__main__":
     ensure_directories_exist()

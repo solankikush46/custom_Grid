@@ -3,14 +3,108 @@
 import os
 import time
 import re
+import traceback
+
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import BaseCallback
 from sb3_contrib import RecurrentPPO
+from stable_baselines3 import PPO
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 from src.BatteryPredictorEnv import BatteryPredictorEnv
-from src.constants import FIXED_GRID_DIR, SAVE_DIR
+from src.constants import *
+from src.MineEnv import MineEnv
+
+
+def test_train_and_reload_ppo(
+    experiment_folder: str,
+    total_timesteps: int = 10_000,
+    mode: str = "static",               # or "constant_rate"
+    use_planner_overlay: bool = False,  # optional D* overlay while rendering
+    show_miners: bool = False,
+    show_predicted: bool = True,
+) -> str:
+    """
+    Train PPO on MineEnv with on-screen rendering, save the model, then reload it
+    and run a brief rendered rollout. Returns the full path to the saved model.zip.
+
+    Notes:
+      - Uses DummyVecEnv(n_envs=1) to keep pygame rendering stable.
+      - Policy is 'MultiInputPolicy' to handle the Dict observation space.
+    """
+    # --------- env factory (keeps render=True during training) ----------
+    def make_env():
+        def _thunk():
+            env = MineEnv(
+                experiment_folder=experiment_folder,
+                render=True,                       # <— render during training
+                show_miners=show_miners,
+                show_predicted=show_predicted,
+                mode=mode,
+                use_planner_overlay=use_planner_overlay,
+            )
+            return Monitor(env)
+        return _thunk
+
+    # single-process vec env so pygame window behaves
+    train_env = DummyVecEnv([make_env()])
+
+    # --------- model dirs ----------
+    run_name = f"PPO_{experiment_folder}_{time.strftime('%Y%m%d_%H%M%S')}"
+    model_dir = os.path.join(MODELS.get("ppo", "./SavedModels"), run_name)
+    os.makedirs(model_dir, exist_ok=True)
+    model_path = os.path.join(model_dir, "model.zip")
+
+    # --------- PPO setup ----------
+    model = PPO(
+        policy="MultiInputPolicy",
+        env=train_env,
+        verbose=1,
+        tensorboard_log=LOGS.get("ppo", None),
+        # you can tweak these if training looks unstable/slow:
+        # learning_rate=3e-4,
+        # n_steps=2048,
+        # batch_size=64,
+        # gamma=0.99,
+        # gae_lambda=0.95,
+        # clip_range=0.2,
+    )
+
+    try:
+        # --------- train + save ----------
+        model.learn(total_timesteps=total_timesteps)
+        model.save(model_path)
+    except Exception:
+        traceback.print_exc()
+        raise
+    finally:
+        # even on error, close to release the window
+        train_env.close()
+
+    # --------- reload and quick sanity rollout (rendered) ----------
+    test_env = DummyVecEnv([make_env()])
+    try:
+        loaded = PPO.load(model_path, env=test_env, device="auto", print_system_info=False)
+        obs = test_env.reset()
+        # run a short rendered rollout to verify the loaded policy
+        steps = 0
+        while steps < 300:  # ~few seconds of on-screen movement
+            action, _ = loaded.predict(obs, deterministic=True)
+            obs, rewards, dones, infos = test_env.step(action)
+            steps += 1
+            if dones[0]:  # episode ended (reached goal)
+                obs = test_env.reset()
+    except Exception:
+        traceback.print_exc()
+        raise
+    finally:
+        test_env.close()
+
+    print(f"[OK] Saved PPO model to: {model_path}")
+    return model_path
 
 # ===================================================================
 # --- Custom Callback for Logging ---
