@@ -79,6 +79,6 @@ private:
     std::vector<int> succ(int idx) const;
     void updateVertex(int idx);
     double heuristic(int x1, int y1, int x2, int y2) const;
-};+*
+};
 
 #endif // DSTARBOT_LITE_H

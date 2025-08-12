@@ -1,261 +1,196 @@
 # train.py
 
 import os
-import time
-import re
-import numpy as np
-import matplotlib.pyplot as plt
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import BaseCallback
-from sb3_contrib import RecurrentPPO
+import traceback
 
-from src.BatteryPredictorEnv import BatteryPredictorEnv
-from src.constants import FIXED_GRID_DIR, SAVE_DIR
+from stable_baselines3 import PPO
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 
-# ===================================================================
-# --- Custom Callback for Logging ---
-# ===================================================================
+from src.MineEnv import MineEnv
+from src.constants import SAVE_DIR
+from src.utils import latest_ppo_model_path, latest_ppo_run
 
-class PredictorTensorboardCallback(BaseCallback):
-    """
-    A custom callback for logging the approximate Mean Absolute Error (MAE)
-    of the predictor's actions during training.
-    """
-    def __init__(self, verbose=0):
-        super().__init__(verbose)
+class _CaptureLogDir(BaseCallback):
+    """Capture SB3's run dir (e.g., .../PPO_3/) once training starts."""
+    def __init__(self):
+        super().__init__()
+        self.run_dir = None
+
+    def _on_training_start(self) -> None:
+        self.run_dir = self.logger.dir  # set by SB3
 
     def _on_step(self) -> bool:
-        # Get rewards from the last rollout
-        rewards = self.locals['rewards']
-        # Approximate the MAE from the reward: R = exp(-|error| / C)
-        # This is a useful proxy for tracking learning progress.
-        if np.mean(rewards) > 0:
-            approx_mae_norm = -0.1 * np.log(np.mean(rewards))
-            approx_mae_percent = approx_mae_norm * 100
-            self.logger.record("custom/prediction_mae_percent", approx_mae_percent)
         return True
 
-# ===================================================================
-# --- Unified PPO-LSTM Training Function ---
-# ===================================================================
+class InfoToTB(BaseCallback):
+    """Write selected `info` metrics to TensorBoard each step."""
+    def _on_step(self) -> bool:
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            if not info:
+                continue
+            v = info.get("current_reward", None)
+            if v is not None:
+                self.logger.record("timestep/current_reward", float(v))
+            v = info.get("current_battery", None)
+            if v is not None:
+                self.logger.record("timestep/current_battery", float(v))
+            # Optional: distance as well
+            v = info.get("distance_to_goal", None)
+            if v is not None:
+                self.logger.record("timestep/distance_to_goal", float(v))
+        return True
 
-def train_predictor_model(grid_file: str,
-                          n_miners: int,
-                          timesteps: int,
-                          experiment_folder_name: str,
-                          n_envs: int = 4):
+##==============================================================
+## Training Helpers
+##==============================================================
+def _make_env_thunk(experiment_folder, mode, use_planner_overlay, show_miners, show_predicted, render: bool):
+    def _thunk():
+        env = MineEnv(
+            experiment_folder=experiment_folder,
+            render=render,
+            show_miners=show_miners,
+            show_predicted=show_predicted,
+            mode=mode,
+            use_planner_overlay=use_planner_overlay,
+        )
+        return Monitor(env)  # SB3 will still log TB in run_dir
+    return _thunk
+
+
+def save(model: PPO, run_dir: str) -> str:
+    """Save model.zip inside the SB3-created run_dir."""
+    os.makedirs(run_dir, exist_ok=True)
+    model_path = os.path.join(run_dir, "model.zip")
+    model.save(model_path)
+    print(f"[OK] Saved PPO model to: {model_path}")
+    return model_path
+
+def train(
+    experiment_folder: str,
+    total_timesteps: int = 20_000,
+    mode: str = "static",               # or "constant_rate"
+    use_planner_overlay: bool = False,
+    show_miners: bool = False,
+    show_predicted: bool = True,
+    render=False
+):
     """
-    Initializes and trains the RecurrentPPO battery predictor model, saving all
-    artifacts into a structured experiment/run directory.
-
-    Args:
-        grid_file (str): The name of the grid file for the simulation.
-        n_miners (int): The number of autonomous miners in the simulation.
-        timesteps (int): The total number of training timesteps.
-        experiment_folder_name (str): The unique name for this experiment.
-        n_envs (int): The number of parallel environments to use for training.
+    Train PPO on MineEnv, save the model into the SB3-created run dir, and return:
+      (model_path, run_dir)
+    TensorBoard root is SAVE_DIR/<exp>/; SB3 creates .../PPO_<n>/ inside it.
     """
-    # --- Step 1: Create the hierarchical directory structure ---
-    base_log_path = os.path.join(SAVE_DIR, experiment_folder_name)
-    os.makedirs(base_log_path, exist_ok=True)
+    tb_root = os.path.join(SAVE_DIR, experiment_folder)
+    os.makedirs(tb_root, exist_ok=True)
 
-    # Find the next available run number (e.g., PPO_1, PPO_2)
-    run_num = 1
-    existing_runs = [d for d in os.listdir(base_log_path) if d.startswith("RecurrentPPO_")]
-    if existing_runs:
-        max_run = max([int(r.split('_')[-1]) for r in existing_runs])
-        run_num = max_run + 1
-    
-    # This is the final directory where everything for this run will be saved
-    log_dir = os.path.join(base_log_path, f"RecurrentPPO_{run_num}")
-    model_save_path = os.path.join(log_dir, "model.zip")
-    os.makedirs(log_dir, exist_ok=True)
+    env = DummyVecEnv([
+        _make_env_thunk(
+            experiment_folder, mode, use_planner_overlay,
+            show_miners, show_predicted, render=render
+        )
+    ])
 
-    # --- Step 2: Create the Vectorized Environment ---
-    vec_env = make_vec_env(
-        lambda: BatteryPredictorEnv(grid_file=grid_file, n_miners=n_miners),
-        n_envs=n_envs
-    )
-
-    # --- Step 3: Define the RecurrentPPO Model ---
-    # With sb3-contrib, you pass the policy name string 'MlpLstmPolicy'
-    model = RecurrentPPO(
-        "MlpLstmPolicy",
-        vec_env,
-        n_steps=1024,
-        batch_size=64,
-        n_epochs=10,
-        gamma=0.99,
-        learning_rate=3e-4,
-        clip_range=0.2,
+    model = PPO(
+        policy="MultiInputPolicy",  # Dict observation -> MultiInputPolicy
+        env=env,
         verbose=1,
-        tensorboard_log=log_dir
+        tensorboard_log=tb_root,   # SB3 will create tb_root/PPO_<n>/
     )
 
-    # --- Step 4: Train the Model ---
-    print(f"--- Starting Training ---")
-    print(f"All artifacts will be saved in: {log_dir}")
-    
-    callback = PredictorTensorboardCallback()
-    model.learn(total_timesteps=timesteps, callback=callback, progress_bar=True)
-    print("--- Training Complete ---")
+    cap = _CaptureLogDir()
+    tb_cb = InfoToTB()
+    try:
+        model.learn(total_timesteps=total_timesteps, callback=CallbackList([cap, tb_cb]))
+    except Exception:
+        traceback.print_exc()
+        raise
+    finally:
+        env.close()
 
-    # --- Step 5: Save the Final Model ---
-    model.save(model_save_path)
-    print(f"Model saved to {model_save_path}")
-    vec_env.close()
-    
-    return log_dir # Return the path to the run folder for evaluation
+    # The exact SB3 run directory (e.g., .../PPO_3)
+    run_dir = cap.run_dir or getattr(model.logger, "dir", tb_root)
+    model_path = save(model, run_dir)
+    return model_path, run_dir
 
-def train_all_predictors(timesteps: int = 1_000_000):
+def evaluate(
+    experiment_folder: str,
+    mode: str = "static",
+    use_planner_overlay: bool = True,
+    show_miners: bool = False,
+    show_predicted: bool = True,
+    rollout_steps: int = 300,
+    render=True
+):
     """
-    Trains multiple RecurrentPPO predictor models using the current battery
-    prediction setup. Each configuration defines the grid, number of miners, etc.
+    Find latest PPO_<n>/model.zip under SAVE_DIR/<experiment_folder>, load it,
+    and run a short rollout (rendered if render=True).
     """
-    def attach_run_folder_names(model_configs):
-        for config in model_configs:
-            grid_name = os.path.splitext(config["grid_file"])[0]
-            folder_parts = [grid_name, f"{config['n_miners']}miners"]
-            if config.get("tag"):
-                folder_parts.append(config["tag"])
-            config["experiment_folder_name"] = "_".join(folder_parts)
+    model_path = latest_ppo_model_path(experiment_folder)
+    run_dir, run_name = latest_ppo_run(experiment_folder, require_model=True)
 
-    models_to_train = [
-        {
-            "grid_file": "mine_20x20.txt",
-            "n_miners": 5,
-        },
-        {
-            "grid_file": "mine_30x30.txt",
-            "n_miners": 10,
-        },
-        {
-            "grid_file": "mine_50x50.txt",
-            "n_miners": 20,
-        },
-        {
-            "grid_file": "mine_100x100.txt",
-            "n_miners": 40,
-        },
-    ]
-
-    attach_run_folder_names(models_to_train)
-
-    for config in models_to_train:
-        print(f"\n===== Training Predictor: {config['experiment_folder_name']} =====")
-        run_path = train_predictor_model(
-            grid_file=config["grid_file"],
-            n_miners=config["n_miners"],
-            timesteps=timesteps,
-            experiment_folder_name=config["experiment_folder_name"],
-            n_envs=4
+    eval_env = DummyVecEnv([
+        _make_env_thunk(
+            experiment_folder, mode, use_planner_overlay,
+            show_miners, show_predicted, render=render
         )
-        print(f"===== Finished: {run_path} =====")
+    ])
+    try:
+        print(f"[INFO] Loading {model_path} (run {run_name})")
+        model = PPO.load(model_path, env=eval_env, device="auto", print_system_info=False)
+        obs = eval_env.reset()
+        steps = 0
+        while steps < rollout_steps:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, rewards, dones, infos = eval_env.step(action)
+            steps += 1
+            if dones[0]:
+                obs = eval_env.reset()
+    finally:
+        eval_env.close()
 
-# ===================================================================
-# --- Evaluation Functions for the Predictor ---
-# ===================================================================
-
-def evaluate_predictor(run_path: str, grid_file: str, n_miners: int, eval_steps: int = 500):
+##==============================================================
+## Training Test Functions
+##==============================================================
+def train_junk(
+    experiment_folder: str,
+    timesteps: int = 1_000,
+    eval_steps: int = 200,
+    mode: str = "static",
+    use_planner_overlay: bool = True,
+    show_miners: bool = False,
+    show_predicted: bool = True,
+    render=True
+):
     """
-    Loads and evaluates a single trained predictor model from its run folder.
+    Fast smoke test: train a tiny PPO for a few steps and immediately evaluate.
+    Saves the model in the SB3-created PPO_<n> folder for this experiment.
+
+    Returns:
+        (model_path, run_dir)
     """
-    model_path = os.path.join(run_path, "model.zip")
-    print(f"\n--- Evaluating Predictor Model: {os.path.basename(run_path)} from experiment {os.path.basename(os.path.dirname(run_path))} ---")
-    if not os.path.exists(model_path):
-        print(f"Error: model.zip not found in {run_path}")
-        return
+    # 1) quick train + save (train() already saves the model)
+    model_path, run_dir = train(
+        experiment_folder=experiment_folder,
+        total_timesteps=timesteps,
+        mode=mode,
+        use_planner_overlay=use_planner_overlay,
+        show_miners=show_miners,
+        show_predicted=show_predicted,
+        render=False  # typically keep training headless
+    )
+    print(f"[quick_junk_run] trained + saved to: {model_path}")
 
-    eval_env = BatteryPredictorEnv(grid_file=grid_file, n_miners=n_miners)
-    # Use RecurrentPPO to load the model
-    model = RecurrentPPO.load(model_path, env=eval_env)
-
-    all_predictions, all_actuals = [], []
-    obs, _ = eval_env.reset()
-    # For RecurrentPPO, we need to manage the LSTM state and done signals
-    lstm_states = None
-    dones = np.zeros((1,)) # Start with a single environment not being done
-    
-    for step in range(eval_steps):
-        action, lstm_states = model.predict(
-            obs, state=lstm_states, episode_start=dones, deterministic=True
-        )
-        obs, reward, terminated, truncated, info = eval_env.step(action)
-        dones[0] = terminated or truncated
-        
-        predicted_batteries = action * 100.0
-        actual_batteries = np.array(list(eval_env.simulator.sensor_batteries.values()))
-        all_predictions.append(predicted_batteries)
-        all_actuals.append(actual_batteries)
-        
-        if dones[0]:
-            obs, _ = eval_env.reset()
-            # The LSTM state is reset automatically when episode_start is True
-    eval_env.close()
-
-    predictions_arr, actuals_arr = np.array(all_predictions), np.array(all_actuals)
-    mae = np.mean(np.abs(predictions_arr - actuals_arr))
-    rmse = np.sqrt(np.mean((predictions_arr - actuals_arr)**2))
-    epsilon = 1e-12
-    mape = np.mean(np.abs((actuals_arr - predictions_arr) / (actuals_arr + epsilon))) * 100
-
-    print(f"  -> Mean Absolute Error (MAE): {mae:.3f}%")
-    print(f"  -> Root Mean Squared Error (RMSE): {rmse:.3f}%")
-    print(f"  -> Mean Absolute Percentage Error (MAPE): {mape:.3f}%")
-
-    # Plotting Results and saving them to the run folder
-    plt.figure(figsize=(15, 8))
-    for i in range(min(4, eval_env.num_sensors)):
-        plt.subplot(2, 2, i + 1)
-        plt.plot(actuals_arr[:, i], label='Actual Battery', color='blue')
-        plt.plot(predictions_arr[:, i], label='Predicted Battery', color='red', linestyle='--')
-        plt.title(f'Sensor #{i+1} Prediction vs. Actual')
-        plt.xlabel('Timestep'); plt.ylabel('Battery %')
-        plt.legend(); plt.grid(True)
-    plt.tight_layout()
-    
-    # Create a 'plots' subdirectory inside the run folder
-    plot_dir = os.path.join(run_path, "plots")
-    os.makedirs(plot_dir, exist_ok=True)
-    plot_save_path = os.path.join(plot_dir, "evaluation_plot.png")
-    
-    plt.savefig(plot_save_path)
-    print(f"  -> Evaluation plot saved to: {plot_save_path}")
-    plt.close()
-
-def evaluate_all_predictors(base_dir="saved_experiments/predictor_experiments", eval_steps=500):
-    """
-    Finds and evaluates all saved predictor models, parsing config from their
-    experiment folder names (e.g., 'mine_30x30_15miners_baseline').
-    """
-    print(f"\n--- Evaluating All Predictor Models in: {base_dir} ---")
-    if not os.path.exists(base_dir):
-        print(f"Directory not found: {base_dir}")
-        return
-
-    for experiment_name in os.listdir(base_dir):
-        experiment_path = os.path.join(base_dir, experiment_name)
-        if not os.path.isdir(experiment_path):
-            continue
-        
-        for run_name in os.listdir(experiment_path):
-            run_path = os.path.join(experiment_path, run_name)
-            if not os.path.isdir(run_path) or not os.path.exists(os.path.join(run_path, "model.zip")):
-                continue
-
-            try:
-                parts = experiment_name.split('_')
-                grid_file = f"{parts[0]}_{parts[1]}.txt"
-                miners_part = [p for p in parts if "miners" in p][0]
-                n_miners = int(re.search(r'(\d+)miners', miners_part).group(1))
-                
-                evaluate_single_predictor(
-                    run_path=run_path,
-                    grid_file=grid_file,
-                    n_miners=n_miners,
-                    eval_steps=eval_steps,
-                )
-                
-            except Exception as e:
-                print(f"Could not parse or evaluate run '{run_name}' in experiment '{experiment_name}'. Error: {e}")
-                continue
+    # 2) quick eval (loads latest PPO_<n>/model.zip automatically)
+    evaluate(
+        experiment_folder=experiment_folder,
+        mode=mode,
+        use_planner_overlay=use_planner_overlay,
+        show_miners=show_miners,
+        show_predicted=show_predicted,
+        rollout_steps=eval_steps,
+        render=render
+    )
+    print(f"[quick_junk_run] eval complete for run dir: {run_dir}")
+    return model_path, run_dir
