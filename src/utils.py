@@ -4,6 +4,7 @@ import os
 import numpy as np
 import math
 import re
+from datetime import datetime
 
 from src.constants import *
 
@@ -417,3 +418,45 @@ def parse_experiment_data(experiment_folder):
             "latest_run": runs[0] if runs else None,
         }
     }
+
+_PPO_RE = re.compile(r"^PPO_(\d+)$")
+
+def latest_ppo_run(experiment_folder, require_model=True):
+    """
+    Return (run_dir, run_name) for the highest-numbered PPO_<n> under
+    SAVE_DIR/<experiment_folder>. If require_model=True, only consider
+    runs that contain model.zip. Tiebreak by modification time.
+    """
+    base = os.path.join(SAVE_DIR, experiment_folder)
+    if not os.path.isdir(base):
+        raise FileNotFoundError(f"Experiment folder not found: {base}")
+
+    best = None  # (n, mtime, run_name, run_dir)
+    for name in os.listdir(base):
+        m = _PPO_RE.match(name)
+        if not m:
+            continue
+        run_dir = os.path.join(base, name)
+        if not os.path.isdir(run_dir):
+            continue
+        if require_model and not os.path.isfile(os.path.join(run_dir, "model.zip")):
+            continue
+        n = int(m.group(1))
+        mt = os.path.getmtime(run_dir)
+        if best is None or (n, mt) > (best[0], best[1]):
+            best = (n, mt, name, run_dir)
+
+    if best is None:
+        raise FileNotFoundError(
+            f"No PPO_<n> runs found under {base}"
+            + (" with model.zip" if require_model else "")
+        )
+
+    return best[3], best[2]  # (run_dir, run_name)
+
+def latest_ppo_model_path(experiment_folder):
+    """
+    Return the absolute path to model.zip in the latest PPO_<n> run.
+    """
+    run_dir, _ = latest_ppo_run(experiment_folder, require_model=True)
+    return os.path.join(run_dir, "model.zip")

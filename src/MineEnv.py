@@ -1,4 +1,4 @@
-# src/MineEnv.py
+# MineEnv.py
 
 import os
 import json
@@ -11,7 +11,7 @@ from .MineSimulator import MineSimulator
 from .DStarLite.DStarLite import DStarLite
 from .constants import SAVE_DIR, MOVE_TO_ACTION_MAP, COST_TABLE
 from .utils import parse_experiment_data
-#from .reward_functions import compute_reward  # must return (reward: float, subrewards: dict)
+# from .reward_functions import compute_reward  # must return (reward: float, subrewards: dict)
 
 #===============================
 # Helpers
@@ -25,15 +25,7 @@ def sensor_cost_tier(batt):
     """
     Map raw battery (0–100) to movement penalty via COST_TABLE with clamping.
     """
-    try:
-        ib = int(batt)
-    except Exception:
-        ib = 0
-    if ib < 0:
-        ib = 0
-    elif ib > 100:
-        ib = 100
-    return float(COST_TABLE[ib])
+    return COST_TABLE[int(batt)]
 
 
 def _sorted_allowed_moves():
@@ -226,10 +218,13 @@ class MineEnv(gym.Env):
         self.last_obstacle_hit = False
         self.last_reached_goal = False
 
+        # Info with initial battery on current cell
+        curr_batt = self._current_cell_battery(state, agent_rc)
         obs = self._make_obs(agent_rc, state.get("sensor_batteries", {}))
         info = {
             "sensor_batteries": state.get("sensor_batteries", {}),
             "distance_to_goal": float(self._prev_goal_dist),
+            "current_battery": float(curr_batt) if curr_batt is not None else None,
             "terminated": False,
             "truncated": False,
         }
@@ -274,7 +269,7 @@ class MineEnv(gym.Env):
         if s.get("obstacle_hit", False):
             self._obstacle_hits += 1
 
-        # Battery→cost map + (optional) replan for overlay only
+        # Battery->cost map + (optional) replan for overlay only
         self.current_start_xy = (agent_rc[1], agent_rc[0])  # (c, r)
         batt_map = self._build_batt_map_and_update_costs(s)
         if self.use_planner_overlay and self.pathfinder is not None:
@@ -289,9 +284,8 @@ class MineEnv(gym.Env):
 
         # --------- delegate reward to reward_functions ---------
         try:
-            reward, sub = 0, 0 #compute_reward(self)
-            if sub is None:
-                sub = {}
+            # reward, sub = compute_reward(self)
+            reward, sub = 0.0, {}
         except Exception as e:
             # Safe fallback: no crash during training
             reward = 0.0
@@ -308,12 +302,14 @@ class MineEnv(gym.Env):
         if self.render_enabled and self.simulator.render_mode == "human":
             self._render_frame(batt_map)
 
-        # Obs + info
+        # Obs + info (includes current_battery for TB)
+        curr_batt = self._current_cell_battery(s, agent_rc)
         obs = self._make_obs(agent_rc, s.get("sensor_batteries", {}))
         info = {
             "sensor_batteries": s.get("sensor_batteries", {}),
             "current_reward": float(reward),
             "distance_to_goal": float(d_now),
+            "current_battery": float(curr_batt) if curr_batt is not None else None,
             "terminated": bool(terminated),
             "truncated": bool(truncated),
             "subrewards": sub,
@@ -499,3 +495,19 @@ class MineEnv(gym.Env):
                 self.render_enabled = False  # window closed by user
         except Exception:
             self.render_enabled = False
+
+    def _current_cell_battery(self, state_dict, agent_rc):
+        """
+        Battery (float) for the sensor connected to the agent's current cell.
+        agent_rc is (r, c); cell_to_sensor expects (x, y) == (c, r).
+        """
+        try:
+            cell_xy = (agent_rc[1], agent_rc[0])  # (x, y)
+            sensor_pos = self.simulator.cell_to_sensor.get(cell_xy)
+            if sensor_pos is None:
+                return None
+            batts = state_dict.get("sensor_batteries", {})
+            val = batts.get(sensor_pos)
+            return float(val) if val is not None else None
+        except Exception:
+            return None
