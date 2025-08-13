@@ -93,10 +93,10 @@ def train(
     ])
 
     model = PPO(
-        policy="MultiInputPolicy",  # Dict observation -> MultiInputPolicy
+        policy="MlpPolicy",
         env=env,
         verbose=1,
-        tensorboard_log=tb_root,   # SB3 will create tb_root/PPO_<n>/
+        tensorboard_log=tb_root,
     )
 
     cap = _CaptureLogDir()
@@ -120,7 +120,7 @@ def evaluate(
     use_planner_overlay: bool = True,
     show_miners: bool = False,
     show_predicted: bool = True,
-    rollout_steps: int = 300,
+    total_timesteps: int = 300,
     render=True
 ):
     """
@@ -141,7 +141,7 @@ def evaluate(
         model = PPO.load(model_path, env=eval_env, device="auto", print_system_info=False)
         obs = eval_env.reset()
         steps = 0
-        while steps < rollout_steps:
+        while steps < total_timesteps:
             action, _ = model.predict(obs, deterministic=True)
             obs, rewards, dones, infos = eval_env.step(action)
             steps += 1
@@ -156,7 +156,7 @@ def evaluate(
 def train_junk(
     experiment_folder: str,
     timesteps: int = 1_000,
-    eval_steps: int = 200,
+    eval_steps: int = 1_000,
     mode: str = "static",
     use_planner_overlay: bool = True,
     show_miners: bool = False,
@@ -189,7 +189,7 @@ def train_junk(
         use_planner_overlay=use_planner_overlay,
         show_miners=show_miners,
         show_predicted=show_predicted,
-        rollout_steps=eval_steps,
+        total_timesteps=eval_steps,
         render=render
     )
     print(f"[quick_junk_run] eval complete for run dir: {run_dir}")

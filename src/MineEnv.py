@@ -22,9 +22,7 @@ def cheb(a, b):
 
 
 def sensor_cost_tier(batt):
-    """
-    Map raw battery (0–100) to movement penalty via COST_TABLE with clamping.
-    """
+    """Map raw battery (0–100) to movement penalty via COST_TABLE with clamping."""
     return COST_TABLE[int(batt)]
 
 
@@ -45,9 +43,10 @@ class MineEnv(gym.Env):
     Gym environment integrating MineSimulator with a D* Lite cost map derived from sensor batteries.
 
     Modes:
-      - 'static'        : use current sensor batteries as-is
-      - 'constant_rate' : decrease per-sensor battery at Chebyshev ETA using
-                          rates from avg_sensor_depletion.json (in SAVE_DIR/<exp>/)
+      - 'constant_rate' : uses per-sensor average depletion rates collected from runs
+                          (avg_sensor_depletion.json under SAVE_DIR/<exp>/).
+      - 'static'        : uses a single global predicted depletion rate (the mean of the
+                          collected per-sensor averages) applied to all sensors equally.
 
     Reward is delegated to reward_functions.compute_reward(env) -> (reward, subrewards).
 
@@ -70,11 +69,10 @@ class MineEnv(gym.Env):
         show_miners=False,
         show_predicted=True,
         mode="static",              # 'static' | 'constant_rate'
-        # The following three are kept as public knobs for your reward fn to read:
         step_penalty=-0.01,
         goal_bonus=10.0,
         collision_penalty=-1.0,
-        use_planner_overlay=False   # keep D* path for rendering only
+        use_planner_overlay=False
     ):
         super().__init__()
 
@@ -98,16 +96,15 @@ class MineEnv(gym.Env):
         self.show_miners = bool(show_miners)
         self.show_predicted = bool(show_predicted)
         self.mode = mode
-        # expose penalties/bonuses for reward_functions to read
         self.step_penalty = float(step_penalty)
         self.goal_bonus = float(goal_bonus)
         self.collision_penalty = float(collision_penalty)
         self.use_planner_overlay = bool(use_planner_overlay)
 
         # --- manual depletion collection state ---
-        self._delta_sums = {}         # {(r,c): sum of drops}
-        self._delta_counts = {}       # {(r,c): count of contributing steps}
-        self._prev_sensor_batts = {}  # {(r,c): last seen value}
+        self._delta_sums = {}
+        self._delta_counts = {}
+        self._prev_sensor_batts = {}
 
         render_mode = 'human' if self.render_enabled else None
 
@@ -122,20 +119,31 @@ class MineEnv(gym.Env):
         # Stable sensor ordering
         self.sensor_index = {pos: i for i, pos in enumerate(self.simulator.sensor_positions)}
 
-        # Constant-rate data (prefer parsed map from utils; fallback to file)
-        self.constant_rates = {}
-        if self.mode == "constant_rate":
-            if arts.get("avg_depletion_map"):
-                self.constant_rates = dict(arts["avg_depletion_map"])  # {(r,c): rate}
+        # ================== Depletion rate sources ==================
+        self.constant_rates = {}   # {(r,c): rate}
+        self.global_rate = 0.0     # mean rate (for 'static')
+
+        if arts.get("avg_depletion_map"):
+            self.constant_rates = dict(arts["avg_depletion_map"])
+            if "avg_depletion_mean" in arts and isinstance(arts["avg_depletion_mean"], (int, float)):
+                self.global_rate = float(arts["avg_depletion_mean"])
             else:
-                path = paths["avg_depletion_json"]
-                if not os.path.isfile(path):
-                    raise RuntimeError(f"Average depletion file not found at {path}")
-                with open(path, "r") as f:
+                vals = list(self.constant_rates.values())
+                self.global_rate = float(np.mean(vals)) if len(vals) > 0 else 0.0
+        else:
+            avg_json = paths.get("avg_depletion_json")
+            if avg_json and os.path.isfile(avg_json):
+                with open(avg_json, "r") as f:
                     data_json = json.load(f)
                 for k, v in data_json.items():
                     r, c = map(int, k.split(","))
                     self.constant_rates[(r, c)] = float(v)
+                vals = list(self.constant_rates.values())
+                self.global_rate = float(np.mean(vals)) if len(vals) > 0 else 0.0
+            else:
+                self.constant_rates = {}
+                self.global_rate = 0.0
+        # ============================================================
 
         # Planner for overlay / cost plumbing
         self.pathfinder = None
@@ -157,21 +165,19 @@ class MineEnv(gym.Env):
         self.last_obstacle_hit = False
         self.last_reached_goal = False
 
-        # Action space derived from your mapping
-        self._ACTIONS = _sorted_allowed_moves()
-        if not self._ACTIONS:
-            self._ACTIONS = [(0, 0)]
+        # Action space
+        self._ACTIONS = _sorted_allowed_moves() or [(0, 0)]
         self.action_space = spaces.Discrete(len(self._ACTIONS))
 
-        # Observation space — compact vector:
+        # ---------- Observation: flat vector Box ----------
         # vec = [dx_goal_norm, dy_goal_norm, d_goal_norm, batt_min, batt_mean, batt_max]
-        self.observation_space = spaces.Dict({
-            "vec": spaces.Box(
-                low=np.array([-1, -1, 0, 0, 0, 0], dtype=np.float32),
-                high=np.array([ 1,  1, 1, 100, 100, 100], dtype=np.float32),
-                dtype=np.float32
-            )
-        })
+        self.observation_space = spaces.Box(
+            low=np.array([-1, -1, 0, 0, 0, 0], dtype=np.float32),
+            high=np.array([ 1,  1, 1, 100, 100, 100], dtype=np.float32),
+            dtype=np.float32,
+            shape=(6,)
+        )
+        # temporary bad observation space
 
     # ========================= Gym API =========================
     def reset(self, *, seed=None, options=None):
@@ -218,7 +224,6 @@ class MineEnv(gym.Env):
         self.last_obstacle_hit = False
         self.last_reached_goal = False
 
-        # Info with initial battery on current cell
         curr_batt = self._current_cell_battery(state, agent_rc)
         obs = self._make_obs(agent_rc, state.get("sensor_batteries", {}))
         info = {
@@ -269,7 +274,7 @@ class MineEnv(gym.Env):
         if s.get("obstacle_hit", False):
             self._obstacle_hits += 1
 
-        # Battery->cost map + (optional) replan for overlay only
+        # Battery→cost map + (optional) replan for overlay only
         self.current_start_xy = (agent_rc[1], agent_rc[0])  # (c, r)
         batt_map = self._build_batt_map_and_update_costs(s)
         if self.use_planner_overlay and self.pathfinder is not None:
@@ -287,7 +292,6 @@ class MineEnv(gym.Env):
             # reward, sub = compute_reward(self)
             reward, sub = 0.0, {}
         except Exception as e:
-            # Safe fallback: no crash during training
             reward = 0.0
             sub = {"reward_fn_error": str(e)}
 
@@ -332,7 +336,6 @@ class MineEnv(gym.Env):
         return obs, float(reward), bool(terminated), bool(truncated), info
 
     def render(self):
-        # Rendering is driven inside step() for perf; keep Gym signature.
         return None
 
     def close(self):
@@ -431,7 +434,7 @@ class MineEnv(gym.Env):
         vec = np.array([dx, dy, d, bmin, bmean, bmax], dtype=np.float32)
         vec[0:2] = np.clip(vec[0:2], -1.0, 1.0)
         vec[2] = np.clip(vec[2], 0.0, 1.0)
-        return {"vec": vec}
+        return vec  # <---- flat Box obs (shape (6,), float32)
 
     def _build_batt_map_and_update_costs(self, state):
         """Build per-cell predicted battery map and mirror into cost_map via tiers."""
@@ -449,16 +452,20 @@ class MineEnv(gym.Env):
         batt_map = np.zeros((H, W), dtype=np.float32)
 
         if self.mode == "constant_rate":
+            # Per-sensor collected averages
             rates = self.constant_rates
             for y, x in self.simulator.free_cells:
                 sensor = self.simulator.cell_to_sensor[(x, y)]
-                rate = float(rates.get(sensor, 0.0))
+                rate = float(rates.get(sensor, self.global_rate))  # fallback to global mean if missing
                 curr = batts_norm[self.sensor_index[sensor]] * 100.0
                 batt_map[y, x] = max(curr - rate * D[y, x], 0.0)
-        else:  # 'static'
+        else:
+            # STATIC: same predicted depletion rate for all sensors (global mean)
+            g_rate = float(self.global_rate)
             for y, x in self.simulator.free_cells:
                 sensor = self.simulator.cell_to_sensor[(x, y)]
-                batt_map[y, x] = float(batts_norm[self.sensor_index[sensor]] * 100.0)
+                curr = batts_norm[self.sensor_index[sensor]] * 100.0
+                batt_map[y, x] = max(curr - g_rate * D[y, x], 0.0)
 
         # Reflect into cost_map & update D*
         dirty = []
