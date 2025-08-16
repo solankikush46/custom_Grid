@@ -7,9 +7,13 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+try:
+    from dstar_lite import DStarLite
+except Exception:
+    from .DStarLite.DStarLite import DStarLite
+
 from .MineSimulator import MineSimulator
-from .DStarLite.DStarLite import DStarLite
-from .constants import SAVE_DIR, MOVE_TO_ACTION_MAP, COST_TABLE
+from .constants import *
 from .utils import parse_experiment_data
 # from .reward_functions import compute_reward  # must return (reward: float, subrewards: dict)
 
@@ -72,7 +76,9 @@ class MineEnv(gym.Env):
         step_penalty=-0.01,
         goal_bonus=10.0,
         collision_penalty=-1.0,
-        use_planner_overlay=False
+        use_planner_overlay=False,
+        is_cnn: bool = False,
+        is_att: bool = False,
     ):
         super().__init__()
 
@@ -100,6 +106,8 @@ class MineEnv(gym.Env):
         self.goal_bonus = float(goal_bonus)
         self.collision_penalty = float(collision_penalty)
         self.use_planner_overlay = bool(use_planner_overlay)
+        self.is_cnn = bool(is_cnn or is_att)
+        self.is_att = bool(is_att)
 
         # --- manual depletion collection state ---
         self._delta_sums = {}
@@ -115,6 +123,9 @@ class MineEnv(gym.Env):
             render_mode=render_mode,
             show_predicted=self.show_predicted
         )
+
+        H = self.simulator.n_rows
+        W = self.simulator.n_cols
 
         # Stable sensor ordering
         self.sensor_index = {pos: i for i, pos in enumerate(self.simulator.sensor_positions)}
@@ -169,14 +180,19 @@ class MineEnv(gym.Env):
         self._ACTIONS = _sorted_allowed_moves() or [(0, 0)]
         self.action_space = spaces.Discrete(len(self._ACTIONS))
 
-        # ---------- Observation: flat vector Box ----------
-        # vec = [dx_goal_norm, dy_goal_norm, d_goal_norm, batt_min, batt_mean, batt_max]
-        self.observation_space = spaces.Box(
-            low=np.array([-1, -1, 0, 0, 0, 0], dtype=np.float32),
-            high=np.array([ 1,  1, 1, 100, 100, 100], dtype=np.float32),
-            dtype=np.float32,
-            shape=(6,)
-        )
+        if self.is_cnn:
+            # 5 channels: agent, obstacle|base, sensor, sensor_batt_norm, goal
+            self.observation_space = spaces.Box(
+                low=0.0, high=1.0, shape=(5, H, W), dtype=np.float32
+            )
+        else:
+            # original flat vector space (kept as before) :contentReference[oaicite:1]{index=1}
+            self.observation_space = spaces.Box(
+                low=np.array([-1, -1, 0, 0, 0, 0], dtype=np.float32),
+                high=np.array([ 1,  1, 1, 100, 100, 100], dtype=np.float32),
+                dtype=np.float32,
+                shape=(6,),
+            )
         # temporary bad observation space
 
     # ========================= Gym API =========================
@@ -225,7 +241,12 @@ class MineEnv(gym.Env):
         self.last_reached_goal = False
 
         curr_batt = self._current_cell_battery(state, agent_rc)
-        obs = self._make_obs(agent_rc, state.get("sensor_batteries", {}))
+
+        if self.is_cnn:
+            obs = self._make_obs_cnn(agent_rc, state.get("sensor_batteries", {}))
+        else:
+            obs = self._make_obs(agent_rc, state.get("sensor_batteries", {}))  # existing flat
+
         info = {
             "sensor_batteries": state.get("sensor_batteries", {}),
             "distance_to_goal": float(self._prev_goal_dist),
@@ -308,7 +329,10 @@ class MineEnv(gym.Env):
 
         # Obs + info (includes current_battery for TB)
         curr_batt = self._current_cell_battery(s, agent_rc)
-        obs = self._make_obs(agent_rc, s.get("sensor_batteries", {}))
+        if self.is_cnn:
+            obs = self._make_obs_cnn(agent_rc, s.get("sensor_batteries", {}))
+        else:
+            obs = self._make_obs(agent_rc, s.get("sensor_batteries", {}))      # existing flat
         info = {
             "sensor_batteries": s.get("sensor_batteries", {}),
             "current_reward": float(reward),
@@ -518,3 +542,41 @@ class MineEnv(gym.Env):
             return float(val) if val is not None else None
         except Exception:
             return None
+
+    def _make_obs_cnn(self, agent_rc, sensor_batteries: dict) -> np.ndarray:
+        """
+        Build (5, H, W) observation with binary indicator maps plus a battery map.
+        Channels:
+        0: agent presence (0/1)
+        1: obstacle OR base-station presence (0/1)
+        2: sensor presence (0/1)
+        3: sensor battery level (0..1) at sensor cells else 0
+        4: goal presence (0/1)
+        """
+        H, W = self.simulator.n_rows, self.simulator.n_cols
+        obs = np.zeros((5, H, W), dtype=np.float32)
+
+        # 0) agent
+        ar, ac = agent_rc
+        obs[0, ar, ac] = 1.0
+
+        # 1) obstacles OR base stations
+        # obstacles come from static_grid == OBSTACLE_ID (MineSimulator builds this) :contentReference[oaicite:2]{index=2}
+        static = self.simulator.static_grid
+        obs[1, static == OBSTACLE_ID] = 1.0
+        # base stations are explicit positions list :contentReference[oaicite:3]{index=3}
+        for (r, c) in self.simulator.base_station_positions:
+            obs[1, r, c] = 1.0
+
+        # 2) sensor presence & 3) sensor battery (normalized)
+        for pos in self.simulator.sensor_positions:
+            r, c = pos
+            obs[2, r, c] = 1.0
+            batt = float(sensor_batteries.get(pos, 0.0)) / 100.0
+            obs[3, r, c] = np.clip(batt, 0.0, 1.0)
+
+        # 4) goals
+        for (r, c) in self.simulator.goal_positions:
+            obs[4, r, c] = 1.0
+
+        return obs
