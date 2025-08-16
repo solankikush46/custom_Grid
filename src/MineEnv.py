@@ -2,24 +2,19 @@
 
 import os
 import json
-
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-try:
-    from dstar_lite import DStarLite
-except Exception:
-    from .DStarLite.DStarLite import DStarLite
-
+from .DStarLite.DStarLite import DStarLite
 from .MineSimulator import MineSimulator
 from .constants import *
 from .utils import parse_experiment_data
-# from .reward_functions import compute_reward  # must return (reward: float, subrewards: dict)
+from .reward_functions import *  
 
-#===============================
+# ===============================
 # Helpers
-#===============================
+# ===============================
 def cheb(a, b):
     """Chebyshev distance between two (r, c) cells."""
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
@@ -39,9 +34,10 @@ def _sorted_allowed_moves():
     items.sort(key=lambda it: (it[0][0], it[0][1]))  # stable order
     return [drc for drc, _ in items]
 
-##==============================================================
-## MineEnv Class
-##==============================================================
+
+# ===============================
+# MineEnv
+# ===============================
 class MineEnv(gym.Env):
     """
     Gym environment integrating MineSimulator with a D* Lite cost map derived from sensor batteries.
@@ -51,13 +47,6 @@ class MineEnv(gym.Env):
                           (avg_sensor_depletion.json under SAVE_DIR/<exp>/).
       - 'static'        : uses a single global predicted depletion rate (the mean of the
                           collected per-sensor averages) applied to all sensors equally.
-
-    Reward is delegated to reward_functions.compute_reward(env) -> (reward, subrewards).
-
-    Manual depletion collection:
-      - Call depletion_reset() before a run you want to measure.
-      - On each step, call depletion_update_from_info(info) or depletion_update(...).
-      - Call depletion_save() to write JSONs under SAVE_DIR/<experiment>/.
 
     Notes:
       - No step-based truncation; episodes end only when the guided miner reaches any goal.
@@ -73,12 +62,11 @@ class MineEnv(gym.Env):
         show_miners=False,
         show_predicted=True,
         mode="static",              # 'static' | 'constant_rate'
-        step_penalty=-0.01,
-        goal_bonus=10.0,
-        collision_penalty=-1.0,
         use_planner_overlay=False,
         is_cnn: bool = False,
         is_att: bool = False,
+        reward_fn=reward_d,         # default hook (can pass any reward_* callable)
+        manual_control=False
     ):
         super().__init__()
 
@@ -102,14 +90,12 @@ class MineEnv(gym.Env):
         self.show_miners = bool(show_miners)
         self.show_predicted = bool(show_predicted)
         self.mode = mode
-        self.step_penalty = float(step_penalty)
-        self.goal_bonus = float(goal_bonus)
-        self.collision_penalty = float(collision_penalty)
         self.use_planner_overlay = bool(use_planner_overlay)
         self.is_cnn = bool(is_cnn or is_att)
         self.is_att = bool(is_att)
+        self.reward_fn = reward_fn if callable(reward_fn) else reward_d
 
-        # --- manual depletion collection state ---
+        # --- manual depletion collection state (optional external use) ---
         self._delta_sums = {}
         self._delta_counts = {}
         self._prev_sensor_batts = {}
@@ -121,7 +107,8 @@ class MineEnv(gym.Env):
             grid_file=grid_file,
             n_miners=n_miners,
             render_mode=render_mode,
-            show_predicted=self.show_predicted
+            show_predicted=self.show_predicted,
+            manual_control=manual_control
         )
 
         H = self.simulator.n_rows
@@ -147,7 +134,7 @@ class MineEnv(gym.Env):
                 with open(avg_json, "r") as f:
                     data_json = json.load(f)
                 for k, v in data_json.items():
-                    r, c = map(int, k.split(","))
+                    r, c = map(int, k.split(","))  # keys like "r,c"
                     self.constant_rates[(r, c)] = float(v)
                 vals = list(self.constant_rates.values())
                 self.global_rate = float(np.mean(vals)) if len(vals) > 0 else 0.0
@@ -170,13 +157,7 @@ class MineEnv(gym.Env):
         self._obstacle_hits = 0
         self._prev_goal_dist = 0
 
-        # Per-step signals (reward fn can read these)
-        self.last_distance_to_goal = 0.0
-        self.last_progress = 0.0
-        self.last_obstacle_hit = False
-        self.last_reached_goal = False
-
-        # Action space
+        # Action/Observation spaces
         self._ACTIONS = _sorted_allowed_moves() or [(0, 0)]
         self.action_space = spaces.Discrete(len(self._ACTIONS))
 
@@ -186,14 +167,16 @@ class MineEnv(gym.Env):
                 low=0.0, high=1.0, shape=(5, H, W), dtype=np.float32
             )
         else:
-            # original flat vector space (kept as before) :contentReference[oaicite:1]{index=1}
             self.observation_space = spaces.Box(
                 low=np.array([-1, -1, 0, 0, 0, 0], dtype=np.float32),
                 high=np.array([ 1,  1, 1, 100, 100, 100], dtype=np.float32),
                 dtype=np.float32,
                 shape=(6,),
             )
-        # temporary bad observation space
+
+        # Exposed value for reward adapters (old API compatibility)
+        self.current_battery_level = None
+        self._agent_rc_after_step = None
 
     # ========================= Gym API =========================
     def reset(self, *, seed=None, options=None):
@@ -209,6 +192,7 @@ class MineEnv(gym.Env):
         # Reset sim
         state = self.simulator.reset()
         agent_rc = tuple(state["guided_miner_pos"])
+        self._agent_rc_after_step = agent_rc
         self.path_history = [agent_rc]
 
         # Recompute normalization in case dims changed
@@ -233,24 +217,22 @@ class MineEnv(gym.Env):
         if self.use_planner_overlay and self.pathfinder is not None:
             self._replan_from(agent_rc)
 
-        # Initial obs
-        self._prev_goal_dist = self._closest_goal_dist(agent_rc)
-        self.last_distance_to_goal = float(self._prev_goal_dist)
-        self.last_progress = 0.0
-        self.last_obstacle_hit = False
-        self.last_reached_goal = False
+        # Set current battery for adapters/info
+        self.current_battery_level = self._current_cell_battery(state, agent_rc)
 
-        curr_batt = self._current_cell_battery(state, agent_rc)
-
+        # Obs
         if self.is_cnn:
             obs = self._make_obs_cnn(agent_rc, state.get("sensor_batteries", {}))
         else:
-            obs = self._make_obs(agent_rc, state.get("sensor_batteries", {}))  # existing flat
+            obs = self._make_obs(agent_rc, state.get("sensor_batteries", {}))
+
+        # Distance for info only
+        d0 = self._closest_goal_dist(agent_rc)
 
         info = {
             "sensor_batteries": state.get("sensor_batteries", {}),
-            "distance_to_goal": float(self._prev_goal_dist),
-            "current_battery": float(curr_batt) if curr_batt is not None else None,
+            "distance_to_goal": float(d0),
+            "current_battery": float(self.current_battery_level) if self.current_battery_level is not None else None,
             "terminated": False,
             "truncated": False,
         }
@@ -267,14 +249,17 @@ class MineEnv(gym.Env):
 
         self._steps += 1
 
-        # Decode action → simulator token
+        # ---- decode action & compute intended new_pos (old API expects this) ----
         try:
             dr, dc = self._ACTIONS[int(action)]
         except Exception:
             dr, dc = (0, 0)
         sim_token = MOVE_TO_ACTION_MAP.get((dr, dc), None)
 
-        # Step simulator
+        prev_rc = tuple(self.simulator.guided_miner_pos)
+        new_pos_intended = (prev_rc[0] + dr, prev_rc[1] + dc)
+
+        # ---- step simulator ----
         try:
             s = self.simulator.step(guided_miner_action=sim_token)
         except Exception as e:
@@ -284,70 +269,61 @@ class MineEnv(gym.Env):
             return obs, -5.0, True, False, info
 
         agent_rc = tuple(s["guided_miner_pos"])
+        self._agent_rc_after_step = agent_rc
         self.path_history.append(agent_rc)
 
-        # Visit stats
-        if agent_rc in self._visited:
-            self._revisit_count += 1
-        else:
-            self._visited.add(agent_rc)
-
+        # Track obstacle bumps (for stats)
         if s.get("obstacle_hit", False):
             self._obstacle_hits += 1
 
-        # Battery→cost map + (optional) replan for overlay only
+        # --- battery for current cell, for reward adapters & info ---
+        self.current_battery_level = self._current_cell_battery(s, agent_rc)
+
+        # --- build cost map & (optional) D* overlay ---
         self.current_start_xy = (agent_rc[1], agent_rc[0])  # (c, r)
         batt_map = self._build_batt_map_and_update_costs(s)
         if self.use_planner_overlay and self.pathfinder is not None:
             self._replan_from(agent_rc)
 
-        # --------- signals for reward function ---------
+        # Distance for info only
         d_now = self._closest_goal_dist(agent_rc)
-        self.last_distance_to_goal = float(d_now)
-        self.last_progress = float(self._prev_goal_dist - d_now)
-        self.last_obstacle_hit = bool(s.get("obstacle_hit", False))
-        self.last_reached_goal = bool(agent_rc in self.simulator.goal_positions)
 
-        # --------- delegate reward to reward_functions ---------
+        # --------- compute reward BEFORE mutating visited (old semantics) ---------
         try:
-            # reward, sub = compute_reward(self)
-            reward, sub = 0.0, {}
+            reward, sub = compute_reward(self, self.reward_fn, new_pos=new_pos_intended)
         except Exception as e:
-            reward = 0.0
-            sub = {"reward_fn_error": str(e)}
+            reward, sub = 0.0, {"reward_fn_error": str(e)}
 
-        # Episode status
-        terminated = self.last_reached_goal
-        truncated = False  # no hard cap
+        # --- now update revisit stats exactly like before ---
+        if agent_rc in self._visited:
+            self._revisit_count += 1
+        self._visited.add(agent_rc)
 
+        # ---- episode status, render, obs/info ----
+        terminated = bool(agent_rc in self.simulator.goal_positions)
+        truncated = False
         self._cumulative_reward += float(reward)
-        self._prev_goal_dist = d_now
 
-        # Render
         if self.render_enabled and self.simulator.render_mode == "human":
             self._render_frame(batt_map)
 
-        # Obs + info (includes current_battery for TB)
-        curr_batt = self._current_cell_battery(s, agent_rc)
         if self.is_cnn:
             obs = self._make_obs_cnn(agent_rc, s.get("sensor_batteries", {}))
         else:
-            obs = self._make_obs(agent_rc, s.get("sensor_batteries", {}))      # existing flat
+            obs = self._make_obs(agent_rc, s.get("sensor_batteries", {}))
+
         info = {
             "sensor_batteries": s.get("sensor_batteries", {}),
             "current_reward": float(reward),
             "distance_to_goal": float(d_now),
-            "current_battery": float(curr_batt) if curr_batt is not None else None,
+            "current_battery": float(self.current_battery_level) if self.current_battery_level is not None else None,
             "terminated": bool(terminated),
             "truncated": bool(truncated),
             "subrewards": sub,
         }
         if terminated or truncated:
-            avg_batt = 0.0
             sbs = s.get("sensor_batteries", {})
-            if sbs:
-                vals = np.array(list(sbs.values()), dtype=np.float32)
-                avg_batt = float(vals.mean())
+            avg_batt = float(np.mean(list(sbs.values()))) if sbs else 0.0
             info.update({
                 "cumulative_reward": float(self._cumulative_reward),
                 "obstacle_hits": int(self._obstacle_hits),
@@ -561,10 +537,8 @@ class MineEnv(gym.Env):
         obs[0, ar, ac] = 1.0
 
         # 1) obstacles OR base stations
-        # obstacles come from static_grid == OBSTACLE_ID (MineSimulator builds this) :contentReference[oaicite:2]{index=2}
         static = self.simulator.static_grid
         obs[1, static == OBSTACLE_ID] = 1.0
-        # base stations are explicit positions list :contentReference[oaicite:3]{index=3}
         for (r, c) in self.simulator.base_station_positions:
             obs[1, r, c] = 1.0
 
@@ -580,3 +554,34 @@ class MineEnv(gym.Env):
             obs[4, r, c] = 1.0
 
         return obs
+
+    # ========================= Old-API adapters for rewards =========================
+    def goal_positions(self):
+        """Adapter so rewards may use `env.goal_positions` (attribute access)."""
+        return self.simulator.goal_positions
+
+    def visited(self):
+        """Adapter so rewards may use `env.visited` (attribute access)."""
+        return self._visited
+
+    def can_move_to(self, pos_rc) -> bool:
+        """Old API name; use simulator’s validity check for the guided miner."""
+        try:
+            return bool(self.simulator.is_valid_guided_miner_move(pos_rc))
+        except Exception:
+            # Conservative: if we cannot determine, say False so reward treats as invalid
+            return False
+
+    def _compute_min_distance_to_goal(self) -> float:
+        """
+        Old API name; return normalized Euclidean distance to the nearest goal,
+        computed from the *post-step* agent position (matches prior behavior).
+        """
+        r, c = self._agent_rc_after_step if self._agent_rc_after_step is not None else tuple(self.simulator.guided_miner_pos)
+        best = float("inf")
+        for (gr, gc) in self.simulator.goal_positions:
+            d = np.hypot(gr - r, gc - c)
+            if d < best:
+                best = d
+        norm = max(float(self.norm), 1.0)
+        return float(best / norm)

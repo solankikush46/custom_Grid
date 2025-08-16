@@ -39,7 +39,8 @@ class MineSimulator:
     - Managing the state of all entities (guided_miner, miners, sensors).
     - Advancing the simulation state by one step according to game rules and physics.
     """
-    def __init__(self, grid_file: str, n_miners: int = 12, render_mode: str = None, show_predicted: bool = False):
+    def __init__(self, grid_file: str, n_miners: int = 12, render_mode: str = None, show_predicted: bool = False,
+                 manual_control=False):
         """
         Initializes the Mine Simulator.
 
@@ -64,6 +65,7 @@ class MineSimulator:
         # --- Rendering Attributes ---
         self.render_mode = render_mode
         self.renderer = None  # The renderer object will be created on the first call to render()
+        self.manual_control = manual_control
 
     def _init_grid_from_file(self, grid_file):
         """
@@ -277,7 +279,8 @@ class MineSimulator:
                 # pass along the show_predicted flag
                 self.renderer = MineRenderer(self.n_rows,
                                              self.n_cols,
-                                             show_predicted=self.show_predicted)
+                                             show_predicted=self.show_predicted,
+                                             manual_control=self.manual_control)
             state = self.get_state_snapshot()
             return self.renderer.render(
                 self.static_grid,

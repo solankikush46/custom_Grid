@@ -1,7 +1,10 @@
 # MineRenderer.py
 
 import pygame
-from pygame.locals import QUIT, MOUSEBUTTONDOWN, MOUSEBUTTONUP, MOUSEMOTION, MOUSEWHEEL
+from pygame.locals import (
+    QUIT, MOUSEBUTTONDOWN, MOUSEBUTTONUP, MOUSEMOTION, MOUSEWHEEL,
+    KEYDOWN, K_ESCAPE, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_w, K_s, K_a, K_d
+)
 
 from .constants import (
     OBSTACLE_ID,
@@ -13,7 +16,8 @@ from .constants import (
     BASE_STATION_CHAR,
     MINER_CHAR,
     GUIDED_MINER_CHAR,
-    SENSOR_CHAR
+    SENSOR_CHAR,
+    MOVE_TO_ACTION_MAP
 )
 
 
@@ -57,12 +61,14 @@ class Camera:
 class MineRenderer:
     """
     View for the mine simulation, with pan & zoom support.
+    Can optionally handle manual keyboard control of the guided miner.
     """
-    def __init__(self, n_rows, n_cols, show_predicted=False):
+    def __init__(self, n_rows, n_cols, show_predicted=False, manual_control=False):
         pygame.init()
         self.n_rows = n_rows
         self.n_cols = n_cols
         self.show_predicted = show_predicted
+        self.manual_control = manual_control  # <- only True in test_manual_control()
 
         MAX_WIDTH, MAX_HEIGHT = 1000, 750
         raw_size = min(MAX_WIDTH / n_cols, MAX_HEIGHT / n_rows)
@@ -90,7 +96,8 @@ class MineRenderer:
     def render(self, static_grid, world_state,
                show_miners=True, dstar_path=None,
                path_history=None, predicted_battery_map=None):
-        if not self.handle_events():
+        action = self.handle_events()
+        if action is False:
             return False
 
         self.screen.fill((255, 255, 255))
@@ -118,7 +125,7 @@ class MineRenderer:
 
         pygame.display.flip()
         self.clock.tick(self.render_fps)
-        return True
+        return action
 
     def _draw_static_grid(self, static_grid, world_state, c0, r0, c1, r1):
         for r in range(r0, r1):
@@ -202,9 +209,16 @@ class MineRenderer:
                 self.screen.blit(label, label.get_rect(center=(sx + size/2, sy + size/2)))
 
     def handle_events(self):
-        """Process Pygame events: pan with drag, zoom with wheel."""
+        """
+        Process Pygame events: pan with drag, zoom with wheel.
+        In manual_control mode, also capture arrow/WASD for guided miner.
+        Returns:
+            False -> quit
+            int   -> action index (manual move)
+            None  -> no action
+        """
         for ev in pygame.event.get():
-            if ev.type == QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+            if ev.type == QUIT or (ev.type == KEYDOWN and ev.key == K_ESCAPE):
                 pygame.quit()
                 return False
             elif ev.type == MOUSEBUTTONDOWN and ev.button == 1:
@@ -221,7 +235,15 @@ class MineRenderer:
                 mx, my = pygame.mouse.get_pos()
                 factor = 1.1 if ev.y > 0 else 0.9
                 self.camera.change_zoom(factor, mx, my)
-        return True
+
+            # --- Manual movement ---
+            elif self.manual_control and ev.type == KEYDOWN:
+                if ev.key in (K_UP, K_w):    return MOVE_TO_ACTION_MAP.get((-1, 0))
+                if ev.key in (K_DOWN, K_s):  return MOVE_TO_ACTION_MAP.get((1, 0))
+                if ev.key in (K_LEFT, K_a):  return MOVE_TO_ACTION_MAP.get((0, -1))
+                if ev.key in (K_RIGHT, K_d): return MOVE_TO_ACTION_MAP.get((0, 1))
+
+        return None
 
     def close(self):
         """Shuts down the Pygame window and quits."""
