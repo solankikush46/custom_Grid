@@ -18,8 +18,8 @@ def ensure_directories_exist():
 def main():
     #test_depletion_averages(2, "mine_1000x1000_80miners")
     #render_test("mine_50x50_20miners")
-    train("mine_50x50_12miners", is_cnn=True total_timesteps=1_000_000)
-    train("mine_50x50_12miners", is_att=True total_timesteps=1_000_000)
+    train("mine_50x50_12miners", is_cnn=True, total_timesteps=1_000_000)
+    train("mine_50x50_12miners", is_att=True, total_timesteps=1_000_000)
     #evaluate("mine_50x50_12miners", render=True)
 
 if __name__ == "__main__":
