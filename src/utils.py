@@ -147,7 +147,7 @@ def make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sens
 # ------------------------------------------------------------------------------
 
 # e.g. "mine_50x50_12miners"
-_EXP_RE = re.compile(r'^([A-Za-z0-9\-]+)_(\d+)x(\d+)_?(\d+)miners$')
+_EXP_RE = re.compile(r'^([A-Za-z0-9\-]+)_(\d+)x(\d+)_?(\d+)miners(?:_.+)?$')
 
 def parse_experiment_folder(experiment_folder):
     """
@@ -279,33 +279,70 @@ def _list_model_runs(exp_dir):
     """
     Find subdirs in SAVE_DIR/<exp> that look like model runs (PPO_*, RecurrentPPO_*, DQN_*).
     Returns a sorted list (newest first) of dicts with basic metadata.
+
+    For each run dir, we accept ANY model artifact matching "model*.zip" and pick a preferred one:
+      1) model.zip
+      2) model_att.zip
+      3) model_cnn.zip
+      4) else the first available model*.zip
     """
     if not os.path.isdir(exp_dir):
         return []
 
     out = []
-    for name in os.listdir(exp_dir):
+    try:
+        run_names = os.listdir(exp_dir)
+    except Exception:
+        run_names = []
+
+    for name in run_names:
         full = os.path.join(exp_dir, name)
         if not os.path.isdir(full):
             continue
         if not (name.startswith("PPO_") or name.startswith("RecurrentPPO_") or name.startswith("DQN_")):
             continue
-        model_zip = os.path.join(full, "model.zip")
+
+        # Collect all model*.zip files in the run directory
+        try:
+            files = os.listdir(full)
+        except Exception:
+            files = []
+
+        model_candidates = [os.path.join(full, fn) for fn in files
+                            if fn.startswith("model") and fn.endswith(".zip")]
+        has_any_model = len(model_candidates) > 0
+
+        # Choose a single representative model_zip to surface (preference order)
+        model_zip = None
+        if has_any_model:
+            prefer = ("model.zip", "model_att.zip", "model_cnn.zip")
+            by_name = {os.path.basename(p): p for p in model_candidates}
+            for pref in prefer:
+                if pref in by_name:
+                    model_zip = by_name[pref]
+                    break
+            if model_zip is None:
+                # Fall back to the first candidate (deterministic order)
+                model_candidates.sort()
+                model_zip = model_candidates[0]
+
         try:
             mtime = os.path.getmtime(full)
         except Exception:
             mtime = 0
+
         out.append({
             "name": name,
             "path": full,
             "type": name.split("_", 1)[0],
-            "has_model_zip": os.path.isfile(model_zip),
-            "model_zip": model_zip if os.path.isfile(model_zip) else None,
+            "has_model_zip": has_any_model,
+            "model_zip": model_zip,
             "modified": mtime,
             "modified_iso": datetime.fromtimestamp(mtime).isoformat() if mtime else None,
         })
 
-    out.sort(key=lambda d: d["modified"] or 0, reverse=True)  # newest first
+    # newest first
+    out.sort(key=lambda d: d["modified"] or 0, reverse=True)
     return out
 
 def _load_json_safe(path, default=None):
@@ -439,8 +476,11 @@ def latest_ppo_run(experiment_folder, require_model=True):
         run_dir = os.path.join(base, name)
         if not os.path.isdir(run_dir):
             continue
-        if require_model and not os.path.isfile(os.path.join(run_dir, "model.zip")):
-            continue
+        if require_model:
+            has_any_model = any(fn.startswith("model") and fn.endswith(".zip")
+                                for fn in os.listdir(run_dir))
+            if not has_any_model:
+                continue
         n = int(m.group(1))
         mt = os.path.getmtime(run_dir)
         if best is None or (n, mt) > (best[0], best[1]):

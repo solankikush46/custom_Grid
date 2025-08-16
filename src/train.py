@@ -12,6 +12,10 @@ from src.MineEnv import MineEnv
 from src.constants import SAVE_DIR
 from src.utils import latest_ppo_model_path, latest_ppo_run
 
+from src.wrappers import TimeStackObservation
+from src.attention import AttentionCNNExtractor
+from src.cnn_feature_extractor import GridCNNExtractor
+
 class _CaptureLogDir(BaseCallback):
     """Capture SB3's run dir (e.g., .../PPO_3/) once training starts."""
     def __init__(self):
@@ -46,7 +50,7 @@ class InfoToTB(BaseCallback):
 ##==============================================================
 ## Training Helpers
 ##==============================================================
-def _make_env_thunk(experiment_folder, mode, use_planner_overlay, show_miners, show_predicted, render: bool):
+def _make_env_thunk(experiment_folder, mode, use_planner_overlay, show_miners, show_predicted, render: bool, is_cnn: bool = False, is_att: bool = False, temporal_len: int = 12):
     def _thunk():
         env = MineEnv(
             experiment_folder=experiment_folder,
@@ -55,15 +59,19 @@ def _make_env_thunk(experiment_folder, mode, use_planner_overlay, show_miners, s
             show_predicted=show_predicted,
             mode=mode,
             use_planner_overlay=use_planner_overlay,
+            is_cnn=is_cnn or is_att,  # attention uses CNN frames too
+            is_att=is_att,
         )
+        if is_att:
+            env = TimeStackObservation(env, num_frames=temporal_len)  # shape (T,C,H,W) :contentReference[oaicite:11]{index=11}
         return Monitor(env)  # SB3 will still log TB in run_dir
     return _thunk
 
 
-def save(model: PPO, run_dir: str) -> str:
-    """Save model.zip inside the SB3-created run_dir."""
+def save(model: PPO, run_dir: str, suffix: str = "") -> str:
+    """Save model.zip inside run_dir, with optional suffix like _cnn or _att."""
     os.makedirs(run_dir, exist_ok=True)
-    model_path = os.path.join(run_dir, "model.zip")
+    model_path = os.path.join(run_dir, f"model{suffix}.zip")
     model.save(model_path)
     print(f"[OK] Saved PPO model to: {model_path}")
     return model_path
@@ -75,7 +83,10 @@ def train(
     use_planner_overlay: bool = False,
     show_miners: bool = False,
     show_predicted: bool = True,
-    render=False
+    render=False,
+    is_cnn: bool = False,
+    is_att: bool = False,
+    temporal_len: int = 4,
 ):
     """
     Train PPO on MineEnv, save the model into the SB3-created run dir, and return:
@@ -88,15 +99,40 @@ def train(
     env = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
-            show_miners, show_predicted, render=render
+            show_miners, show_predicted, render=render,
+            is_cnn=is_cnn, is_att=is_att, temporal_len=temporal_len
         )
     ])
+
+    policy_kwargs = None
+
+    if is_att:
+        # Temporal Attention over stacked frames
+        policy_kwargs = dict(
+            features_extractor_class=AttentionCNNExtractor,   # :contentReference[oaicite:5]{index=5}
+            features_extractor_kwargs=dict(
+                features_dim=128,
+                grid_file=None,       # optional hint to your backbone
+                temporal_len=temporal_len,
+            ),
+        )
+    elif is_cnn:
+        # Plain CNN → vector for MLP policy head
+        policy_kwargs = dict(
+            features_extractor_class=GridCNNExtractor,
+            features_extractor_kwargs=dict(
+                features_dim=128,
+                grid_file=None,
+            ),
+        )
+  
 
     model = PPO(
         policy="MlpPolicy",
         env=env,
         verbose=1,
         tensorboard_log=tb_root,
+        policy_kwargs=policy_kwargs,
     )
 
     cap = _CaptureLogDir()
@@ -111,7 +147,14 @@ def train(
 
     # The exact SB3 run directory (e.g., .../PPO_3)
     run_dir = cap.run_dir or getattr(model.logger, "dir", tb_root)
-    model_path = save(model, run_dir)
+
+    suffix = ""
+    if is_att:
+        suffix = "_att"
+    elif is_cnn:
+        suffix = "_cnn"
+
+    model_path = save(model, run_dir, suffix = suffix)
     return model_path, run_dir
 
 def evaluate(
@@ -121,7 +164,10 @@ def evaluate(
     show_miners: bool = False,
     show_predicted: bool = True,
     total_timesteps: int = 300,
-    render=True
+    render=True,
+    is_cnn: bool = False,
+    is_att: bool = False,
+    temporal_len: int = 12,
 ):
     """
     Find latest PPO_<n>/model.zip under SAVE_DIR/<experiment_folder>, load it,
@@ -133,7 +179,8 @@ def evaluate(
     eval_env = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
-            show_miners, show_predicted, render=render
+            show_miners, show_predicted, render=render,
+            is_cnn=is_cnn, is_att=is_att, temporal_len=temporal_len
         )
     ])
     try:

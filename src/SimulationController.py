@@ -7,7 +7,12 @@ from sb3_contrib import RecurrentPPO
 from collections import defaultdict
 
 from .MineSimulator import MineSimulator
-from .DStarLite.DStarLite import DStarLite
+# Prefer compiled extension; fall back only if you later add a pure-Python version.
+try:
+    from dstar_lite import DStarLite
+except Exception:
+    from .DStarLite.DStarLite import DStarLite  # fallback
+
 from .constants import *
 
 ##==============================================================
@@ -16,9 +21,11 @@ from .constants import *
 def sensor_cost_tier(batt: float) -> float:
     """
     Maps a raw battery level (0–100) to a movement penalty cost.
+    Clips to [0,100] before lookup to keep indexing safe.
     """
-    # might need to clip ibatt between 0 and 100
-    return COST_TABLE[int(batt)] # cost tier of floored battery level
+    b = int(max(0.0, min(100.0, float(batt))))
+    return COST_TABLE[b]  # tier for floored battery %
+
 
 ##==============================================================
 ## SimulationController Class
@@ -44,15 +51,15 @@ class SimulationController:
         show_predicted: bool = True,
         mode: str = "static",
         get_average_depletion: bool = False,
-        num_episodes: int = 1
+        num_episodes: int = 1,
+        *,
+        pause_each_step: bool = False,   # NEW: makes the debug pause optional
     ):
         # Validate mode
         if mode not in ("static", "constant_rate", "model"):
             raise ValueError(f"Unsupported mode '{mode}'")
         if get_average_depletion and num_episodes < 1:
-            raise ValueError(
-                "num_episodes must be >= 1 when collecting averages"
-            )
+            raise ValueError("num_episodes must be >= 1 when collecting averages")
 
         # Settings
         self.experiment_folder     = experiment_folder
@@ -61,6 +68,7 @@ class SimulationController:
         self.mode                  = mode
         self.get_average_depletion = get_average_depletion
         self.num_episodes          = num_episodes
+        self.pause_each_step       = pause_each_step
 
         # Parse grid file & miners
         parts       = experiment_folder.split('_')
@@ -77,20 +85,13 @@ class SimulationController:
         )
 
         # Sensor indexing
-        self.sensor_index = {
-            pos: i
-            for i, pos in enumerate(self.simulator.sensor_positions)
-        }
+        self.sensor_index = {pos: i for i, pos in enumerate(self.simulator.sensor_positions)}
         self.num_sensors = len(self.simulator.sensor_positions)
 
         # If constant_rate, load rates from JSON
         self.constant_rates = {}
         if self.mode == 'constant_rate':
-            path = os.path.join(
-                SAVE_DIR,
-                experiment_folder,
-                'avg_sensor_depletion.json'
-            )
+            path = os.path.join(SAVE_DIR, experiment_folder, 'avg_sensor_depletion.json')
             if not os.path.isfile(path):
                 raise RuntimeError(f"Average depletion file not found at {path}")
             with open(path, 'r') as f:
@@ -103,17 +104,10 @@ class SimulationController:
         self.predictor = None
         if self.mode == 'model':
             base = os.path.join(SAVE_DIR, experiment_folder)
-            runs = sorted(
-                d for d in os.listdir(base)
-                if d.startswith('RecurrentPPO_')
-            )
+            runs = sorted(d for d in os.listdir(base) if d.startswith('RecurrentPPO_'))
             if not runs:
                 raise RuntimeError(f"No model runs in {base}")
-            model_path = os.path.join(
-                base,
-                runs[-1],
-                'model.zip'
-            )
+            model_path = os.path.join(base, runs[-1], 'model.zip')
             self.predictor = RecurrentPPO.load(model_path)
 
         # Planning state
@@ -137,42 +131,32 @@ class SimulationController:
         self.path_history = [state['guided_miner_pos']]
 
         # Initialize normalized battery vector
-        init_batts = [
-            state['sensor_batteries'][pos]
-            for pos in self.simulator.sensor_positions
-        ]
-        self.last_pred_norm = (
-            np.array(init_batts, dtype=np.float32) / 100.0
-        )
+        init_batts = [state['sensor_batteries'][pos] for pos in self.simulator.sensor_positions]
+        self.last_pred_norm = (np.array(init_batts, dtype=np.float32) / 100.0)
 
         # Record previous cost tiers
         for pos, batt in state['sensor_batteries'].items():
             self.sensor_previous_costs[pos] = sensor_cost_tier(batt)
 
-        # Build cost map
+        # Build cost map (float64 for our pybind signature)
         H, W = self.simulator.n_rows, self.simulator.n_cols
         self.cost_map = np.zeros((H, W), dtype=np.float64)
-        static_obs = [
-            (x, y)
-            for (y, x) in self.simulator.impassable_positions
-        ]
 
-        # Setup planner
+        # Impassable positions are given as (r,c); planner expects (x,y)
+        static_obs = [(x, y) for (y, x) in self.simulator.impassable_positions]
+
+        # Setup planner (planner uses (x=c, y=r))
         r0, c0 = state['guided_miner_pos']
         self.current_start = (c0, r0)
-        goals = [
-            (c, r)
-            for (r, c) in state['goal_positions']
-        ]
+        goals = [(c, r) for (r, c) in state['goal_positions']]
 
+        # Pass NumPy cost_map directly (binding expects py::array_t<double>)
         self.pathfinder = DStarLite(
-            W,
-            H,
-            c0,
-            r0,
-            goals,
-            self.cost_map,
-            static_obs
+            W, H,
+            c0, r0,
+            goals,              # list of (x,y) goals; overload handles list
+            self.cost_map,      # numpy array (float64)
+            static_obs          # list of (x,y) obstacles
         )
         self.pathfinder.computeShortestPath()
 
@@ -185,16 +169,13 @@ class SimulationController:
             self.is_running = True
             while self.is_running:
                 self.update_step()
-            if (
-                self.get_average_depletion and
-                eps >= self.num_episodes
-            ):
+            if self.get_average_depletion and eps >= self.num_episodes:
                 break
         self.shutdown()
 
 
     def update_step(self):
-        # Choose action
+        # Choose action from current path
         r0, c0 = self.simulator.guided_miner_pos
         path = self.pathfinder.getShortestPath() or []
         if len(path) > 1:
@@ -208,18 +189,11 @@ class SimulationController:
             act = None
 
         # Step simulator
-        new_state = self.simulator.step(
-            guided_miner_action=act
-        )
-        self.path_history.append(
-            new_state['guided_miner_pos']
-        )
+        new_state = self.simulator.step(guided_miner_action=act)
+        self.path_history.append(new_state['guided_miner_pos'])
 
         # Record sums & counts per sensor
-        if (
-            self.get_average_depletion and
-            'battery_deltas' in new_state
-        ):
+        if self.get_average_depletion and 'battery_deltas' in new_state:
             for pos, delta in new_state['battery_deltas'].items():
                 d = float(delta)
                 self.delta_sums[pos]   += d
@@ -227,34 +201,25 @@ class SimulationController:
 
         # Build features
         batts_norm = (
-            np.array([
-                new_state['sensor_batteries'][pos]
-                for pos in self.simulator.sensor_positions
-            ], dtype=np.float32) / 100.0
+            np.array([new_state['sensor_batteries'][pos] for pos in self.simulator.sensor_positions],
+                     dtype=np.float32) / 100.0
         )
         conns = {pos: 0 for pos in self.simulator.sensor_positions}
-        for mv in (
-            new_state['miner_positions'] +
-            [new_state['guided_miner_pos']]
-        ):
+        for mv in (new_state['miner_positions'] + [new_state['guided_miner_pos']]):
             conns[self.simulator.cell_to_sensor[mv]] += 1
         miner_norm = (
-            np.array([
-                conns[pos]
-                for pos in self.simulator.sensor_positions
-            ], dtype=np.float32) / self.simulator.n_miners
+            np.array([conns[pos] for pos in self.simulator.sensor_positions],
+                     dtype=np.float32) / self.simulator.n_miners
         )
         err_norm = batts_norm - self.last_pred_norm
         obs      = np.stack([batts_norm, miner_norm, err_norm], axis=1).flatten()
 
-        # Compute distance map
+        # Compute Chebyshev distance map from current_start
         H, W = self.simulator.n_rows, self.simulator.n_cols
         ys    = np.arange(H)[:, None]
         xs    = np.arange(W)[None, :]
-        D     = np.maximum(
-            np.abs(xs - self.current_start[0]),
-            np.abs(ys - self.current_start[1])
-        ).astype(int)
+        D     = np.maximum(np.abs(xs - self.current_start[0]),
+                           np.abs(ys - self.current_start[1])).astype(int)
         maxD  = D.max()
 
         # Build batt_map (model/constant_rate/static)
@@ -265,7 +230,7 @@ class SimulationController:
             preds[:, 0] = batts_norm
             last        = preds[:, 0]
             for t in range(1, maxD + 1):
-                obs_t     = np.stack([last, miner_norm, np.zeros_like(last)], axis=1).flatten()
+                obs_t       = np.stack([last, miner_norm, np.zeros_like(last)], axis=1).flatten()
                 next_norm, _ = self.predictor.predict(obs_t, deterministic=True)
                 preds[:, t] = next_norm; last = next_norm
             self.last_pred_norm = batts_norm
@@ -290,15 +255,21 @@ class SimulationController:
         for y, x in self.simulator.free_cells:
             tier = sensor_cost_tier(batt_map[y, x])
             if self.cost_map[y, x] != tier:
-                self.cost_map[y, x] = tier; dirty.append((x, y))
+                self.cost_map[y, x] = tier
+                dirty.append((x, y))
+
         for x, y in dirty:
             self.pathfinder.updateVertex(x, y)
             for nx, ny in self.pathfinder.neighbors(x, y):
                 self.pathfinder.updateVertex(nx, ny)
+
         r1, c1 = new_state['guided_miner_pos']
         if (c1, r1) != (c0, r0):
-            self.pathfinder.updateStart(c1, r1); self.current_start = (c1, r1)
+            self.pathfinder.updateStart(c1, r1)
+            self.current_start = (c1, r1)
+
         self.pathfinder.computeShortestPath()
+
         if self.simulator.render_mode == 'human':
             ok = self.simulator.render(
                 show_miners=self.show_miners,
@@ -307,9 +278,15 @@ class SimulationController:
                 predicted_battery_map=batt_map if self.show_predicted else None
             )
             if not ok:
-                print("[INFO] Window closed by user."); self.is_running=False; self.should_shutdown=True
+                print("[INFO] Window closed by user.")
+                self.is_running=False
+                self.should_shutdown=True
 
-        x = input("[PAUSE] Type Any Key to Continue")
+        if self.pause_each_step:
+            try:
+                input("[PAUSE] Press Enter to continue...")
+            except EOFError:
+                pass
 
 
     def compute_average_depletion(self):
@@ -317,10 +294,7 @@ class SimulationController:
         Returns dict mapping sensor_pos -> mean delta per recorded step.
         """
         return {
-            pos: (
-                self.delta_sums[pos] / self.delta_counts[pos]
-                if self.delta_counts[pos] > 0 else 0.0
-            )
+            pos: (self.delta_sums[pos] / self.delta_counts[pos] if self.delta_counts[pos] > 0 else 0.0)
             for pos in self.simulator.sensor_positions
         }
 
@@ -343,17 +317,12 @@ class SimulationController:
                 os.makedirs(base, exist_ok=True)
                 avg_path = os.path.join(base, 'avg_sensor_depletion.json')
                 with open(avg_path, 'w') as f:
-                    json.dump(
-                        {f"{p[0]},{p[1]}": v for p, v in avg.items()},
-                        f,
-                        indent=2
-                    )
+                    json.dump({f"{p[0]},{p[1]}": v for p, v in avg.items()}, f, indent=2)
                 print(f"[INFO] Saved average depletion to {avg_path}")
             except Exception as e:
                 print(f"[ERROR] Saving average depletion failed: {e}")
             try:
                 deltas_path = os.path.join(base, 'battery_deltas.json')
-                # Save sums & counts to JSON
                 with open(deltas_path, 'w') as f:
                     json.dump(
                         {f"{p[0]},{p[1]}": [self.delta_sums[p], self.delta_counts[p]]
