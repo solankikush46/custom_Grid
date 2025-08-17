@@ -7,11 +7,7 @@ from sb3_contrib import RecurrentPPO
 from collections import defaultdict
 
 from .MineSimulator import MineSimulator
-# Prefer compiled extension; fall back only if you later add a pure-Python version.
-try:
-    from dstar_lite import DStarLite
-except Exception:
-    from .DStarLite.DStarLite import DStarLite  # fallback
+from .DStarLite.DStarLite import DStarLite  # fallback
 
 from .constants import *
 
