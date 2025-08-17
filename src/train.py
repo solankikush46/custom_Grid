@@ -76,7 +76,7 @@ class InfoToTB(BaseCallback):
 # ==============================================================
 def _make_env_thunk(experiment_folder, mode, use_planner_overlay,
                     show_miners, show_predicted, render,
-                    is_cnn=False, is_att=False,
+                    arch="mlp",
                     temporal_len=12,
                     reward_fn=None):
     def _thunk():
@@ -87,18 +87,18 @@ def _make_env_thunk(experiment_folder, mode, use_planner_overlay,
             show_predicted=show_predicted,
             mode=mode,
             use_planner_overlay=use_planner_overlay,
-            is_cnn=is_cnn or is_att,
-            is_att=is_att,
+            arch=arch,
             reward_fn=(reward_fn or reward_d),
         )
-        if is_att:
+        # Attention variants get time stacking (T, C, H, W)
+        if isinstance(arch, str) and arch.startswith("a"):
             env = TimeStackObservation(env, num_frames=temporal_len)
         return Monitor(env)
     return _thunk
 
 
 def save(model: PPO, run_dir: str, suffix: str = "") -> str:
-    """Save model.zip inside run_dir, with optional suffix like _cnn or _att."""
+    """Save model.zip inside run_dir, with optional suffix like _c0/_a1/etc."""
     os.makedirs(run_dir, exist_ok=True)
     model_path = os.path.join(run_dir, f"model{suffix}.zip")
     model.save(model_path)
@@ -112,7 +112,7 @@ def train(
     metadata: dict,
     total_timesteps: int = 20_000,
     mode: str = "static",     # or "constant_rate"
-    use_planner_overlay: bool = False,
+    use_planner_overlay: bool = True,
     show_miners: bool = False,
     show_predicted: bool = True,
     render: bool = False,
@@ -130,14 +130,15 @@ def train(
     tb_root = os.path.join(SAVE_DIR, experiment_folder)
     os.makedirs(tb_root, exist_ok=True)
 
-    is_cnn = arch == "cnn"
-    is_att = arch == "attn"
+    # New arch scheme: "mlp", "c0", "c1", "a0", "a1"
+    is_att = isinstance(arch, str) and arch.startswith("a")
+    is_cnn = is_att or (isinstance(arch, str) and arch.startswith("c"))
 
     env = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
             show_miners, show_predicted, render=render,
-            is_cnn=is_cnn, is_att=is_att, temporal_len=temporal_len,
+            arch=arch, temporal_len=temporal_len,
             reward_fn=rfn,
         )
     ])
@@ -197,10 +198,8 @@ def evaluate(
     temporal_len: int = 12,
 ):
     """
-    Evaluate a trained PPO model. Accepts either:
-      - metadata dict: {"grid": "...", "miners": int, "arch": "mlp|cnn|attn", "reward": "reward_d|..."}
-      - experiment folder string: e.g. "mine_50x50__20miners__mlp__reward_d"
-        (old format "mine_50x50_20miners_mlp" still works; reward defaults to reward_d)
+    Evaluate a trained PPO model.
+    Accepts either metadata dict or an experiment-folder string.
     """
     # Normalize input
     if isinstance(exp_or_meta, dict):
@@ -216,20 +215,22 @@ def evaluate(
     reward_key = metadata.get("reward", "reward_d")
     rfn = resolve_reward_fn(reward_key)
 
-    is_cnn = arch == "cnn"
-    is_att = arch == "attn"
+    is_att = isinstance(arch, str) and arch.startswith("a")
+    is_cnn = is_att or (isinstance(arch, str) and arch.startswith("c"))
 
     # Resolve model path from the experiment folder
     model_path = latest_ppo_model_path(experiment_folder)
     run_dir, run_name = latest_ppo_run(experiment_folder, require_model=True)
+
     eval_env = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
             show_miners, show_predicted, render=render,
-            is_cnn=is_cnn, is_att=is_att, temporal_len=temporal_len,
+            arch=arch, temporal_len=temporal_len,
             reward_fn=rfn,
         )
     ])
+
     try:
         print(f"[INFO] Loading {model_path} (run {run_name})")
         model = PPO.load(model_path, env=eval_env, device="auto", print_system_info=False)
@@ -246,7 +247,7 @@ def evaluate(
         eval_env.close()
 
 # ==============================================================
-# Testing Functions
+# Testing / batch training helpers
 # ==============================================================
 def train_junk(
     metadata: dict,
@@ -284,23 +285,24 @@ def train_junk(
 
 def train_all(total_timesteps: int = 1_000_000):
     """
-    Define a list of experiments and train each, printing relevant info.
+    Define a list of experiments and train each. By default trains for 1,000,000 steps.
+    Includes an a1 (attention over c1) configuration.
     """
     experiments = [
-        {"grid": "mine_50x50", "miners": 20, "arch": "mlp", "reward": "reward_d"},
-     ]
+        {"grid": "mine_50x50", "miners": 20, "arch": "a1", "reward": "reward_d"},
+    ]
 
     for meta in experiments:
         exp_name = make_experiment_name(meta)
         print(f"\n[train_all] === Training {exp_name} ===")
         print(f"  Metadata: {meta}")
 
-        tlen = 12  # should tlen be part of metadata?
+        tlen = 12  # temporal length for attention models
         model_path, run_dir = train(
             metadata=meta,
             total_timesteps=total_timesteps,
             mode="static",
-            use_planner_overlay=False,
+            use_planner_overlay=True,
             show_miners=False,
             show_predicted=True,
             render=False,
@@ -314,7 +316,7 @@ def train_all(total_timesteps: int = 1_000_000):
 # Manual control (keyboard) — same shape as evaluate, but user drives
 # ==============================================================
 def manual_control(
-    exp_or_meta,                       # dict metadata OR str "mine_50x50__20miners__mlp__reward_d"
+    exp_or_meta,                       # dict metadata OR str experiment folder
     mode: str = "static",
     use_planner_overlay: bool = True,
     show_miners: bool = True,
@@ -346,14 +348,13 @@ def manual_control(
     arch = metadata["arch"]
     reward_key = metadata.get("reward", "reward_d")
     rfn = resolve_reward_fn(reward_key)
-    is_cnn = arch == "cnn"
-    is_att = arch == "attn"
+    is_att = isinstance(arch, str) and arch.startswith("a")
 
     env_vec = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
             show_miners, show_predicted, render=render,
-            is_cnn=is_cnn, is_att=is_att, temporal_len=temporal_len,
+            arch=arch, temporal_len=temporal_len,
             reward_fn=rfn,
         )
     ])

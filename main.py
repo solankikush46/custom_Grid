@@ -16,7 +16,7 @@ def ensure_directories_exist():
         os.makedirs(d, exist_ok=True)
     
 def main():
-    train_all(2_000)
+    train_all(1_000_000)
     
 if __name__ == "__main__":
     ensure_directories_exist()
