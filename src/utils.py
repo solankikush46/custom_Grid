@@ -145,55 +145,49 @@ def make_agent_feature_matrix(agent_pos, neighbors, last_action, goal_dist, sens
 # ------------------------------------------------------------------------------
 # Experiment name parsing
 # ------------------------------------------------------------------------------
-
-# e.g. "mine_50x50_12miners"
-_EXP_RE = re.compile(r'^([A-Za-z0-9\-]+)_(\d+)x(\d+)_?(\d+)miners(?:_.+)?$')
-
 def parse_experiment_folder(experiment_folder):
     """
-    Parse names like 'mine_50x50_12miners' (underscore before 'miners' optional).
+    Parse names like:
+      - New: "mine_50x50__12miners__mlp__reward_d"
+      - Old: "mine_50x50_12miners_mlp"  (reward defaults to "reward_d")
 
-    Returns a dict (strings/ints/floats only):
-        {
-          "experiment_folder": "<input>",
-          "prefix": "mine",
-          "rows": 50,
-          "cols": 50,
-          "n_miners": 12,
-          "size_token": "50x50",
-          "miners_token": "12miners",
-          "grid_stem": "mine_50x50",
-          "grid_file": "mine_50x50.txt",
-          "norm": 50.0
-        }
+    Returns a dict with simple types only.
     """
-    if not isinstance(experiment_folder, str) or not experiment_folder:
+    if not isinstance(experiment_folder, str) or not experiment_folder.strip():
         raise ValueError("experiment_folder must be a non-empty string")
 
-    m = _EXP_RE.match(experiment_folder)
-    if not m:
-        raise ValueError(
-            "Invalid experiment_folder format. Expected like 'mine_50x50_12miners'. "
-            "Example prefixes are free-form letters/digits/dashes."
-        )
+    # Reuse the canonical parser so naming stays consistent
+    meta = get_metadata(experiment_folder)  # -> {"grid","miners","arch","reward"}
+    grid = meta["grid"]
+    miners = int(meta["miners"])
+    arch = meta["arch"]
+    reward = meta.get("reward", "reward_d")
 
-    prefix, rows_s, cols_s, miners_s = m.groups()
-    rows = int(rows_s)
-    cols = int(cols_s)
-    n_miners = int(miners_s)
+    # Extract rows/cols from the grid token without regex, e.g. "mine_50x50"
+    rows = cols = None
+    for token in reversed(grid.split("_")):
+        if "x" in token:
+            left, right = token.split("x", 1)
+            if left.isdigit() and right.isdigit():
+                rows, cols = int(left), int(right)
+                break
+    if rows is None or cols is None:
+        raise ValueError(f"Cannot find '<rows>x<cols>' in grid token: {grid!r}")
 
     size_token = f"{rows}x{cols}"
-    miners_token = f"{n_miners}miners"
-    grid_stem = f"{prefix}_{size_token}"
+    miners_token = f"{miners}miners"
+    grid_stem = grid
     grid_file = f"{grid_stem}.txt"
     norm = float(max(rows, cols))
 
     return {
-        "experiment_folder": experiment_folder,
-        "prefix": prefix,
+        "experiment_folder": experiment_folder.strip(),
+        "grid": grid,
+        "arch": arch,
+        "reward": reward,
         "rows": rows,
         "cols": cols,
-        "n_miners": n_miners,
+        "n_miners": miners,
         "size_token": size_token,
         "miners_token": miners_token,
         "grid_stem": grid_stem,
@@ -374,88 +368,6 @@ def _parse_rc_keys(maybe_rc_map):
 # ------------------------------------------------------------------------------
 # Public API
 # ------------------------------------------------------------------------------
-
-def parse_experiment_data(experiment_folder):
-    """
-    Full parse of an experiment folder name.
-
-    Returns a dict with:
-      - "experiment": tokens and derived values
-      - "grid": grid file info (path, existence, counts)
-      - "paths": canonical SAVE_DIR paths for artifacts
-      - "artifacts": presence and parsed contents of saved artifacts
-
-    Example keys:
-      data["experiment"]["n_miners"]
-      data["grid"]["file"], data["grid"]["path"], data["grid"]["counts"]
-      data["artifacts"]["avg_depletion_map"]  # {(r,c): avg_drop}
-      data["artifacts"]["latest_run"]         # most recent PPO_* / DQN_* subdir
-    """
-    parts = parse_experiment_folder(experiment_folder)
-
-    # Grid file resolution + scan
-    grid_path = _find_grid_file(parts["grid_file"])
-    grid_counts = _scan_grid_ascii(grid_path) if grid_path else {}
-
-    # SAVE_DIR artifacts
-    exp_dir = os.path.join(SAVE_DIR, experiment_folder)
-    avg_path    = os.path.join(exp_dir, "avg_sensor_depletion.json")
-    deltas_path = os.path.join(exp_dir, "battery_deltas.json")
-
-    avg_raw    = _load_json_safe(avg_path, default=None)
-    deltas_raw = _load_json_safe(deltas_path, default=None)
-
-    avg_parsed = _parse_rc_keys(avg_raw) if isinstance(avg_raw, dict) else {}
-
-    # For deltas we keep the raw JSON for transparency, but also expose a
-    # convenience map of sums (optional).
-    deltas_sum_map = {}
-    if isinstance(deltas_raw, dict):
-        for k, v in deltas_raw.items():
-            try:
-                s_val = float(v[0]) if isinstance(v, list) and len(v) >= 1 else 0.0
-                r_s, c_s = str(k).split(",")
-                deltas_sum_map[(int(r_s), int(c_s))] = s_val
-            except Exception:
-                continue
-
-    runs = _list_model_runs(exp_dir)
-
-    return {
-        "experiment": {
-            "name": parts["experiment_folder"],
-            "prefix": parts["prefix"],
-            "rows": parts["rows"],
-            "cols": parts["cols"],
-            "n_miners": parts["n_miners"],
-            "norm": parts["norm"],
-            "size_token": parts["size_token"],
-            "miners_token": parts["miners_token"],
-            "grid_stem": parts["grid_stem"],
-            "grid_file": parts["grid_file"],
-        },
-        "grid": {
-            "file": parts["grid_file"],
-            "path": grid_path,
-            "exists": bool(grid_path and os.path.isfile(grid_path)),
-            "counts": grid_counts,
-        },
-        "paths": {
-            "save_dir": exp_dir,
-            "avg_depletion_json": avg_path,
-            "battery_deltas_json": deltas_path,
-        },
-        "artifacts": {
-            "has_avg_depletion": bool(avg_parsed),
-            "has_battery_deltas": bool(deltas_raw),
-            "avg_depletion_map": avg_parsed,     # {(r,c): avg_drop}
-            "battery_deltas_raw": deltas_raw,    # {"r,c": [sum, count]}
-            "battery_deltas_sum_map": deltas_sum_map,  # {(r,c): sum}
-            "runs": runs,                         # newest-first list
-            "latest_run": runs[0] if runs else None,
-        }
-    }
-
 _PPO_RE = re.compile(r"^PPO_(\d+)$")
 
 def latest_ppo_run(experiment_folder, require_model=True):
@@ -500,3 +412,185 @@ def latest_ppo_model_path(experiment_folder):
     """
     run_dir, _ = latest_ppo_run(experiment_folder, require_model=True)
     return os.path.join(run_dir, "model.zip")
+
+# ==============================================================
+# Metadata helpers  (now encode reward + use '__' between parts)
+# ==============================================================
+def make_experiment_name(metadata: dict) -> str:
+    """
+    Build an experiment string from metadata.
+
+    Required keys:
+        grid:   "mine_50x50" or "50x50"
+        miners: 12 (int) or "12" or "12miners"
+        arch:   "cnn" | "attn" | "mlp" | <str>
+    Optional:
+        reward: "reward_d" (default) or any key in the reward registry
+
+    Returns (double-underscore separators):
+        e.g. "mine_50x50__12miners__cnn__reward_d"
+    """
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata must be a dict")
+
+    for k in ("grid", "miners", "arch"):
+        if k not in metadata:
+            raise ValueError("metadata must contain 'grid', 'miners', and 'arch'")
+
+    grid = str(metadata["grid"]).strip()
+    if not grid:
+        raise ValueError("metadata['grid'] must be a non-empty string")
+
+    miners_val = metadata["miners"]
+    if isinstance(miners_val, str):
+        m = miners_val.strip()
+        if m.endswith("miners"):
+            m = m[:-6]
+        if not m.isdigit():
+            raise ValueError(f"metadata['miners'] must be an int or digit string, got: {miners_val!r}")
+        miners = int(m)
+    elif isinstance(miners_val, int):
+        miners = miners_val
+    else:
+        raise ValueError("metadata['miners'] must be an int or a string")
+
+    if miners <= 0:
+        raise ValueError("metadata['miners'] must be a positive integer")
+
+    arch = str(metadata["arch"]).strip()
+    if not arch:
+        raise ValueError("metadata['arch'] must be a non-empty string")
+
+    reward_key = str(metadata.get("reward", "reward_d")).strip() or "reward_d"
+
+    # double-underscore between major parts
+    return f"{grid}__{miners}miners__{arch}__{reward_key}"
+
+
+def get_metadata(experiment_name: str) -> dict:
+    """
+    Inverse of make_experiment_name.
+
+    Accepts (new format with '__' between parts):
+        "mine_50x50__12miners__cnn__reward_d"
+        "50x50__12miners__mlp__reward_d"
+    Backward-compatible (old '_' format without reward):
+        "mine_50x50_12miners_cnn"  -> reward defaults to "reward_d"
+
+    Returns:
+        {"grid": <str>, "miners": <int>, "arch": <str>, "reward": <str>}
+    """
+    if not isinstance(experiment_name, str):
+        raise ValueError("experiment_name must be a string")
+
+    name = experiment_name.strip()
+    if "__" in name:
+        parts = name.split("__")
+        if len(parts) < 4:
+            raise ValueError(f"Bad experiment name (need 4 parts w/ '__'): {experiment_name!r}")
+        grid = parts[0].strip()
+        miners_tok = parts[1].strip()
+        arch = parts[2].strip()
+        reward_key = parts[3].strip()
+    else:
+        # Back-compat for old names like "mine_50x50_12miners_cnn"
+        parts = name.split("_")
+        if len(parts) < 3:
+            raise ValueError(f"Bad experiment name (need at least 3 parts): {experiment_name!r}")
+        grid = "_".join(parts[:-2]).strip()
+        miners_tok = parts[-2].strip()
+        arch = parts[-1].strip()
+        reward_key = "reward_d"
+
+    if not grid:
+        raise ValueError(f"Cannot parse grid from: {experiment_name!r}")
+    if not miners_tok.endswith("miners"):
+        raise ValueError(f"Bad miners token (must end with 'miners'): {miners_tok!r}")
+    num_str = miners_tok[:-6]
+    if not num_str.isdigit():
+        raise ValueError(f"Cannot parse miners count from: {miners_tok!r}")
+    miners = int(num_str)
+    if miners <= 0:
+        raise ValueError("miners must be a positive integer")
+    if not arch:
+        raise ValueError(f"Cannot parse arch from: {experiment_name!r}")
+    if not reward_key:
+        reward_key = "reward_d"
+
+    return {"grid": grid, "miners": miners, "arch": arch, "reward": reward_key}
+
+def parse_experiment_data(experiment_folder):
+    """
+    Minimal parser for MineEnv needs.
+
+    Supports names like:
+      - "mine_50x50__20miners__mlp__reward_d" (new, with '__')
+      - "mine_50x50_20miners_mlp"             (legacy, with '_')
+
+    Returns ONLY the keys MineEnv reads:
+      {
+        "experiment": {"n_miners": <int>, "norm": <float>},
+        "grid":       {"file": "<grid>.txt"},
+        "paths":      {"avg_depletion_json": "<abs path>"},
+        "artifacts":  {}   # (empty; MineEnv will fall back to disk if needed)
+      }
+    """
+    if not isinstance(experiment_folder, str) or not experiment_folder.strip():
+        raise ValueError("experiment_folder must be a non-empty string")
+
+    name = experiment_folder.strip()
+
+    # -------- pick out major tokens (grid, miners) without regex --------
+    if "__" in name:
+        parts = [p.strip() for p in name.split("__") if p.strip()]
+        if len(parts) < 2:
+            raise ValueError("bad experiment name (need at least grid and miners tokens)")
+        grid_token = parts[0]                     # e.g. "mine_50x50"
+        miners_tok = parts[1]                     # e.g. "20miners"
+    else:
+        parts = [p.strip() for p in name.split("_") if p.strip()]
+        if len(parts) < 3:
+            raise ValueError("bad experiment name (legacy format needs >= 3 tokens)")
+        grid_token = "_".join(parts[:-2])         # join to preserve underscores in grid
+        miners_tok = parts[-2]                    # e.g. "20miners"
+
+    if not miners_tok.endswith("miners"):
+        raise ValueError(f"bad miners token: {miners_tok!r}")
+    miners_str = miners_tok[:-6]
+    if not miners_str.isdigit():
+        raise ValueError(f"cannot parse miners count from: {miners_tok!r}")
+    n_miners = int(miners_str)
+
+    # -------- extract rows/cols from grid token (search last 'RxC' piece) --------
+    rows = cols = None
+    for tok in reversed(grid_token.split("_")):
+        if "x" in tok:
+            left, right = tok.split("x", 1)
+            if left.isdigit() and right.isdigit():
+                rows, cols = int(left), int(right)
+                break
+    if rows is None or cols is None:
+        raise ValueError(f"cannot find '<rows>x<cols>' in grid token: {grid_token!r}")
+
+    norm = float(max(rows, cols))
+    grid_file = f"{grid_token}.txt"
+
+    # -------- paths used by MineEnv (for avg depletion) --------
+    from .constants import SAVE_DIR
+    base_dir = os.path.join(SAVE_DIR, name)
+    avg_json = os.path.join(base_dir, "avg_sensor_depletion.json")
+
+    # Return only what MineEnv reads
+    return {
+        "experiment": {
+            "n_miners": n_miners,
+            "norm": norm,
+        },
+        "grid": {
+            "file": grid_file,
+        },
+        "paths": {
+            "avg_depletion_json": avg_json,
+        },
+        "artifacts": {},  # keep empty; MineEnv will read avg json if present
+    }

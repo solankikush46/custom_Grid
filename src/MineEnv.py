@@ -9,7 +9,8 @@ from gymnasium import spaces
 from .DStarLite.DStarLite import DStarLite
 from .MineSimulator import MineSimulator
 from .constants import *
-from .utils import parse_experiment_data
+from .utils import *
+from .train import *
 from .reward_functions import *  
 
 # ===============================
@@ -66,7 +67,6 @@ class MineEnv(gym.Env):
         is_cnn: bool = False,
         is_att: bool = False,
         reward_fn=reward_d,         # default hook (can pass any reward_* callable)
-        manual_control=False
     ):
         super().__init__()
 
@@ -108,7 +108,6 @@ class MineEnv(gym.Env):
             n_miners=n_miners,
             render_mode=render_mode,
             show_predicted=self.show_predicted,
-            manual_control=manual_control
         )
 
         H = self.simulator.n_rows
@@ -556,12 +555,17 @@ class MineEnv(gym.Env):
         return obs
 
     # ========================= Old-API adapters for rewards =========================
-    def goal_positions(self):
-        """Adapter so rewards may use `env.goal_positions` (attribute access)."""
-        return self.simulator.goal_positions
+    def get_goal_positions(self):
+        """
+        Return an iterable of goal cells as (r, c) pairs.
+        """
+        return set(self.simulator.goal_positions)
 
-    def visited(self):
-        """Adapter so rewards may use `env.visited` (attribute access)."""
+    def get_visited(self):
+        """
+        Return the set of visited (r, c) cells.
+        Method form (no @property).
+        """
         return self._visited
 
     def can_move_to(self, pos_rc) -> bool:
