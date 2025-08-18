@@ -3,6 +3,8 @@
 import os
 import traceback
 import time
+import numpy as np
+import torch
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
@@ -15,7 +17,7 @@ from src.utils import *
 from src.wrappers import TimeStackObservation
 from src.attention import AttentionCNNExtractor
 from src.cnn_feature_extractor import GridCNNExtractor
-from src.reward_functions import reward_d  # add more and register below
+from src.reward_functions import *
 
 # ==============================================================
 # Reward registry / resolver
@@ -75,6 +77,7 @@ class InfoToTB(BaseCallback):
 # ==============================================================
 # Environment setup
 # ==============================================================
+
 def _make_env_thunk(
     experiment_folder,
     mode,
@@ -135,6 +138,7 @@ def _make_env_thunk(
 
     return _thunk
 
+
 def save(model: PPO, run_dir: str, suffix: str = "") -> str:
     """Save model.zip inside run_dir, with optional suffix like _c0/_a1/etc."""
     os.makedirs(run_dir, exist_ok=True)
@@ -146,9 +150,7 @@ def save(model: PPO, run_dir: str, suffix: str = "") -> str:
 # ==============================================================
 # Train / Evaluate
 # ==============================================================
-# ==============================================================
-# Train (no fallbacks; fail fast)
-# ==============================================================
+
 def train(
     metadata: dict,
     total_timesteps: int = 20_000,
@@ -211,7 +213,7 @@ def train(
             features_extractor_kwargs=dict(
                 features_dim=128,
                 temporal_len=int(temporal_len),
-                #variant=variant,
+                # variant=variant,
             ),
         )
     elif is_cnn:
@@ -219,7 +221,7 @@ def train(
             features_extractor_class=GridCNNExtractor,
             features_extractor_kwargs=dict(
                 features_dim=128,
-                #variant=variant,
+                # variant=variant,
             ),
         )
     else:
@@ -248,9 +250,112 @@ def train(
         env.close()
 
     run_dir = cap.run_dir or getattr(model.logger, "dir", tb_root)
-    suffix = "" if arch == "mlp" else f"_{arch}"
-    model_path = save(model, run_dir, suffix=suffix)
+    model_path = save(model, run_dir, suffix="")
     return model_path, run_dir
+
+# ===== Tiny eval helpers =====
+
+def _desc_space(space):
+    try:
+        cls = space.__class__.__name__
+        shp = getattr(space, "shape", None)
+        dtype = getattr(space, "dtype", None)
+        return f"{cls}(shape={tuple(shp)}, dtype={dtype})" if shp is not None else cls
+    except Exception as e:
+        return f"<unprintable space: {e}>"
+
+
+def _peek_policy(env, model, steps=5, deterministic=True):
+    """
+    Print argmax action, entropy, and probs for a few steps.
+    Requires the env to expose ACTION_TO_MOVE_MAP (optional).
+    """
+    obs = env.reset()
+    raw_env = env.envs[0]
+
+    for i in range(steps):
+        with torch.no_grad():
+            obs_t = torch.as_tensor(obs, device=model.device)
+            dist = model.policy.get_distribution(obs_t)
+            probs = dist.distribution.probs.detach().cpu().numpy()[0]
+            action = int(probs.argmax())
+            p = np.clip(probs, 1e-8, 1.0)
+            entropy = float(-(p * np.log(p)).sum())
+        print(
+            f"[POLICY {i}] argmax={action}  "
+            f"entropy={entropy:.3f}  probs={np.array2string(probs, precision=3, suppress_small=True)}"
+        )
+        obs, _, dones, _ = env.step([action] if deterministic else [raw_env.action_space.sample()])
+        if np.asarray(dones).any():
+            obs = env.reset()
+
+
+# ===== Auto-discover a single model zip under the experiment folder =====
+
+def _auto_model_path(experiment_folder, arch):
+    """
+    Search typical roots for model*.zip under the experiment folder.
+    Preference bucket order:
+      1) model_{arch}.zip (if arch != 'mlp')
+      2) model.zip
+      3) any other model*.zip
+    Within a bucket: prefer higher PPO run number, then newer mtime.
+    """
+    roots = []
+    try:
+        roots.append(SAVE_DIR)  # configured project save dir
+    except NameError:
+        pass
+    roots.extend([os.path.join(os.getcwd(), "saved_experiments"), os.getcwd()])
+    roots = [r for r in dict.fromkeys(roots) if os.path.isdir(r)]
+
+    candidates = []  # (bucket, run_num, mtime, path)
+    preferred1 = f"model_{arch}.zip" if arch and arch != "mlp" else None
+
+    for root in roots:
+        exp_dir = os.path.join(root, experiment_folder)
+        if not os.path.isdir(exp_dir):
+            continue
+        for dirpath, _, files in os.walk(exp_dir):
+            for fn in files:
+                if not (fn.startswith("model") and fn.endswith(".zip")):
+                    continue
+                path = os.path.join(dirpath, fn)
+                # bucket
+                if preferred1 and fn == preferred1:
+                    bucket = 0
+                elif fn == "model.zip":
+                    bucket = 1
+                else:
+                    bucket = 2
+                # PPO run number if parent dir is PPO_<n>
+                parent = os.path.basename(os.path.dirname(path))
+                try:
+                    run_num = int(parent.split("_", 1)[1]) if parent.startswith("PPO_") else -1
+                except Exception:
+                    run_num = -1
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    mtime = 0.0
+                candidates.append((bucket, run_num, mtime, path))
+
+    if not candidates:
+        raise FileNotFoundError(
+            f"No model*.zip found under any of: {roots}\n"
+            f"Expected something like .../<experiment>/PPO_x/model*.zip"
+        )
+
+    # Choose best bucket, then sort within it: run_num desc, mtime desc
+    best_bucket = min(c[0] for c in candidates)
+    bucketed = [c for c in candidates if c[0] == best_bucket]
+    bucketed.sort(key=lambda t: (t[1], t[2]), reverse=True)
+    model_path = bucketed[0][3]
+    print(f"[MODEL] selected: {model_path}")
+    return model_path
+
+
+# ===== Evaluate (auto model; path optional to keep evaluate_all compatible) =====
 
 def evaluate(
     exp_or_meta,                       # dict metadata OR str experiment folder
@@ -261,16 +366,18 @@ def evaluate(
     total_timesteps: int = 300,
     render: bool = False,
     temporal_len: int = 12,
-    load_model_path: str = None,       # NEW: absolute path to model.zip for a specific run
+    policy_debug_steps: int = 4,       # >0 to dump policy stats a few steps
+    deterministic: bool = True,        # greedy policy by default
+    load_model_path: str = None,       # OPTIONAL: honored if provided
+    verbose: bool = False,             # NEW: print per-timestep info if True
 ):
     """
-    Evaluate a trained PPO model. Accepts either:
-      - metadata dict: {"grid": "...", "miners": int, "arch": "mlp|c*|a*", "reward": "reward_d|..."}
-      - experiment folder string: e.g. "mine_50x50__20miners__a1__reward_d"
+    Evaluate a trained PPO model.
 
-    If `load_model_path` is provided, that specific checkpoint is loaded (overrides latest).
+    You do NOT need to pass a model path. If omitted, we auto-discover one
+    under the experiment folder (prefers model_{arch}.zip, then model.zip).
     """
-    # Normalize input
+    # --- Normalize input via project helpers ---
     if isinstance(exp_or_meta, dict):
         metadata = exp_or_meta
         experiment_folder = make_experiment_name(metadata)
@@ -287,18 +394,18 @@ def evaluate(
     is_att = arch.startswith("a")
     is_cnn = is_att or arch.startswith("c")
 
-    # Resolve model + run info
+    # --- Choose checkpoint ---
     if load_model_path:
         model_path = load_model_path
-        run_dir = os.path.dirname(model_path)
-        run_name = os.path.basename(run_dir)
-        load_base = model_path[:-4] if model_path.endswith(".zip") else model_path
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"load_model_path does not exist: {model_path}")
     else:
-        model_path = latest_ppo_model_path(experiment_folder)
-        run_dir, run_name = latest_ppo_run(experiment_folder, require_model=True)
-        load_base = model_path[:-4] if model_path.endswith(".zip") else model_path
+        model_path = _auto_model_path(experiment_folder, arch)
 
-    # Build eval env that matches the arch (attention uses TimeStackObservation)
+    run_dir = os.path.dirname(model_path)
+    run_name = os.path.basename(run_dir)
+
+    # --- Build eval env (arch-aware) ---
     eval_env = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
@@ -308,20 +415,15 @@ def evaluate(
         )
     ])
 
-    # ---- DEBUG: show observation/action spaces to verify correctness ----
-    def _desc_space(space):
+    def _fmt(v):
         try:
-            cls = space.__class__.__name__
-            shp = getattr(space, "shape", None)
-            dtype = getattr(space, "dtype", None)
-            if shp is not None:
-                return f"{cls}(shape={tuple(shp)}, dtype={dtype})"
-            return f"{cls}"
-        except Exception as e:
-            return f"<unprintable space: {e}>"
+            return f"{float(v):.3f}"
+        except Exception:
+            return str(v)
 
     try:
-        print(f"[DEBUG] arch={arch!r} | is_cnn={is_cnn} | is_att={is_att} | temporal_len={temporal_len}")
+        # Spaces + mapping introspection (confirm index->move consistency)
+        print(f"[DEBUG] arch='{arch}' | is_cnn={is_cnn} | is_att={is_att} | temporal_len={temporal_len}")
         print(f"[DEBUG] VecEnv observation_space: {_desc_space(eval_env.observation_space)}")
         print(f"[DEBUG] VecEnv action_space:      {_desc_space(eval_env.action_space)}")
         try:
@@ -329,71 +431,95 @@ def evaluate(
             print(f"[DEBUG] Raw env observation_space: {_desc_space(raw_env.observation_space)}")
             print(f"[DEBUG] Raw env action_space:      {_desc_space(raw_env.action_space)}")
             if hasattr(raw_env, "_has_time_stack"):
-                print(f"[DEBUG] _has_time_stack={raw_env._has_time_stack}  "
-                      f"_tstack_len={getattr(raw_env, '_tstack_len', None)}")
-        except Exception:
-            pass
+                print(
+                    f"[DEBUG] _has_time_stack={raw_env._has_time_stack}  "
+                    f"_tstack_len={getattr(raw_env, '_tstack_len', None)}"
+                )
+            for name in ("_ACTIONS", "ACTION_TO_MOVE_MAP", "MOVE_TO_ACTION_MAP"):
+                if hasattr(raw_env, name):
+                    print(f"[DEBUG] {name}: {getattr(raw_env, name)}")
+        except Exception as e:
+            print(f"[WARN] could not introspect raw env mappings: {e}")
 
-        print(f"[INFO] Loading {load_base} (run {run_name})")
-        model = PPO.load(load_base, env=eval_env, device="auto", print_system_info=False)
+        # --- Load model ---
+        print(f"[INFO] Loading {model_path} (run {run_name})")
+        model = PPO.load(model_path, env=eval_env, device="auto", print_system_info=False)
 
-        # After load: print what the checkpoint expects
+        # Confirm loaded spaces + extractor
         try:
-            print(f"[DEBUG] Loaded model observation_space: {_desc_space(getattr(model, 'observation_space', None))}")
-            print(f"[DEBUG] Loaded model action_space:      {_desc_space(getattr(model, 'action_space', None))}")
+            print(
+                f"[DEBUG] Loaded model observation_space: "
+                f"{_desc_space(getattr(model, 'observation_space', None))}"
+            )
+            print(
+                f"[DEBUG] Loaded model action_space:      "
+                f"{_desc_space(getattr(model, 'action_space', None))}"
+            )
+            fx = getattr(getattr(model, "policy", None), "features_extractor", None)
+            if fx is not None:
+                print(f"[DEBUG] features_extractor: {fx.__class__.__name__}")
         except Exception:
             pass
+
+        # --- Optional quick policy peek ---
+        if policy_debug_steps and policy_debug_steps > 0:
+            _peek_policy(eval_env, model, steps=policy_debug_steps, deterministic=deterministic)
 
         if total_timesteps <= 0:
-            return  # just inspect/print
+            return  # inspection-only
 
+        # Pre-fetch action list for pretty printing (if available)
+        try:
+            actions_list = eval_env.get_attr("_ACTIONS")[0]
+        except Exception:
+            actions_list = None
+
+        # --- Main eval loop ---
         obs = eval_env.reset()
         steps = 0
         while steps < total_timesteps:
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=deterministic)
             obs, rewards, dones, infos = eval_env.step(action)
             steps += 1
-            if dones[0]:
-                obs = eval_env.reset()
+
+            if verbose:
+                try:
+                    a_idx = int(action[0]) if hasattr(action, "__len__") else int(action)
+                except Exception:
+                    a_idx = int(action)
+                info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else (infos or {})
+                r = rewards[0] if isinstance(rewards, (list, tuple, np.ndarray)) else rewards
+                bits = [
+                    f"t={steps}",
+                    f"action={a_idx}",
+                ]
+                if actions_list and 0 <= a_idx < len(actions_list):
+                    bits.append(f"move={actions_list[a_idx]}")
+                bits.append(f"reward={_fmt(r)}")
+                for k in ("current_battery", "distance_to_goal"):
+                    if k in info0 and info0[k] is not None:
+                        bits.append(f"{k}={_fmt(info0[k])}")
+                subs = info0.get("subrewards")
+                if isinstance(subs, dict) and subs:
+                    sub_str = ", ".join(f"{k}={_fmt(v)}" for k, v in subs.items())
+                    bits.append(f"subs[{sub_str}]")
+                print(" | ".join(bits))
+
+            try:
+                if np.asarray(dones).any():
+                    obs = eval_env.reset()
+            except Exception:
+                pass
+
     finally:
-        eval_env.close()
+        try:
+            eval_env.close()
+        except Exception:
+            pass
 
 # ==============================================================
 # Testing / batch training helpers
 # ==============================================================
-def train_junk(
-    metadata: dict,
-    timesteps: int = 1_000,
-    eval_steps: int = 1_000,
-    mode: str = "static",
-    use_planner_overlay: bool = True,
-    show_miners: bool = False,
-    show_predicted: bool = True,
-    render=True
-):
-    model_path, run_dir = train(
-        metadata=metadata,
-        total_timesteps=timesteps,
-        mode=mode,
-        use_planner_overlay=use_planner_overlay,
-        show_miners=show_miners,
-        show_predicted=show_predicted,
-        render=False
-    )
-    print(f"[quick_junk_run] trained + saved to: {model_path}")
-
-    evaluate(
-        metadata,
-        mode=mode,
-        use_planner_overlay=use_planner_overlay,
-        show_miners=show_miners,
-        show_predicted=show_predicted,
-        total_timesteps=eval_steps,
-        render=render
-    )
-    print(f"[quick_junk_run] eval complete for run dir: {run_dir}")
-    return model_path, run_dir
-
 
 def train_all(total_timesteps: int = 1_000_000):
     """
@@ -423,6 +549,7 @@ def train_all(total_timesteps: int = 1_000_000):
 
         print(f"  -> Model saved to: {model_path}")
         print(f"  -> Run directory: {run_dir}")
+
 
 def _find_latest_run_and_model(exp_dir: str):
     """
@@ -457,6 +584,7 @@ def _find_latest_run_and_model(exp_dir: str):
             return dirpath, os.path.join(dirpath, zips[-1])
 
     return None, None
+
 
 def evaluate_all(
     base_dir: str = SAVE_DIR,
@@ -579,8 +707,10 @@ def evaluate_all(
                 model = PPO.load(load_base, env=env, device="auto", print_system_info=False)
             except Exception as e:
                 print(f"  [error] could not load model: {e}")
-                try: env.close()
-                except Exception: pass
+                try:
+                    env.close()
+                except Exception:
+                    pass
                 continue
 
             ep_metrics = []
@@ -626,13 +756,14 @@ def evaluate_all(
                         obs = env.reset()
 
                 if ep_metrics:
-                    import numpy as np
                     er = [m["episode_return"] for m in ep_metrics]
                     el = [m["episode_length"] for m in ep_metrics]
                     sr = [1.0 if m["reached_goal"] else 0.0 for m in ep_metrics]
-                    print(f"  [run summary] episodes={len(ep_metrics)} | "
-                          f"mean_return={np.mean(er):.3f} | mean_len={np.mean(el):.1f} | "
-                          f"success_rate={np.mean(sr):.2%}")
+                    print(
+                        f"  [run summary] episodes={len(ep_metrics)} | "
+                        f"mean_return={np.mean(er):.3f} | mean_len={np.mean(el):.1f} | "
+                        f"success_rate={np.mean(sr):.2%}"
+                    )
                 else:
                     print("  [run summary] no completed episodes")
 
@@ -641,8 +772,10 @@ def evaluate_all(
             except Exception as e:
                 print(f"  [error during eval] {e}")
             finally:
-                try: env.close()
-                except Exception: pass
+                try:
+                    env.close()
+                except Exception:
+                    pass
 
             evaluated.append((exp_name, run_dir, model_zip))
 
@@ -650,7 +783,6 @@ def evaluate_all(
         print("\n[evaluate_all] No completed episodes across all runs.")
         return evaluated
 
-    import numpy as np
     ER = np.array([m["episode_return"] for m in all_episode_metrics], dtype=float)
     EL = np.array([m["episode_length"] for m in all_episode_metrics], dtype=float)
     SR = np.array([1.0 if m["reached_goal"] else 0.0 for m in all_episode_metrics], dtype=float)
@@ -672,6 +804,7 @@ def evaluate_all(
 # ==============================================================
 # Manual control (keyboard) — same shape as evaluate, but user drives
 # ==============================================================
+
 def manual_control(
     exp_or_meta,                       # dict metadata OR str experiment folder
     mode: str = "static",
@@ -688,9 +821,6 @@ def manual_control(
     Prints reward + subrewards on each step you make.
     Quit with ESC or window close.
     """
-    import time
-    import numpy as np
-    import pygame
 
     # --- normalize input ---
     if isinstance(exp_or_meta, dict):
@@ -705,8 +835,8 @@ def manual_control(
     arch = metadata["arch"]
     reward_key = metadata.get("reward", "reward_d")
     rfn = resolve_reward_fn(reward_key)
-    is_att = isinstance(arch, str) and arch.startswith("a")
 
+    # Build env (same as evaluate)
     env_vec = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
@@ -715,6 +845,14 @@ def manual_control(
             reward_fn=rfn,
         )
     ])
+
+    # Local, explicit import to avoid hard dependency if unused
+    try:
+        import pygame
+    except Exception as e:
+        print(f"[manual_control] pygame unavailable: {e}")
+        env_vec.close()
+        return
 
     def _fmt(v):
         try:
@@ -745,10 +883,11 @@ def manual_control(
             actions_list = [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]
         drc_to_idx = {drc: i for i, drc in enumerate(actions_list)}
 
+        clock = pygame.time.Clock()
+        steps = 0
+
         def _poll_action_index():
-            """
-            Return: -1 to quit, int action index to move, or None if no movement key pressed.
-            """
+            """Return -1 to quit, int action index to move, or None if no movement key pressed."""
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     return -1
@@ -765,15 +904,11 @@ def manual_control(
                 return None
             return drc_to_idx.get((dr, dc))
 
-        steps = 0
-        clock = pygame.time.Clock()
-
         while steps < total_timesteps:
             act_idx = _poll_action_index()
             if act_idx == -1:
                 break  # quit
             if act_idx is None:
-                # idle: keep UI responsive; env renders on step/reset
                 time.sleep(0.01)
                 clock.tick(max(1, int(fps)))
                 continue
