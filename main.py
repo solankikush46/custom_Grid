@@ -16,7 +16,15 @@ def ensure_directories_exist():
         os.makedirs(d, exist_ok=True)
     
 def main():
+    '''
+    TODO:
+    - add all tensorboard metrics from prev version
+    - read through rainbow paper to get ideas for improvements
+    - get cnn results better than REU results that use D*Lite
+    '''
     train_all(1_000_000)
+    #evaluate_all(episodes=2, render=True, verbose=True)
+    #manual_control("mine_50x50__20miners__a1__reward_d")
     
 if __name__ == "__main__":
     ensure_directories_exist()
