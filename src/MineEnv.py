@@ -115,7 +115,7 @@ class MineEnv(gym.Env):
 
         # ================== Depletion rate sources ==================
         self.constant_rates = {}   # {(r,c): rate}
-        self.global_rate = 0.73     # mean rate (for 'static')
+        self.global_rate = None     # mean rate (for 'static')
 
         if arts.get("avg_depletion_map"):
             self.constant_rates = dict(arts["avg_depletion_map"])
@@ -136,7 +136,7 @@ class MineEnv(gym.Env):
                 self.global_rate = float(np.mean(vals)) if len(vals) > 0 else 0.0
             else:
                 self.constant_rates = {}
-                self.global_rate = 0.0
+                self.global_rate = 0.76
         # ============================================================
 
         # Planner for overlay / cost plumbing
@@ -302,7 +302,7 @@ class MineEnv(gym.Env):
         # Update visited set and revisit count
         if agent_rc in self._visited:
             self._revisit_count += 1
-        self._visited.add(agent_rc)
+        self._visited.add(new_pos_intended)
 
         # Episode termination conditions
         terminated = bool(agent_rc in self.simulator.goal_positions)
