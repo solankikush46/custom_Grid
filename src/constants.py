@@ -62,6 +62,8 @@ DIRECTION_MAP = {
     4: (+1,  0), 5: (+1, -1), 6: (0, -1), 7: (-1, -1),
 }
 
+ACTIONS = [DIRECTION_MAP[i] for i in range(len(DIRECTION_MAP))]
+
 ACTION_NAMES = {
     0: "UP",
     1: "UP-RIGHT",
@@ -77,7 +79,6 @@ MOVE_TO_ACTION_MAP = {move: action for action, move in DIRECTION_MAP.items()}
 
 # model saving and logging
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-
 
 MODEL_DIR = os.path.join(BASE_DIR, "SavedModels")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
