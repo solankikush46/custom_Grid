@@ -3,6 +3,7 @@
 import os
 import traceback
 import time
+import numpy as np
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
@@ -626,7 +627,6 @@ def evaluate_all(
                         obs = env.reset()
 
                 if ep_metrics:
-                    import numpy as np
                     er = [m["episode_return"] for m in ep_metrics]
                     el = [m["episode_length"] for m in ep_metrics]
                     sr = [1.0 if m["reached_goal"] else 0.0 for m in ep_metrics]
@@ -650,7 +650,6 @@ def evaluate_all(
         print("\n[evaluate_all] No completed episodes across all runs.")
         return evaluated
 
-    import numpy as np
     ER = np.array([m["episode_return"] for m in all_episode_metrics], dtype=float)
     EL = np.array([m["episode_length"] for m in all_episode_metrics], dtype=float)
     SR = np.array([1.0 if m["reached_goal"] else 0.0 for m in all_episode_metrics], dtype=float)
@@ -688,9 +687,6 @@ def manual_control(
     Prints reward + subrewards on each step you make.
     Quit with ESC or window close.
     """
-    import time
-    import numpy as np
-    import pygame
 
     # --- normalize input ---
     if isinstance(exp_or_meta, dict):
