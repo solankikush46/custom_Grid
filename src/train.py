@@ -520,14 +520,12 @@ def evaluate(
 # ==============================================================
 # Testing / batch training helpers
 # ==============================================================
-
 def train_all(total_timesteps: int = 1_000_000):
     """
     Define a list of experiments and train each. By default trains for 1,000,000 steps.
-    Includes an a1 (attention over c1) configuration.
     """
     experiments = [
-        {"grid": "mine_50x50", "miners": 20, "arch": "a1", "reward": "reward_d"},
+        {"grid": "mine_20x20", "miners": 8, "arch": "a1", "reward": "reward_d"},
     ]
 
     for meta in experiments:
