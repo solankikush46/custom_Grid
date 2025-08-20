@@ -3,6 +3,7 @@
 import os
 import traceback
 import time
+import hashlib
 import numpy as np
 import torch
 
@@ -13,11 +14,11 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 
 from src.MineEnv import MineEnv
 from src.constants import SAVE_DIR
-from src.utils import *
+from src.utils import *  # make_experiment_name, get_metadata, etc.
 from src.wrappers import TimeStackObservation
 from src.attention import AttentionCNNExtractor
 from src.cnn_feature_extractor import GridCNNExtractor
-from src.reward_functions import *
+from src.reward_functions import *  # includes reward_d, compute_reward
 
 # ==============================================================
 # Reward registry / resolver
@@ -175,7 +176,6 @@ def train(
     arch = str(metadata.get("arch", "mlp")).lower()
     is_att = arch.startswith("a")
     is_cnn = is_att or arch.startswith("c")
-    variant = arch[1:] if is_cnn and len(arch) > 1 else None
 
     # ---- experiment + logging roots ----
     experiment_folder = make_experiment_name(metadata)
@@ -206,14 +206,13 @@ def train(
                 f"Time stack length mismatch: env={env.envs[0]._tstack_len}, requested={temporal_len}."
             )
 
-    # ---- choose extractor + kwargs
+    # ---- choose extractor + kwargs ----
     if is_att:
         policy_kwargs = dict(
             features_extractor_class=AttentionCNNExtractor,
             features_extractor_kwargs=dict(
                 features_dim=128,
                 temporal_len=int(temporal_len),
-                # variant=variant,
             ),
         )
     elif is_cnn:
@@ -221,7 +220,6 @@ def train(
             features_extractor_class=GridCNNExtractor,
             features_extractor_kwargs=dict(
                 features_dim=128,
-                # variant=variant,
             ),
         )
     else:
@@ -235,6 +233,15 @@ def train(
         tensorboard_log=tb_root,
         policy_kwargs=policy_kwargs,
     )
+
+    # Persist action order once for reproducibility/debug (if available)
+    try:
+        actions_order = env.get_attr("_ACTIONS")[0]
+        with open(os.path.join(tb_root, "actions_order.txt"), "w") as f:
+            f.write(repr(actions_order))
+        print("[TRAIN] actions order:", actions_order)
+    except Exception:
+        pass
 
     cap = _CaptureLogDir()
     tb_cb = InfoToTB()
@@ -268,7 +275,6 @@ def _desc_space(space):
 def _peek_policy(env, model, steps=5, deterministic=True):
     """
     Print argmax action, entropy, and probs for a few steps.
-    Requires the env to expose ACTION_TO_MOVE_MAP (optional).
     """
     obs = env.reset()
     raw_env = env.envs[0]
@@ -288,6 +294,170 @@ def _peek_policy(env, model, steps=5, deterministic=True):
         obs, _, dones, _ = env.step([action] if deterministic else [raw_env.action_space.sample()])
         if np.asarray(dones).any():
             obs = env.reset()
+
+# ---- Deep-dive debug helpers (optional) ----
+
+def _hash(a):
+    try:
+        return hashlib.sha1(np.ascontiguousarray(a).view(np.uint8)).hexdigest()[:10]
+    except Exception:
+        return "na"
+
+
+def _summarize_obs(obs, tag=""):
+    arr = np.asarray(obs)
+    if arr.ndim == 5:
+        arr = arr[0]
+    if arr.ndim == 4:
+        T, C, H, W = arr.shape
+        t_std = arr.reshape(T, -1).std(axis=1)
+        ch_std = arr.std(axis=(0, 2, 3))
+        same_as_t0 = [bool(np.allclose(arr[t], arr[0])) for t in range(T)]
+        frame_hashes = [_hash(arr[t]) for t in range(T)]
+        ch_nnz = arr.astype(bool).sum(axis=(0, 2, 3))
+        print(f"[OBS{tag}] shape={arr.shape} dtype={arr.dtype} min={arr.min():.4f} max={arr.max():.4f} mean={arr.mean():.4f} std={arr.std():.4f}")
+        print(f"[OBS{tag}] per-time std: {np.array2string(t_std, precision=4, threshold=24)}")
+        print(f"[OBS{tag}] per-channel std: {np.array2string(ch_std, precision=4, threshold=24)}")
+        print(f"[OBS{tag}] per-channel nnz: {np.array2string(ch_nnz, max_line_width=200)}")
+        print(f"[OBS{tag}] frames_equal_to_t0: {same_as_t0}")
+        print(f"[OBS{tag}] frame_hashes: {frame_hashes}")
+        if all(same_as_t0):
+            print("[OBS] ⚠ time stack appears constant within this observation.")
+    elif arr.ndim == 3:
+        C, H, W = arr.shape
+        ch_std = arr.std(axis=(1, 2))
+        ch_nnz = arr.astype(bool).sum(axis=(1, 2))
+        print(f"[OBS{tag}] shape={arr.shape} dtype={arr.dtype} min={arr.min():.4f} max={arr.max():.4f} mean={arr.mean():.4f} std={arr.std():.4f}")
+        print(f"[OBS{tag}] per-channel std: {np.array2string(ch_std, precision=4, threshold=24)}")
+        print(f"[OBS{tag}] per-channel nnz: {np.array2string(ch_nnz, max_line_width=200)}")
+    else:
+        print(f"[OBS{tag}] unexpected ndim={arr.ndim} shape={arr.shape}")
+
+
+def _peek_logits_probs_value(model, obs, tag=""):
+    with torch.no_grad():
+        obs_t = torch.as_tensor(obs, device=model.device)
+        dist = model.policy.get_distribution(obs_t)
+        logits = dist.distribution.logits.detach().cpu().numpy()[0]
+        probs  = dist.distribution.probs.detach().cpu().numpy()[0]
+        p = np.clip(probs, 1e-8, 1.0)
+        entropy = float(-(p * np.log(p)).sum())
+        try:
+            v = float(model.policy.predict_values(obs_t).detach().cpu().numpy()[0])
+        except Exception:
+            v = None
+    print(f"[POLICY{tag}] logits={np.array2string(logits, precision=3, suppress_small=True)}")
+    print(f"[POLICY{tag}] probs ={np.array2string(probs,  precision=3, suppress_small=True)}  argmax={int(probs.argmax())}  entropy={entropy:.3f}  V={v}")
+
+
+# ---------- NEW: unwrap helpers so probes can reach MineEnv through wrappers ----------
+
+def _unwrap_env(env):
+    """
+    Recursively unwrap common Gym wrappers to reach the base environment
+    (your MineEnv). Returns (base_env, wrapper_chain_names).
+    """
+    chain = [env.__class__.__name__]
+    cur = env
+    while hasattr(cur, "env"):
+        cur = cur.env
+        chain.append(cur.__class__.__name__)
+    return cur, chain
+
+
+def _wrapper_stack_str(chain):
+    try:
+        return " -> ".join(chain)
+    except Exception:
+        return str(chain)
+
+
+def _print_reward_landscape(env_like):
+    """
+    Print immediate reward for each legal neighbor move from current pos.
+    Works whether you pass Monitor, TimeStackObservation, or MineEnv.
+    """
+    base_env, _ = _unwrap_env(env_like)
+    try:
+        acts = getattr(base_env, "_ACTIONS")
+    except Exception:
+        acts = [(-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)]
+
+    sim = getattr(base_env, "simulator", None)
+    if sim is None or not hasattr(base_env, "reward_fn"):
+        print("[LANDSCAPE] base env missing .simulator or .reward_fn")
+        return
+
+    r0, c0 = tuple(sim.guided_miner_pos)
+    print("[LANDSCAPE] pos=", (r0, c0))
+    rows = []
+    for i, (dr, dc) in enumerate(acts):
+        new_pos = (r0 + dr, c0 + dc)
+        rew, sub = compute_reward(base_env, base_env.reward_fn, new_pos=new_pos)
+        rows.append((i, (dr, dc), float(rew), sub))
+    rows.sort(key=lambda t: t[2], reverse=True)
+    for i, move, rew, sub in rows:
+        try:
+            dpen = sub.get("distance_penalty", None)
+        except Exception:
+            dpen = None
+        print(f"  a={i:<2} move={move!s:<9} reward={rew:>7.3f}  distance_penalty={dpen}")
+
+
+def _print_local_neighborhood(env_like):
+    """
+    Print legality, path hints, battery-tier for each neighbor.
+    Works through wrappers by unwrapping first.
+    """
+    base_env, _ = _unwrap_env(env_like)
+    sim = getattr(base_env, "simulator", None)
+    if sim is None:
+        print("[LOCAL] base env missing .simulator")
+        return
+
+    H, W = sim.n_rows, sim.n_cols
+    try:
+        acts = getattr(base_env, "_ACTIONS")
+    except Exception:
+        acts = [(-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)]
+    r0, c0 = tuple(sim.guided_miner_pos)
+
+    def _cheb(a, b):
+        return max(abs(a[0]-b[0]), abs(a[1]-b[1]))
+
+    goals = sim.goal_positions or [(r0, c0)]
+    d0 = min(_cheb((r0, c0), g) for g in goals)
+
+    try:
+        path_rc = {(y, x) for (x, y) in base_env.pathfinder.getShortestPath()} if base_env.pathfinder else set()
+    except Exception:
+        path_rc = set()
+
+    print(f"[LOCAL] pos={(r0,c0)}  d*len={len(path_rc)}  batt_map={'ok' if getattr(base_env,'batt_map',None) is not None else 'None'}")
+
+    def _safe(mat, r, c, default=0.0):
+        H2, W2 = mat.shape
+        if 0 <= r < H2 and 0 <= c < W2:
+            return float(mat[r, c])
+        return default
+
+    try:
+        from src.constants import COST_TABLE
+    except Exception:
+        COST_TABLE = {}
+
+    for i, (dr, dc) in enumerate(acts):
+        rr, cc = r0 + dr, c0 + dc
+        inb = (0 <= rr < H and 0 <= cc < W)
+        free = bool(inb and sim.is_valid_guided_miner_move((rr, cc)))
+        on_path = (rr, cc) in path_rc
+        batt = _safe(base_env.batt_map, rr, cc, default=0.0) if (getattr(base_env, 'batt_map', None) is not None and inb) else 0.0
+        try:
+            cost_tier = COST_TABLE[int(batt)]
+        except Exception:
+            cost_tier = None
+        d_new = min(_cheb((rr, cc), g) for g in goals) if inb else None
+        print(f"  a={i} move=({dr:+d},{dc:+d}) inb={inb} free={free} on_d*={on_path} batt={batt:5.1f} cost={cost_tier} d_old={d0} d_new={d_new}")
 
 
 # ===== Auto-discover a single model zip under the experiment folder =====
@@ -355,7 +525,7 @@ def _auto_model_path(experiment_folder, arch):
     return model_path
 
 
-# ===== Evaluate (auto model; path optional to keep evaluate_all compatible) =====
+# ===== Evaluate (auto model; path optional) =====
 
 def evaluate(
     exp_or_meta,                       # dict metadata OR str experiment folder
@@ -369,7 +539,8 @@ def evaluate(
     policy_debug_steps: int = 4,       # >0 to dump policy stats a few steps
     deterministic: bool = True,        # greedy policy by default
     load_model_path: str = None,       # OPTIONAL: honored if provided
-    verbose: bool = False,             # NEW: print per-timestep info if True
+    verbose: bool = False,             # print per-timestep info if True
+    debug_probe_steps: int = 4,        # if >0, run deep-dive probes for first N steps
 ):
     """
     Evaluate a trained PPO model.
@@ -422,24 +593,30 @@ def evaluate(
             return str(v)
 
     try:
-        # Spaces + mapping introspection (confirm index->move consistency)
+        # Grab both the wrapper and the base env
+        raw_wrapper = eval_env.envs[0]          # Monitor(...)
+        base_env, chain = _unwrap_env(raw_wrapper)
+
+        # Spaces + mapping introspection
         print(f"[DEBUG] arch='{arch}' | is_cnn={is_cnn} | is_att={is_att} | temporal_len={temporal_len}")
         print(f"[DEBUG] VecEnv observation_space: {_desc_space(eval_env.observation_space)}")
         print(f"[DEBUG] VecEnv action_space:      {_desc_space(eval_env.action_space)}")
+        print(f"[DEBUG] env wrapper stack: {_wrapper_stack_str(chain)}")
         try:
-            raw_env = eval_env.envs[0]
-            print(f"[DEBUG] Raw env observation_space: {_desc_space(raw_env.observation_space)}")
-            print(f"[DEBUG] Raw env action_space:      {_desc_space(raw_env.action_space)}")
-            if hasattr(raw_env, "_has_time_stack"):
-                print(
-                    f"[DEBUG] _has_time_stack={raw_env._has_time_stack}  "
-                    f"_tstack_len={getattr(raw_env, '_tstack_len', None)}"
-                )
+            print(f"[DEBUG] Raw wrapper observation_space: {_desc_space(raw_wrapper.observation_space)}")
+            print(f"[DEBUG] Raw wrapper action_space:      {_desc_space(raw_wrapper.action_space)}")
+            print(f"[DEBUG] Base env observation_space:    {_desc_space(base_env.observation_space)}")
+            print(f"[DEBUG] Base env action_space:         {_desc_space(base_env.action_space)}")
+            if hasattr(raw_wrapper, "_has_time_stack"):
+                print(f"[DEBUG] _has_time_stack={raw_wrapper._has_time_stack}  "
+                      f"_tstack_len={getattr(raw_wrapper, '_tstack_len', None)}")
             for name in ("_ACTIONS", "ACTION_TO_MOVE_MAP", "MOVE_TO_ACTION_MAP"):
-                if hasattr(raw_env, name):
-                    print(f"[DEBUG] {name}: {getattr(raw_env, name)}")
+                if hasattr(base_env, name):
+                    print(f"[DEBUG] base.{name}: {getattr(base_env, name)}")
+                elif hasattr(raw_wrapper, name):
+                    print(f"[DEBUG] wrap.{name}: {getattr(raw_wrapper, name)}")
         except Exception as e:
-            print(f"[WARN] could not introspect raw env mappings: {e}")
+            print(f"[WARN] could not introspect env mappings: {e}")
 
         # --- Load model ---
         print(f"[INFO] Loading {model_path} (run {run_name})")
@@ -447,14 +624,10 @@ def evaluate(
 
         # Confirm loaded spaces + extractor
         try:
-            print(
-                f"[DEBUG] Loaded model observation_space: "
-                f"{_desc_space(getattr(model, 'observation_space', None))}"
-            )
-            print(
-                f"[DEBUG] Loaded model action_space:      "
-                f"{_desc_space(getattr(model, 'action_space', None))}"
-            )
+            print(f"[DEBUG] Loaded model observation_space: "
+                  f"{_desc_space(getattr(model, 'observation_space', None))}")
+            print(f"[DEBUG] Loaded model action_space:      "
+                  f"{_desc_space(getattr(model, 'action_space', None))}")
             fx = getattr(getattr(model, "policy", None), "features_extractor", None)
             if fx is not None:
                 print(f"[DEBUG] features_extractor: {fx.__class__.__name__}")
@@ -465,7 +638,7 @@ def evaluate(
         if policy_debug_steps and policy_debug_steps > 0:
             _peek_policy(eval_env, model, steps=policy_debug_steps, deterministic=deterministic)
 
-        if total_timesteps <= 0:
+        if total_timesteps <= 0 and not debug_probe_steps:
             return  # inspection-only
 
         # Pre-fetch action list for pretty printing (if available)
@@ -474,8 +647,18 @@ def evaluate(
         except Exception:
             actions_list = None
 
-        # --- Main eval loop ---
+        # One-time deep probes at t=0
         obs = eval_env.reset()
+        if debug_probe_steps and debug_probe_steps > 0:
+            try:
+                _summarize_obs(obs, tag=" t=0")                      # time stack stats
+                _print_reward_landscape(base_env)                      # local reward-by-move
+                _print_local_neighborhood(base_env)                    # neighborhood facts
+                _peek_logits_probs_value(model, obs, tag=" t=0")       # logits/probs/value
+            except Exception as e:
+                print(f"[debug_probe] error: {e}")
+
+        # --- Main eval loop ---
         steps = 0
         while steps < total_timesteps:
             action, _ = model.predict(obs, deterministic=deterministic)
@@ -489,10 +672,7 @@ def evaluate(
                     a_idx = int(action)
                 info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else (infos or {})
                 r = rewards[0] if isinstance(rewards, (list, tuple, np.ndarray)) else rewards
-                bits = [
-                    f"t={steps}",
-                    f"action={a_idx}",
-                ]
+                bits = [f"t={steps}", f"action={a_idx}"]
                 if actions_list and 0 <= a_idx < len(actions_list):
                     bits.append(f"move={actions_list[a_idx]}")
                 bits.append(f"reward={_fmt(r)}")
@@ -504,6 +684,13 @@ def evaluate(
                     sub_str = ", ".join(f"{k}={_fmt(v)}" for k, v in subs.items())
                     bits.append(f"subs[{sub_str}]")
                 print(" | ".join(bits))
+
+            if debug_probe_steps and steps <= debug_probe_steps:
+                try:
+                    _peek_logits_probs_value(model, obs, tag=f" t={steps}")
+                    _print_local_neighborhood(base_env)
+                except Exception as e:
+                    print(f"[debug_probe step] error: {e}")
 
             try:
                 if np.asarray(dones).any():
@@ -520,12 +707,13 @@ def evaluate(
 # ==============================================================
 # Testing / batch training helpers
 # ==============================================================
+
 def train_all(total_timesteps: int = 1_000_000):
     """
     Define a list of experiments and train each. By default trains for 1,000,000 steps.
     """
     experiments = [
-        {"grid": "mine_20x20", "miners": 8, "arch": "a1", "reward": "reward_d"},
+        {"grid": "mine_50x50", "miners": 20, "arch": "a0", "reward": "reward_d"},
     ]
 
     for meta in experiments:
@@ -555,26 +743,22 @@ def _find_latest_run_and_model(exp_dir: str):
     Returns (run_dir, model_zip_path) or (None, None) if not found.
     Prefers PPO_* subdirs; falls back to any model*.zip under exp_dir.
     """
-    # Prefer PPO_* directories, pick the latest by natural sort
     ppo_runs = []
     for name in os.listdir(exp_dir):
         full = os.path.join(exp_dir, name)
         if os.path.isdir(full) and name.startswith("PPO_"):
             ppo_runs.append((name, full))
     if ppo_runs:
-        # sort by the numeric suffix if present
         def _k(t):
             n = t[0].split("_", 1)[-1]
             return int(n) if n.isdigit() else 0
         ppo_runs.sort(key=_k)
-        # scan from newest to oldest for a model zip
         for _, run_dir in reversed(ppo_runs):
             zips = [f for f in os.listdir(run_dir) if f.startswith("model") and f.endswith(".zip")]
             if zips:
                 zips.sort()
                 return run_dir, os.path.join(run_dir, zips[-1])
 
-    # Fallback: search recursively for any model*.zip
     for dirpath, _, filenames in os.walk(exp_dir):
         zips = [f for f in filenames if f.startswith("model") and f.endswith(".zip")]
         if zips:
@@ -675,7 +859,7 @@ def evaluate_all(
                     total_timesteps=0,             # just print spaces + load
                     render=render,
                     temporal_len=temporal_len,
-                    load_model_path=model_zip,     # <-- key: pick THIS run's model
+                    load_model_path=model_zip,     # pick THIS run's model
                 )
             except Exception as e:
                 print(f"  [warn] evaluate() failed for {run_dir}: {e}")
@@ -834,7 +1018,6 @@ def manual_control(
     reward_key = metadata.get("reward", "reward_d")
     rfn = resolve_reward_fn(reward_key)
 
-    # Build env (same as evaluate)
     env_vec = DummyVecEnv([
         _make_env_thunk(
             experiment_folder, mode, use_planner_overlay,
@@ -844,7 +1027,6 @@ def manual_control(
         )
     ])
 
-    # Local, explicit import to avoid hard dependency if unused
     try:
         import pygame
     except Exception as e:
@@ -872,11 +1054,10 @@ def manual_control(
         print(" | ".join(bits))
 
     try:
-        obs = env_vec.reset()  # window created & first frame drawn if render=True
+        obs = env_vec.reset()
 
-        # Build (dr, dc) -> action_index map from the underlying env’s action list
         try:
-            actions_list = env_vec.get_attr("_ACTIONS")[0]  # e.g. [(-1,0),(1,0),...]
+            actions_list = env_vec.get_attr("_ACTIONS")[0]
         except Exception:
             actions_list = [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]
         drc_to_idx = {drc: i for i, drc in enumerate(actions_list)}
@@ -885,7 +1066,6 @@ def manual_control(
         steps = 0
 
         def _poll_action_index():
-            """Return -1 to quit, int action index to move, or None if no movement key pressed."""
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     return -1
@@ -905,14 +1085,14 @@ def manual_control(
         while steps < total_timesteps:
             act_idx = _poll_action_index()
             if act_idx == -1:
-                break  # quit
+                break
             if act_idx is None:
                 time.sleep(0.01)
                 clock.tick(max(1, int(fps)))
                 continue
 
-            action = np.array([act_idx], dtype=np.int64)  # VecEnv Discrete format
-            obs, rewards, dones, infos = env_vec.step(action)  # draws inside step()
+            action = np.array([act_idx], dtype=np.int64)
+            obs, rewards, dones, infos = env_vec.step(action)
             steps += 1
 
             _log_step(steps, rewards, infos)

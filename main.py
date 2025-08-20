@@ -23,7 +23,7 @@ def main():
     - get cnn results better than REU results that use D*Lite
     '''
     train_all(1_000_000)
-    #evaluate_all(episodes=2, render=True, verbose=False, deterministic=False)
+    #evaluate_all(episodes=2, render=True, verbose=True, deterministic=False, exclude=["50x50"])
     
     #manual_control("mine_50x50__20miners__a1__reward_d")
     

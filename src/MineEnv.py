@@ -155,7 +155,6 @@ class MineEnv(gym.Env):
 
         # Action/Observation spaces
         self._ACTIONS = list(ACTIONS)
-        print("ACTIONS:", self._ACTIONS)
         self.action_space = spaces.Discrete(len(self._ACTIONS))
 
         if self.is_cnn:
